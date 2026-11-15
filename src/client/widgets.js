@@ -85,6 +85,7 @@ function LiveRollBanner(props) {
   const [revealed, setRevealed] = useState(false)
 
   const animation = event && event.animation ? event.animation : 'bounce'
+  const isSetup = Boolean(event && event.kind === 'setup-required')
   const isFree = Boolean(event && event.kind === 'free')
   const roll = isFree ? null : (event && event.roll) || null
   const freeResult = isFree ? (event && event.result) || null : null
@@ -95,6 +96,13 @@ function LiveRollBanner(props) {
   useEffect(() => {
     setRevealed(false)
     if (!eventId) return undefined
+    /* 未配置决策模型：不投骰、不抖动，5 秒后自动收起，轻触亦可关闭 */
+    if (isSetup) {
+      const closer = setTimeout(() => {
+        if (typeof onDismiss === 'function') onDismiss()
+      }, 5000)
+      return () => clearTimeout(closer)
+    }
     const reduced = fdSafe(() => typeof window !== 'undefined' && Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches), false)
     if (animation === 'none' || reduced) {
       setRolling(false)
@@ -120,6 +128,27 @@ function LiveRollBanner(props) {
   }, [eventId])
 
   if (!event) return null
+
+  if (isSetup) {
+    return h('div', {
+      className: 'fd-root',
+      style: { padding: '2px 0' }
+    },
+    h('div', {
+      className: 'fd-guide-banner is-lite',
+      role: 'status',
+      'aria-live': 'polite',
+      onClick: () => {
+        if (typeof onDismiss === 'function') onDismiss()
+      }
+    },
+    h('div', { className: 'fd-guide-banner-head' },
+      h('span', { className: 'fd-guide-banner-icon', 'aria-hidden': 'true' }, '⚠️'),
+      h('span', { className: 'fd-guide-banner-title' }, '命运之骰尚未配置决策模型')),
+    h('div', { className: 'fd-guide-banner-step' },
+      '请前往酒馆「设置 › 叙事阻尼器」填写决策模型与 API Key（轻触收起）')))
+  }
+
   if (!roll && !freeResult && !eventItems.length) return null
 
   const tier = hidden ? 'hidden' : fdTierOf(isFree ? 'success' : (roll ? roll.tier : 'success'))
@@ -210,7 +239,8 @@ function ComposerLiveDock(props) {
         setLiveEvent(null)
         return
       }
-      if (data.animation === 'none') {
+      /* 关闭动画时不再展示骰面卡，但未配置决策模型的引导提示仍需露面 */
+      if (data.animation === 'none' && data.kind !== 'setup-required') {
         setLiveEvent(null)
         return
       }
@@ -402,18 +432,24 @@ function StatusDiceSection(props) {
   }, [gameId])
 
   const current = view || fdEmptyWorkbench()
+  const judgeReady = Boolean(current.judgeStatus && current.judgeStatus.available)
   const stats = current.stats || { total: 0, good: 0, bad: 0 }
   const activeLines = (current.plotlines || []).filter(line => line.status === 'active').slice(0, 2)
   const recent = (current.recent || []).slice(0, 5)
 
   return h('div', { className: 'fd-root fd-status' },
     h('div', { className: 'fd-badge-row' },
-      h(FdBadge, { tone: current.judgeStatus && current.judgeStatus.available ? 'ok' : 'off' },
-        current.judgeStatus && current.judgeStatus.available
+      h(FdBadge, { tone: judgeReady ? 'ok' : 'warn' },
+        judgeReady
           ? `⚡ 决策模型 ${current.judgeStatus.provider || '就绪'}`
-          : '🧭 本地启发式'),
+          : '⚠️ 待配决策模型'),
       h(FdBadge, { tone: current.damper && current.damper.linkage ? 'ok' : 'off' },
         current.damper && current.damper.linkage ? '⛓ 阻尼联动' : '⛓ 阻尼未联动')),
+    judgeReady
+      ? null
+      : h('div', { className: 'fd-guide-banner is-lite', role: 'note' },
+        h('div', { className: 'fd-guide-banner-step' },
+          '需前往「设置 › 叙事阻尼器」配置决策模型与 API Key 后方可启用 AI 自动检定')),
     h('div', { className: 'fd-stat-grid' },
       h('div', { className: 'fd-stat-cell' },
         h('span', { className: 'fd-stat-num' }, String(stats.total || 0)),

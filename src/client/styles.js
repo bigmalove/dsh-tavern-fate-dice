@@ -424,6 +424,167 @@ const CSS_TEXT = `
 /* ---------- 状态卡 ---------- */
 .fd-status { display: flex; flex-direction: column; gap: 9px; font-size: 12.5px; color: var(--dsh-ink, inherit); }
 
+/* ---------- 说明气泡（? 按钮 + 就地展开卡片） ---------- */
+.fd-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.fd-help {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  vertical-align: middle;
+}
+.fd-help.is-open { flex: 1 1 100%; }
+.fd-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--fd-accent) 48%, transparent);
+  background: color-mix(in oklab, var(--fd-accent) 12%, transparent);
+  color: color-mix(in oklab, var(--fd-accent) 86%, currentColor);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.16s ease, background 0.16s ease, color 0.16s ease;
+}
+.fd-help-btn:hover {
+  transform: scale(1.1);
+  background: color-mix(in oklab, var(--fd-accent) 24%, transparent);
+}
+.fd-help-btn:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--fd-accent) 62%, transparent);
+  outline-offset: 1px;
+}
+.fd-help-btn.is-open {
+  background: color-mix(in oklab, var(--fd-accent) 90%, transparent);
+  border-color: color-mix(in oklab, var(--fd-accent) 90%, transparent);
+  color: var(--fd-on-accent, #fff);
+}
+.fd-help-pop {
+  flex: 1 1 100%;
+  width: 100%;
+  margin: 5px 0 2px;
+  padding: 8px 10px 9px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in oklab, var(--fd-accent) 30%, var(--fd-line-soft, transparent));
+  border-left: 3px solid color-mix(in oklab, var(--fd-accent) 82%, transparent);
+  background: color-mix(in oklab, var(--fd-accent) 7%, var(--fd-fill, transparent));
+  color: inherit;
+  box-shadow: 0 3px 12px color-mix(in oklab, var(--fd-accent) 12%, transparent);
+  animation: fd-rise 0.16s ease-out both;
+}
+.fd-help-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.fd-help-pop-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: color-mix(in oklab, var(--fd-accent) 78%, currentColor);
+  opacity: 0.96;
+}
+.fd-help-close {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 1.6;
+  opacity: 0.66;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.fd-help-close:hover {
+  opacity: 1;
+  background: color-mix(in oklab, currentColor 10%, transparent);
+  border-color: color-mix(in oklab, currentColor 16%, transparent);
+}
+.fd-help-pop-body { display: flex; flex-direction: column; gap: 4px; }
+.fd-help-line {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.72;
+  word-break: break-word;
+  opacity: 0.92;
+}
+
+/* ---------- 琥珀色引导横幅（未配置决策模型） ---------- */
+.fd-guide-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in oklab, var(--fd-warn) 44%, transparent);
+  background: color-mix(in oklab, var(--fd-warn) 14%, var(--fd-surface, transparent));
+  color: inherit;
+  box-shadow: 0 3px 14px color-mix(in oklab, var(--fd-warn) 16%, transparent);
+  animation: fd-rise 0.2s ease-out both;
+}
+.fd-guide-banner.is-lite {
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  box-shadow: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.fd-guide-banner-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fd-guide-banner-icon { flex: 0 0 auto; font-size: 15px; line-height: 1; }
+.fd-guide-banner-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: color-mix(in oklab, var(--fd-warn) 72%, currentColor);
+  word-break: break-word;
+}
+.fd-guide-banner-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+}
+.fd-guide-banner-step {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.72;
+  word-break: break-word;
+  opacity: 0.94;
+}
+.fd-guide-banner-meta {
+  font-size: 11px;
+  line-height: 1.6;
+  opacity: 0.72;
+  word-break: break-word;
+}
+
 @keyframes fd-tumble {
   0% { transform: translateY(-18px) rotateX(0deg) rotateZ(-200deg) scale(0.72); opacity: 0.25; }
   55% { transform: translateY(3px) rotateX(330deg) rotateZ(18deg) scale(1.1); opacity: 1; }

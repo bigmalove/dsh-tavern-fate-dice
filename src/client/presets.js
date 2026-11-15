@@ -86,6 +86,7 @@ const FD_DEFAULT_SETTINGS = {
   toneBias: 'balanced',
   autoHidden: true,
   damperLinkage: true,
+  allowHeuristicFallback: false,
   animation: 'bounce',
   maxPlotPush: 1,
   maxAmbience: 1,

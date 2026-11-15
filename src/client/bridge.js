@@ -100,6 +100,8 @@ function fdNormalizeSettings(raw) {
   if (typeof src.autoHidden === 'boolean') settings.autoHidden = src.autoHidden
   else if (typeof src.allowHidden === 'boolean') settings.autoHidden = src.allowHidden
   if (typeof src.damperLinkage === 'boolean') settings.damperLinkage = src.damperLinkage
+  if (typeof src.allowHeuristicFallback === 'boolean') settings.allowHeuristicFallback = src.allowHeuristicFallback
+  else if (typeof src.heuristicFallback === 'boolean') settings.allowHeuristicFallback = src.heuristicFallback
   settings.maxPlotPush = fdClamp(fdNumber(src.maxPlotPush, FD_DEFAULT_SETTINGS.maxPlotPush), 0, 3)
   settings.maxAmbience = fdClamp(fdNumber(src.maxAmbience, FD_DEFAULT_SETTINGS.maxAmbience), 0, 3)
   settings.themeCooldown = fdClamp(fdNumber(src.themeCooldown, FD_DEFAULT_SETTINGS.themeCooldown), 0, 5)

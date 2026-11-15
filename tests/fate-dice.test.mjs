@@ -553,4 +553,67 @@ test('浏览器端 client.js：注册插件区面板 registerPanel，无独立�
     ['turn', 'fate-dice-turn'],
     ['status', 'fate-dice-status']
   ])
+
+  // 验证未配置决策模型时的引导横幅、输入栏 setup-required 提示卡与 ? 帮助按钮组件
+  const { DecisionModelGuideBanner, LiveRollBanner, FdHelp } = exported.__test
+  assert.equal(typeof DecisionModelGuideBanner, 'function')
+  assert.equal(typeof FdHelp, 'function')
+  assert.equal(DecisionModelGuideBanner({ view: { judgeStatus: { available: true } } }), null, '已配好模型时应自动隐藏引导框')
+  const expandVnode = node => {
+    if (!node || typeof node !== 'object') return node
+    if (Array.isArray(node)) return node.map(expandVnode)
+    if (typeof node.type === 'function') return expandVnode(node.type({ ...(node.props || {}), children: node.children }))
+    return { type: String(node.type), props: node.props, children: (node.children || []).map(expandVnode) }
+  }
+
+  const bannerVnode = expandVnode(DecisionModelGuideBanner({ view: { judgeStatus: { available: false, reason: 'NOT_CONFIGURED' } } }))
+  const serializedBanner = JSON.stringify(bannerVnode)
+  assert.match(serializedBanner, /设置 › 叙事阻尼器/)
+  assert.match(serializedBanner, /重新检测模型/)
+
+  const setupToastVnode = expandVnode(LiveRollBanner({ event: { id: 's1', kind: 'setup-required', reason: 'NOT_CONFIGURED' } }))
+  assert.match(JSON.stringify(setupToastVnode), /设置 › 叙事阻尼器/)
+
+  const helpClosed = expandVnode(FdHelp({ title: '触发灵敏度', text: '详细说明正文' }))
+  assert.match(JSON.stringify(helpClosed), /fd-help-btn/)
+  assert.ok((clientCode.match(/fd-help-btn|FdHelp|\bhelp\s*:/g) || []).length >= 35, '全工作台所有设置项均应配备 ? 详细说明')
 })
+
+test('未配置叙事阻尼器决策模型门控：默认跳过自动检定并推送配置引导，开启离线兜底后才允许本地规则检定', async () => {
+  const turnSections = []
+  const handlers = new Map()
+  const states = new Map()
+  let pluginData = null
+  const gameDataMap = new Map()
+
+  applyFateDicePlugin({
+    tavern: {
+      capabilities: { decisionJudge: 1 },
+      turnSection(def) { turnSections.push(def); return () => {} },
+      onTurnSettled() { return () => {} },
+      handle(name, fn) { handlers.set(name, fn) },
+      async savePluginData({ data }) { pluginData = structuredClone(data) },
+      async readPluginData() { return pluginData ? structuredClone(pluginData) : null },
+      async saveGameData({ gameId, data }) { gameDataMap.set(gameId, structuredClone(data)) },
+      async readGameData({ gameId }) { return structuredClone(gameDataMap.get(gameId) || null) },
+      async getTurn() { return { turn: 1, text: '守卫站在门前。', variables: {} } },
+      async publishState({ gameId, name, data }) { states.set(`${gameId}:${name}`, data) },
+      async decisionJudgeStatus() {
+        return { available: false, provider: 'gemini', model: 'gemini-decision-1', reason: 'NOT_CONFIGURED' }
+      }
+    }
+  })
+
+  // 1. 默认 allowHeuristicFallback = false：未配模型时不伪装投骰，向前端推送 setup-required 引导条
+  const inj1 = await turnSections[0].text({ gameId: 'g-unconf', turn: 2, input: '我趁守卫转身时尝试强行撬开铁门锁' })
+  assert.equal(inj1, '')
+  assert.equal(states.get('g-unconf:live-roll')?.kind, 'setup-required')
+  assert.match(states.get('g-unconf:live-roll')?.message || '', /设置 › 叙事阻尼器/)
+
+  // 2. 玩家显式开启 allowHeuristicFallback = true 后，允许离线关键词启发式检定
+  await handlers.get('fate-dice:save-global-settings')({ settings: { allowHeuristicFallback: true } })
+  const inj2 = await turnSections[0].text({ gameId: 'g-unconf', turn: 3, input: '我趁守卫转身时尝试强行撬开铁门锁' })
+  assert.match(inj2, /检定/)
+  assert.equal(states.get('g-unconf:live-roll')?.kind, 'check')
+})
+
