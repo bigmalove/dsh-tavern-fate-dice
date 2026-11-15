@@ -1,7 +1,7 @@
 {
   "name": "dsh-tavern-fate-dice",
-  "version": "1.0.0",
-  "description": "DSH Tavern 动态检定与真骰插件：复用叙事阻尼器决策模型毫秒级定难度，结合 R18 语义分级脱敏、crypto 真随机投骰与移动端非阻塞骰子动画。",
+  "version": "2.0.0",
+  "description": "DSH Tavern 命运之骰工作台：插件区常驻面板、无感自动技能检定（内置12套世界观样板）、叙事阻尼器单趟双向联动、多轨随机事件池与剧情增强3.2（冷却/屏蔽/持续剧情线/JSON导入导出）。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
