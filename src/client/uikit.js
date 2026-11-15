@@ -153,35 +153,6 @@ function FdText(props) {
   })
 }
 
-function FdArea(props) {
-  const { value, onChange, placeholder, rows } = props || {}
-  return h('textarea', {
-    className: 'fd-textarea',
-    rows: rows || 6,
-    value: value === undefined || value === null ? '' : String(value),
-    placeholder: placeholder || '',
-    onChange: e => (typeof onChange === 'function' ? onChange(e.target.value) : undefined)
-  })
-}
-
-function FdNum(props) {
-  const { value, onChange, min, max, step, ariaLabel } = props || {}
-  return h('input', {
-    className: 'fd-input is-num',
-    type: 'number',
-    value: value === undefined || value === null ? 0 : value,
-    min: min === undefined ? undefined : min,
-    max: max === undefined ? undefined : max,
-    step: step === undefined ? 1 : step,
-    'aria-label': ariaLabel || undefined,
-    onChange: e => {
-      if (typeof onChange !== 'function') return
-      const next = Number(e.target.value)
-      onChange(Number.isFinite(next) ? next : 0)
-    }
-  })
-}
-
 function FdSelect(props) {
   const { value, onChange, options, ariaLabel, placeholder } = props || {}
   const list = Array.isArray(options) ? options : []
@@ -230,10 +201,6 @@ function FdRow(props) {
       sub ? h('span', { className: 'fd-row-sub' }, sub) : null),
     children ? h('div', { className: 'fd-row-end' }, children) : null
   )
-}
-
-function FdEmpty(props) {
-  return h('div', { className: 'fd-empty' }, (props && props.children) || '暂无数据')
 }
 
 function FdCollapse(props) {

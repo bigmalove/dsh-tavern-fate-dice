@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------ *
- * widgets.js —— 聊天流挂件：输入栏揭晓动效条 / 楼层折叠胶囊 / 状态卡
+ * widgets.js —— 聊天流挂件：输入栏揭晓动效条 / 楼层折叠检定胶囊 / 状态卡
  * 三处挂载点在无数据时均返回 null 或原 children（零占位、零样式污染）
  * ------------------------------------------------------------------ */
 
@@ -50,22 +50,6 @@ function formatRollSummary(roll, revealed) {
   return `${roll.check}检定 · ${dicePart} · ${roll.tierLabel}`
 }
 
-function fdEventLabel(item) {
-  if (!item) return ''
-  if (typeof item === 'string') return item
-  const text = item.text || item.content || item.label || ''
-  const theme = item.theme ? `#${item.theme}` : ''
-  const track = item.trackName || item.track || ''
-  const prefix = track ? track + ' · ' : ''
-  return `${prefix}${theme ? theme + ' ' : ''}${text}`.trim()
-}
-
-function fdEventList(event) {
-  if (!event) return []
-  const raw = Array.isArray(event.events) ? event.events : (Array.isArray(event.draws) ? event.draws : [])
-  return raw.filter(Boolean)
-}
-
 function fdDamperChip(roll) {
   if (!roll) return null
   const damper = roll.damper || roll.damperLink || roll.linkage
@@ -89,7 +73,6 @@ function LiveRollBanner(props) {
   const isFree = Boolean(event && event.kind === 'free')
   const roll = isFree ? null : (event && event.roll) || null
   const freeResult = isFree ? (event && event.result) || null : null
-  const eventItems = fdEventList(event)
   const hidden = Boolean(roll && roll.hidden && !revealed)
   const eventId = event ? event.id : null
 
@@ -119,7 +102,7 @@ function LiveRollBanner(props) {
     }, animation === 'compact' ? 320 : 760)
     const hider = setTimeout(() => {
       if (typeof onDismiss === 'function') onDismiss()
-    }, eventItems.length ? 5200 : 4200)
+    }, 4200)
     return () => {
       clearInterval(ticker)
       clearTimeout(stopper)
@@ -149,7 +132,7 @@ function LiveRollBanner(props) {
       '请前往酒馆「设置 › 叙事阻尼器」填写决策模型与 API Key（轻触收起）')))
   }
 
-  if (!roll && !freeResult && !eventItems.length) return null
+  if (!roll && !freeResult) return null
 
   const tier = hidden ? 'hidden' : fdTierOf(isFree ? 'success' : (roll ? roll.tier : 'success'))
   const faces = isFree
@@ -159,9 +142,7 @@ function LiveRollBanner(props) {
 
   const titleText = isFree
     ? `自由骰 ${freeResult.expression || ''}`
-    : roll
-      ? `${roll.check}检定（${roll.difficultyLabel || '判定'}）`
-      : '本轮随机事件'
+    : `${roll.check}检定（${roll.difficultyLabel || '判定'}）`
 
   const subText = rolling
     ? '正在投掷命运真骰…'
@@ -169,9 +150,7 @@ function LiveRollBanner(props) {
       ? `骰面 [${(freeResult.dice || []).join(', ')}]${freeResult.bonus ? (freeResult.bonus > 0 ? ' +' : ' ') + freeResult.bonus : ''} · 轻触收起`
       : hidden
         ? '结果已暗中注入本轮裁定（轻触偷看）'
-        : roll
-          ? `${formatRollSummary(roll, true)} · 轻触收起`
-          : `${eventItems.length} 条随机事件已注入本轮 · 轻触收起`
+        : `${formatRollSummary(roll, true)} · 轻触收起`
 
   return h('div', {
     className: 'fd-root',
@@ -187,17 +166,15 @@ function LiveRollBanner(props) {
       else if (typeof onDismiss === 'function') onDismiss()
     }
   },
-  roll || isFree
-    ? h('div', { className: 'fd-die-stage' },
-      (faces.length ? faces : ['?']).slice(0, 3).map((face, idx) => h(DieGlyph, {
-        key: idx,
-        sides,
-        label: rolling && !hidden ? tickFace : face,
-        rolling,
-        tier,
-        hidden
-      })))
-    : h('div', { className: 'fd-die-stage' }, h('span', { 'aria-hidden': 'true', style: { fontSize: 20 } }, '✦')),
+  h('div', { className: 'fd-die-stage' },
+    (faces.length ? faces : ['?']).slice(0, 3).map((face, idx) => h(DieGlyph, {
+      key: idx,
+      sides,
+      label: rolling && !hidden ? tickFace : face,
+      rolling,
+      tier,
+      hidden
+    }))),
   h('div', { className: 'fd-live-body' },
     h('div', { className: 'fd-live-title' },
       h('span', { className: 'fd-turn-summary', style: { minWidth: 0 } }, titleText),
@@ -207,24 +184,13 @@ function LiveRollBanner(props) {
             ? `总计 ${freeResult.total}`
             : hidden
               ? '暗骰 · 点按揭晓'
-              : roll
-                ? `${roll.tierLabel || ''} · ${roll.total}`
-                : `事件 ${eventItems.length}`)
+              : `${roll.tierLabel || ''} · ${roll.total}`)
         : null,
       !rolling ? fdDamperChip(roll) : null),
-    h('div', { className: 'fd-live-sub' }, subText),
-    !rolling && eventItems.length
-      ? h('div', { className: 'fd-btn-row', style: { marginTop: 4 } },
-        eventItems.slice(0, 3).map((item, idx) => h('span', {
-          key: idx,
-          className: 'fd-event-pill',
-          title: fdEventLabel(item)
-        }, fdEventLabel(item))))
-      : null
-  )))
+    h('div', { className: 'fd-live-sub' }, subText))))
 }
 
-/* 输入栏上方停靠：同时消费真骰揭晓与随机事件揭示两个状态通道 */
+/* 输入栏上方停靠：只消费真骰揭晓状态通道 */
 function ComposerLiveDock(props) {
   const { ui, sessionId, gameId } = props || {}
   const [liveEvent, setLiveEvent] = useState(null)
@@ -255,27 +221,6 @@ function ComposerLiveDock(props) {
     }
   }, [keys.join('|')])
 
-  useEffect(() => {
-    if (!keys.length) return undefined
-    const merge = data => {
-      if (!data) return
-      const items = Array.isArray(data.events) ? data.events : (Array.isArray(data) ? data : [])
-      if (!items.length) return
-      setLiveEvent(prev => {
-        const base = prev && prev.id ? prev : { id: `events-${Date.now()}`, animation: 'compact' }
-        return { ...base, events: items }
-      })
-    }
-    const offs = []
-    keys.forEach(key => {
-      offs.push(fdWatch(ui, key, 'live-events', merge))
-      offs.push(fdWatch(ui, key, 'event-draw', merge))
-    })
-    return () => {
-      offs.forEach(off => off())
-    }
-  }, [keys.join('|')])
-
   if (!liveEvent) return null
   return h('div', { className: 'fd-root', style: { padding: '0 2px 4px' } },
     h(LiveRollBanner, { event: liveEvent, onDismiss: () => setLiveEvent(null) }))
@@ -284,24 +229,28 @@ function ComposerLiveDock(props) {
 function fdBuildTurnDetails(record, peeked) {
   const roll = record.roll || {}
   const breakdown = roll.modifierBreakdown || {}
-  const events = Array.isArray(record.events) ? record.events : []
   const covered = Boolean(roll.hidden && !peeked)
-  const rows = []
+  if (covered) {
+    return h('dl', { className: 'fd-turn-details' },
+      h('dt', { className: 'fd-turn-dt' }, '暗骰'),
+      h('dd', { className: 'fd-turn-dd' }, '结果尚未揭晓，点按胶囊头部偷看'))
+  }
 
-  rows.push(h('dt', { key: 'dt-rule', className: 'fd-turn-dt' }, '规则与点数'))
+  const rows = []
+  rows.push(h('dt', { key: 'dt-rule', className: 'fd-turn-dt' }, '骰面算式'))
   rows.push(h('dd', { key: 'dd-rule', className: 'fd-turn-dd' },
     `${roll.rule || 'd6'} 原骰 [${(roll.dice || []).join(', ')}]`
     + ` = ${roll.total}（目标${roll.rule === 'd100' ? ' ≤ ' : ' ≥ '}${roll.target === undefined ? '—' : roll.target}）`))
 
   const skillBonus = fdNumber(breakdown.skillBonus ?? roll.skillBonus, 0)
-  rows.push(h('dt', { key: 'dt-skill', className: 'fd-turn-dt' }, '技能加值'))
+  rows.push(h('dt', { key: 'dt-skill', className: 'fd-turn-dt' }, '角色能力修正'))
   rows.push(h('dd', { key: 'dd-skill', className: 'fd-turn-dd' },
     `${roll.check || '检定'} ${skillBonus >= 0 ? '+' : ''}${skillBonus}`
     + (roll.modifier ? `（总修正 ${roll.modifier > 0 ? '+' : ''}${roll.modifier}）` : '')))
 
   if (fdNumber(breakdown.varModifier, 0) || (Array.isArray(breakdown.matchedVars) && breakdown.matchedVars.length)) {
     const matched = Array.isArray(breakdown.matchedVars) ? breakdown.matchedVars : []
-    rows.push(h('dt', { key: 'dt-var', className: 'fd-turn-dt' }, 'MVU 变量加值'))
+    rows.push(h('dt', { key: 'dt-var', className: 'fd-turn-dt' }, 'MVU 变量修正'))
     rows.push(h('dd', { key: 'dd-var', className: 'fd-turn-dd' },
       `${fdNumber(breakdown.varModifier, 0) >= 0 ? '+' : ''}${fdNumber(breakdown.varModifier, 0)}`
       + (matched.length ? ` · ${matched.map(v => `${v.label || v.path || '变量'}(${v.raw ?? v.value ?? ''})`).join('、')}` : '')))
@@ -318,21 +267,9 @@ function fdBuildTurnDetails(record, peeked) {
       + (damper.reason ? ` · ${damper.reason}` : '')))
   }
 
-  rows.push(h('dt', { key: 'dt-diff', className: 'fd-turn-dt' }, '难度定级'))
+  rows.push(h('dt', { key: 'dt-diff', className: 'fd-turn-dt' }, '难度理由'))
   rows.push(h('dd', { key: 'dd-diff', className: 'fd-turn-dd' }, `${roll.difficultyLabel || '判定'} · ${roll.reason || '本地启发式快判'}`))
 
-  if (events.length) {
-    rows.push(h('dt', { key: 'dt-ev', className: 'fd-turn-dt' }, '命中事件'))
-    rows.push(h('dd', { key: 'dd-ev', className: 'fd-turn-dd' },
-      h('div', { className: 'fd-turn-events' },
-        events.map((item, idx) => h('span', { key: idx, className: 'fd-event-pill', title: fdEventLabel(item) }, fdEventLabel(item))))))
-  }
-
-  if (covered) {
-    return h('dl', { className: 'fd-turn-details' },
-      h('dt', { className: 'fd-turn-dt' }, '暗骰'),
-      h('dd', { className: 'fd-turn-dd' }, '结果尚未揭晓，点按胶囊头部偷看'))
-  }
   return h('dl', { className: 'fd-turn-details' }, rows)
 }
 
@@ -361,15 +298,11 @@ function TurnRollCapsule(props) {
   }, [gameId, turn])
 
   const roll = record && record.roll ? record.roll : null
-  const events = record && Array.isArray(record.events) ? record.events : []
-  if (record === undefined || !record || (!roll && !events.length)) return children || null
+  if (record === undefined || !record || !roll) return children || null
 
-  const covered = Boolean(roll && roll.hidden && !peeked)
-  const tier = covered ? 'hidden' : fdTierOf(roll ? roll.tier : 'success')
-  const summary = roll
-    ? formatRollSummary(roll, peeked)
-    : `本轮事件 ×${events.length}`
-  const extra = events.length ? ` · 事件 ${events.length}` : ''
+  const covered = Boolean(roll.hidden && !peeked)
+  const tier = covered ? 'hidden' : fdTierOf(roll.tier)
+  const summary = formatRollSummary(roll, peeked)
 
   return h(Fragment, null,
     h('div', { className: 'fd-root', style: { padding: '0 0 2px' } },
@@ -385,11 +318,11 @@ function TurnRollCapsule(props) {
           }
         },
         h('span', { className: 'fd-turn-head-left' },
-          h('span', { 'aria-hidden': 'true' }, covered ? '🎴' : (roll ? '🎲' : '✦')),
-          h('span', { className: 'fd-turn-summary' }, summary + extra),
-          roll && roll.damper ? h('span', { className: 'fd-event-pill' }, '⛓ 阻尼') : null),
+          h('span', { 'aria-hidden': 'true' }, covered ? '🎴' : '🎲'),
+          h('span', { className: 'fd-turn-summary' }, summary),
+          roll.damper ? h('span', { className: 'fd-event-pill' }, '⛓ 阻尼') : null),
         h('span', { className: 'fd-tier-pill', 'data-tier': tier },
-          covered ? '点按揭晓' : (roll ? (roll.tierLabel || '结果') : `事件 ${events.length}`))),
+          covered ? '点按揭晓' : (roll.tierLabel || '结果'))),
         open ? fdBuildTurnDetails(record, peeked) : null)),
     children || null)
 }
@@ -409,16 +342,7 @@ function StatusDiceSection(props) {
     })
     const offSummary = fdWatch(ui, gameId, 'summary', summary => {
       if (!alive || !summary) return
-      const counts = summary.counts && typeof summary.counts === 'object' ? summary.counts : {}
-      setView(prev => ({
-        ...(prev || fdEmptyWorkbench()),
-        stats: {
-          total: fdNumber(summary.total, 0),
-          good: fdNumber(counts.critical, 0) + fdNumber(counts.success, 0),
-          bad: fdNumber(counts.costly, 0) + fdNumber(counts.failure, 0) + fdNumber(counts.fumble, 0)
-        },
-        recent: fdNormalizeRecent(summary.recent)
-      }))
+      setView(prev => fdBindStatusSummary(prev || fdEmptyWorkbench(), { summary }))
     })
     const offWorkbench = fdWatch(ui, gameId, 'workbench-sync', payload => {
       if (!alive || !payload) return
@@ -434,7 +358,6 @@ function StatusDiceSection(props) {
   const current = view || fdEmptyWorkbench()
   const judgeReady = Boolean(current.judgeStatus && current.judgeStatus.available)
   const stats = current.stats || { total: 0, good: 0, bad: 0 }
-  const activeLines = (current.plotlines || []).filter(line => line.status === 'active').slice(0, 2)
   const recent = (current.recent || []).slice(0, 5)
 
   return h('div', { className: 'fd-root fd-status' },
@@ -460,17 +383,10 @@ function StatusDiceSection(props) {
       h('div', { className: 'fd-stat-cell' },
         h('span', { className: 'fd-stat-num' }, String(stats.bad || 0)),
         h('span', { className: 'fd-stat-lbl' }, '代价+失手'))),
-    activeLines.length
-      ? h('div', { className: 'fd-list' },
-        h('span', { className: 'fd-hint' }, '活跃剧情线'),
-        activeLines.map(line => h('div', { key: line.id, className: 'fd-list-item' },
-          h('span', { className: 'fd-row-title' }, '📖 ' + line.title),
-          h('span', { className: 'fd-hint' }, line.progress ? line.progress.slice(0, 18) : '进展中'))))
-      : null,
     recent.length
       ? h('div', { className: 'fd-list' },
         recent.map(item => h('div', { key: `${item.turn}-${item.rolledAt}`, className: 'fd-list-item' },
-          h('span', null, `第 ${item.turn} 轮 · ${item.check}${item.eventCount ? ` · 事件 ${item.eventCount}` : ''}`),
+          h('span', null, `第 ${item.turn} 轮 · ${item.check}`),
           h('span', { className: 'fd-hint' }, item.hidden ? '暗骰' : `${item.total} ${item.tierLabel}`))))
       : h('div', { className: 'fd-hint' }, '本局尚无检定记录，发送一轮行动后开始记录'))
 }

@@ -5,7 +5,7 @@ import vm from 'node:vm'
 const root = new URL('./', import.meta.url)
 const normalize = value => value.replace(/\r\n?/g, '\n')
 
-/* 固定拼接顺序：先常量/样式/桥接/基础组件，再挂件、工作台与各标签页，最后注册与导出 */
+/* 固定拼接顺序：先常量/样式/桥接/基础组件，再挂件、工作台与两个标签页，最后注册与导出 */
 export const CLIENT_SOURCE_FILES = [
   'presets.js',
   'styles.js',
@@ -14,7 +14,6 @@ export const CLIENT_SOURCE_FILES = [
   'widgets.js',
   'workbench.js',
   'tab-checks.js',
-  'tab-events.js',
   'tab-settings.js',
   'main.js'
 ]

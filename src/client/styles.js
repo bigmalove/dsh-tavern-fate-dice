@@ -166,23 +166,6 @@ const CSS_TEXT = `
 }
 .fd-section-note { font-size: 11.5px; opacity: 0.62; }
 
-.fd-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 8px;
-}
-.fd-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 9px 10px;
-  border-radius: 10px;
-  background: var(--fd-fill);
-  border: 1px solid var(--fd-line-soft);
-}
-.fd-card-title { font-size: 12.5px; font-weight: 650; }
-.fd-card-sub { font-size: 11.5px; opacity: 0.66; }
-
 .fd-row {
   display: flex;
   align-items: center;
@@ -284,9 +267,6 @@ const CSS_TEXT = `
 .fd-input.is-inline { min-height: 30px; padding: 3px 8px; }
 .fd-field { display: flex; flex-direction: column; gap: 4px; }
 .fd-field-label { font-size: 11.5px; font-weight: 650; opacity: 0.82; }
-.fd-inline-fields { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
-.fd-inline-fields > * { flex: 1 1 150px; min-width: 0; }
-
 .fd-switch {
   position: relative;
   width: 44px;
@@ -340,7 +320,6 @@ const CSS_TEXT = `
 .fd-list-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
 .fd-empty { font-size: 12px; opacity: 0.6; padding: 6px 2px; }
 .fd-hint { font-size: 11.5px; opacity: 0.66; }
-.fd-error { font-size: 12px; color: var(--fd-bad); }
 .fd-toast {
   position: sticky;
   bottom: 0;
@@ -366,17 +345,6 @@ const CSS_TEXT = `
   border-bottom: 1px solid var(--fd-line-soft);
 }
 .fd-track-body { display: flex; flex-direction: column; gap: 6px; padding: 8px 9px; }
-.fd-entry {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 7px 8px;
-  border-radius: 9px;
-  border: 1px solid var(--fd-line-soft);
-  background: var(--fd-fill);
-}
-.fd-entry-row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
-.fd-cond { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; padding-top: 4px; border-top: 1px dashed var(--fd-line-soft); }
 .fd-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
 
 /* ---------- 输入栏上方非阻塞揭晓动效条 ---------- */
@@ -474,7 +442,6 @@ const CSS_TEXT = `
 }
 .fd-turn-dt { opacity: 0.6; white-space: nowrap; }
 .fd-turn-dd { margin: 0; word-break: break-word; }
-.fd-turn-events { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 3px; }
 
 /* ---------- 状态卡 ---------- */
 .fd-status { display: flex; flex-direction: column; gap: 9px; font-size: 12.5px; color: var(--dsh-ink, inherit); }
@@ -647,15 +614,6 @@ const CSS_TEXT = `
   gap: 8px;
   flex-wrap: wrap;
 }
-.fd-profile-note {
-  font-size: 11.5px;
-  line-height: 1.68;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: var(--fd-accent-soft);
-  border: 1px solid var(--fd-line-soft);
-  word-break: break-word;
-}
 .fd-profile-head {
   display: flex;
   align-items: baseline;
@@ -765,10 +723,8 @@ const CSS_TEXT = `
 
 /* ---------- 手机竖屏 / 窄栏单列 ---------- */
 @media (max-width: 720px) {
-  .fd-card-grid { grid-template-columns: 1fr; }
   .fd-tabbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fd-tab { flex: 1 1 auto; }
-  .fd-inline-fields > * { flex: 1 1 100%; }
   .fd-live-sub { white-space: normal; }
   .fd-row { align-items: flex-start; }
 }

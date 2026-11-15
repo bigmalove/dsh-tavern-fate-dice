@@ -18,18 +18,16 @@ window.__ModuleLoader__.load({
     const { Fragment, useEffect, useMemo, useRef, useState } = React
 /* ===== src/client/presets.js ===== */
 /* ------------------------------------------------------------------ *
- * presets.js —— 常量、12 套世界观技能样板、默认设置与工厂函数
+ * presets.js —— 常量、默认设置与纯函数工具
  * 由 build.mjs 拼接进 client.js 的模块工厂作用域内（共享 require / h / React）
+ * 方案 A：只保留 4 种检定骰制、3 组表现选项与 6 项极简默认设置。
  * ------------------------------------------------------------------ */
 
 const FD_PLUGIN_ID = 'dsh-tavern-fate-dice'
 const FD_PANEL_ID = 'fate-dice'
 const FD_STYLE_ID = 'dsh-fate-dice-styles'
-const FD_STORAGE_PREFIX = 'fate-dice:'
 const FD_STORAGE_KEYS = {
   settings: 'fate-dice:save-global-settings',
-  skillGroups: 'fate-dice:skill-groups',
-  eventGroups: 'fate-dice:event-groups',
   characterProfile: 'fate-dice:character-profile'
 }
 
@@ -41,16 +39,6 @@ const FD_RPC = {
   freeRoll: 'fate-dice:free-roll',
   saveSettings: 'fate-dice:save-global-settings',
   saveBinding: 'fate-dice:save-binding',
-  saveSkillGroups: 'fate-dice:save-skill-groups',
-  saveEventGroups: 'fate-dice:save-event-groups',
-  plotline: 'fate-dice:plotline',
-  pauseNext: 'fate-dice:pause-next-roll',
-  blockTheme: 'fate-dice:block-theme',
-  unblockTheme: 'fate-dice:unblock-theme',
-  clearCooldown: 'fate-dice:clear-cooldown',
-  sceneResume: 'fate-dice:scene-resume',
-  importPreview: 'fate-dice:import-preview',
-  importApply: 'fate-dice:import-apply',
   /* AI 角色动态画像契约：宿主侧可选择性实现，未实现时由 bridge 降级为本地缓存 */
   refreshProfile: 'fate-dice:refresh-profile',
   saveProfileNote: 'fate-dice:save-profile-note'
@@ -81,177 +69,14 @@ const FD_ANIMATION_OPTIONS = [
   { value: 'none', label: '关闭动画' }
 ]
 
-const FD_ENTRY_TYPES = [
-  { value: '推动', label: '剧情推动' },
-  { value: '氛围', label: '氛围描写' },
-  { value: '常驻', label: '常驻固定' }
-]
-
-const FD_TRACK_MODES = [
-  { value: 'd1', label: 'd1 常驻' },
-  { value: 'dn', label: 'dn 等权骰' },
-  { value: 'd100', label: 'd100 区间表' },
-  { value: 'weighted', label: 'weighted 权重池' }
-]
-
-const FD_PLOT_STATUS = [
-  { value: 'active', label: '活跃' },
-  { value: 'paused', label: '暂停' },
-  { value: 'closed', label: '已完结' }
-]
-
-const FD_CONDITION_OPS = ['=', '≠', '>', '<', '≥', '≤', '包含', '不包含']
-
-const FD_THEME_SUGGESTIONS = ['线索', '阻碍', '关系', '压迫', '机会', '氛围', '代价', '转折']
-
 const FD_DEFAULT_SETTINGS = {
   sensitivity: 'normal',
   toneBias: 'balanced',
   autoHidden: true,
   damperLinkage: true,
   allowHeuristicFallback: false,
-  animation: 'bounce',
-  maxPlotPush: 1,
-  maxAmbience: 1,
-  themeCooldown: 2,
-  scenePath: ''
+  animation: 'bounce'
 }
-
-/* 12 套世界观技能样板：rule 决定默认骰制，net 为设计意图净加值 */
-const FD_SKILL_TEMPLATES = [
-  {
-    id: 'tpl-5e', name: '5e 标准跑团', rule: 'd20', note: '经典六维派生的通用冒险技能组',
-    skills: [
-      { name: '运动', bonus: 3, hidden: false },
-      { name: '察觉', bonus: 2, hidden: true },
-      { name: '说服', bonus: 2, hidden: false },
-      { name: '潜行', bonus: 1, hidden: false },
-      { name: '奥秘', bonus: 1, hidden: false },
-      { name: '威吓', bonus: 0, hidden: false }
-    ]
-  },
-  {
-    id: 'tpl-xianxia', name: '修仙问道', rule: '2d6', note: '灵气、境界与心性定力驱动的修真世界',
-    skills: [
-      { name: '灵气感知', bonus: 2, hidden: true },
-      { name: '御剑身法', bonus: 2, hidden: false },
-      { name: '丹道辨识', bonus: 1, hidden: false },
-      { name: '心性定力', bonus: 1, hidden: false },
-      { name: '阵法推演', bonus: 0, hidden: true },
-      { name: '杀伐果断', bonus: 0, hidden: false }
-    ]
-  },
-  {
-    id: 'tpl-detective', name: '侦探推理', rule: 'd100', note: '线索拼图与心理博弈，暗骰密集',
-    skills: [
-      { name: '现场勘查', bonus: 12, hidden: false },
-      { name: '证词盘问', bonus: 10, hidden: false },
-      { name: '逻辑推演', bonus: 10, hidden: true },
-      { name: '档案检索', bonus: 8, hidden: false },
-      { name: '微表情洞察', bonus: 6, hidden: true },
-      { name: '隐匿跟踪', bonus: 4, hidden: false }
-    ]
-  },
-  {
-    id: 'tpl-wuxia', name: '武侠江湖', rule: '2d6', note: '内力、招式与江湖人情并重',
-    skills: [
-      { name: '内力运转', bonus: 2, hidden: false },
-      { name: '轻功', bonus: 2, hidden: false },
-      { name: '剑法', bonus: 2, hidden: false },
-      { name: '江湖见识', bonus: 1, hidden: false },
-      { name: '听风辨位', bonus: 1, hidden: true },
-      { name: '侠义声望', bonus: 0, hidden: false }
-    ]
-  },
-  {
-    id: 'tpl-fantasy', name: '西幻冒险', rule: 'd20', note: '剑与魔法的远行队配置',
-    skills: [
-      { name: '剑术', bonus: 4, hidden: false },
-      { name: '秘法', bonus: 3, hidden: false },
-      { name: '野外生存', bonus: 2, hidden: false },
-      { name: '博物学识', bonus: 2, hidden: false },
-      { name: '谈判', bonus: 1, hidden: false },
-      { name: '危险直觉', bonus: 1, hidden: true }
-    ]
-  },
-  {
-    id: 'tpl-cyberpunk', name: '赛博朋克', rule: 'd10', note: '义体改造、网络潜入与街头交涉',
-    skills: [
-      { name: '黑客入侵', bonus: 3, hidden: false },
-      { name: '街头周旋', bonus: 2, hidden: false },
-      { name: '枪械压枪', bonus: 2, hidden: false },
-      { name: '义体过载', bonus: 1, hidden: false },
-      { name: '摄像头意识', bonus: 1, hidden: true },
-      { name: '企业话术', bonus: 1, hidden: false }
-    ]
-  },
-  {
-    id: 'tpl-cthulhu', name: '克苏鲁调查', rule: 'd100', note: '理智损耗与不可名状的知识',
-    skills: [
-      { name: '图书馆使用', bonus: 10, hidden: false },
-      { name: '侦查', bonus: 10, hidden: false },
-      { name: '神秘学', bonus: 8, hidden: true },
-      { name: '精神抵抗', bonus: 8, hidden: true },
-      { name: '说服', bonus: 6, hidden: false },
-      { name: '闪避', bonus: 4, hidden: false }
-    ]
-  },
-  {
-    id: 'tpl-wasteland', name: '末日废土', rule: '2d6', note: '资源稀缺下的生存与交易',
-    skills: [
-      { name: '废土生存', bonus: 2, hidden: false },
-      { name: '拾荒鉴定', bonus: 2, hidden: false },
-      { name: '改装枪械', bonus: 1, hidden: false },
-      { name: '辐射耐受', bonus: 1, hidden: false },
-      { name: '黑市议价', bonus: 0, hidden: false },
-      { name: '异响警觉', bonus: 0, hidden: true }
-    ]
-  },
-  {
-    id: 'tpl-campus', name: '校园日常', rule: '2d6', note: '青春日常的关系推进与小心思',
-    skills: [
-      { name: '共情安抚', bonus: 3, hidden: true },
-      { name: '学业表现', bonus: 1, hidden: false },
-      { name: '运动社团', bonus: 1, hidden: false },
-      { name: '社交破冰', bonus: 1, hidden: false },
-      { name: '察言观色', bonus: 1, hidden: true },
-      { name: '临场应变', bonus: 0, hidden: false }
-    ]
-  },
-  {
-    id: 'tpl-court', name: '宫廷权谋', rule: 'd20', note: '礼法、结党与暗流',
-    skills: [
-      { name: '宫廷礼仪', bonus: 4, hidden: false },
-      { name: '朝堂辩论', bonus: 3, hidden: false },
-      { name: '人心揣度', bonus: 3, hidden: true },
-      { name: '政务调度', bonus: 2, hidden: false },
-      { name: '密信谋略', bonus: 1, hidden: true },
-      { name: '仪态压制', bonus: 1, hidden: false }
-    ]
-  },
-  {
-    id: 'tpl-steampunk', name: '蒸汽朋克', rule: 'd10', note: '机械造物与工坊发明',
-    skills: [
-      { name: '机械拆解', bonus: 3, hidden: false },
-      { name: '蒸汽操控', bonus: 2, hidden: false },
-      { name: '化学配比', bonus: 2, hidden: false },
-      { name: '图纸推演', bonus: 1, hidden: false },
-      { name: '工坊交易', bonus: 1, hidden: false },
-      { name: '齿轮听觉', bonus: 0, hidden: true }
-    ]
-  },
-  {
-    id: 'tpl-myth', name: '希腊神话', rule: 'd20', note: '神力恩宠与英雄气概',
-    skills: [
-      { name: '神谕解读', bonus: 4, hidden: true },
-      { name: '英雄气魄', bonus: 3, hidden: false },
-      { name: '武技决斗', bonus: 3, hidden: false },
-      { name: '航海辨识', bonus: 2, hidden: false },
-      { name: '献祭礼仪', bonus: 1, hidden: false },
-      { name: '命运直觉', bonus: 0, hidden: true }
-    ]
-  }
-]
 
 function fdUid(prefix) {
   return `${prefix || 'id'}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
@@ -265,194 +90,6 @@ function fdClamp(value, min, max) {
 
 function fdRuleMeta(ruleId) {
   return FD_RULES.find(item => item.id === ruleId) || FD_RULES[0]
-}
-
-function fdClone(value) {
-  try {
-    return JSON.parse(JSON.stringify(value))
-  } catch {
-    return value
-  }
-}
-
-function fdDefaultTracks() {
-  return [
-    {
-      id: fdUid('trk'),
-      name: '常驻肘击',
-      enabled: true,
-      mode: 'd1',
-      sides: 1,
-      entries: [
-        { id: fdUid('ent'), text: '局势持续施压：任何行动都带着额外代价', type: '常驻', theme: '压迫', min: 1, max: 1, weight: 1, conditions: [] }
-      ]
-    },
-    {
-      id: fdUid('trk'),
-      name: '进展波折',
-      enabled: true,
-      mode: 'dn',
-      sides: 6,
-      entries: [
-        { id: fdUid('ent'), text: '一条被忽略的线索自己浮现出来', type: '推动', theme: '线索', min: 1, max: 1, weight: 1, conditions: [] },
-        { id: fdUid('ent'), text: '计划中途被意外阻碍拖慢半步', type: '推动', theme: '阻碍', min: 1, max: 1, weight: 1, conditions: [] },
-        { id: fdUid('ent'), text: '第三方势力忽然插手打乱局面', type: '推动', theme: '转折', min: 1, max: 1, weight: 1, conditions: [] },
-        { id: fdUid('ent'), text: '时间压力收紧，选择窗口变窄', type: '推动', theme: '压迫', min: 1, max: 1, weight: 1, conditions: [] },
-        { id: fdUid('ent'), text: '一段关系因这轮交锋明显升温或结冰', type: '推动', theme: '关系', min: 1, max: 1, weight: 1, conditions: [] },
-        { id: fdUid('ent'), text: '环境骤变，足以改变后续行动方式', type: '推动', theme: '转折', min: 1, max: 1, weight: 1, conditions: [] }
-      ]
-    },
-    {
-      id: fdUid('trk'),
-      name: '情绪氛围',
-      enabled: true,
-      mode: 'dn',
-      sides: 4,
-      entries: [
-        { id: fdUid('ent'), text: '空气里浮着潮湿的暖意，气氛松了一线', type: '氛围', theme: '氛围', min: 1, max: 1, weight: 1, conditions: [] },
-        { id: fdUid('ent'), text: '某种说不清的紧张贴着皮肤', type: '氛围', theme: '氛围', min: 1, max: 1, weight: 1, conditions: [] },
-        { id: fdUid('ent'), text: '远处传来与此刻无关的琐碎声响', type: '氛围', theme: '氛围', min: 1, max: 1, weight: 1, conditions: [] },
-        { id: fdUid('ent'), text: '沉默本身成为对话的一部分', type: '氛围', theme: '氛围', min: 1, max: 1, weight: 1, conditions: [] }
-      ]
-    },
-    {
-      id: fdUid('trk'),
-      name: '叙事节奏',
-      enabled: true,
-      mode: 'dn',
-      sides: 3,
-      entries: [
-        { id: fdUid('ent'), text: '镜头拉远，把这段时间压缩成一句概括', type: '氛围', theme: '氛围', min: 1, max: 1, weight: 1, conditions: [] },
-        { id: fdUid('ent'), text: '定格在某个动作的细节上，慢一拍', type: '氛围', theme: '氛围', min: 1, max: 1, weight: 1, conditions: [] },
-        { id: fdUid('ent'), text: '节奏骤然加快，连话都说了一半就被打断', type: '氛围', theme: '压迫', min: 1, max: 1, weight: 1, conditions: [] }
-      ]
-    }
-  ]
-}
-
-function fdCreateGenericEventGroup(name) {
-  return {
-    id: fdUid('evg'),
-    name: String(name || '通用剧情样板组'),
-    tracks: fdDefaultTracks(),
-    updatedAt: Date.now()
-  }
-}
-
-function fdCreateEventGroup(name) {
-  return {
-    id: fdUid('evg'),
-    name: String(name || '新建事件组'),
-    tracks: [
-      {
-        id: fdUid('trk'),
-        name: '主轨',
-        enabled: true,
-        mode: 'dn',
-        sides: 4,
-        entries: [
-          { id: fdUid('ent'), text: '一件小事让局面偏移了一点', type: '推动', theme: '转折', min: 1, max: 1, weight: 1, conditions: [] }
-        ]
-      }
-    ],
-    updatedAt: Date.now()
-  }
-}
-
-function fdCreateSkillGroup(name, rule, skills) {
-  return {
-    id: fdUid('skg'),
-    name: String(name || '新建技能组'),
-    rule: rule || '2d6',
-    mvuPath: '',
-    skills: fdClone(skills || []),
-    updatedAt: Date.now()
-  }
-}
-
-function fdSkillGroupFromTemplate(template) {
-  return fdCreateSkillGroup(template.name, template.rule, template.skills)
-}
-
-function fdCreatePlotline() {
-  return { id: fdUid('plot'), title: '新的剧情线', origin: '', progress: '', status: 'active', createdAt: Date.now() }
-}
-
-function fdNormalizeSkill(list) {
-  if (!Array.isArray(list)) return []
-  return list
-    .filter(item => item && typeof item === 'object')
-    .map(item => ({
-      id: item.id || fdUid('sk'),
-      name: String(item.name || '未命名技能'),
-      bonus: fdClamp(item.bonus, -20, 60),
-      hidden: Boolean(item.hidden)
-    }))
-}
-
-function fdNormalizeTrack(track) {
-  const src = track && typeof track === 'object' ? track : {}
-  const mode = FD_TRACK_MODES.some(m => m.value === src.mode) ? src.mode : 'dn'
-  return {
-    id: src.id || fdUid('trk'),
-    name: String(src.name || '未命名轨'),
-    enabled: src.enabled !== false,
-    mode,
-    sides: fdClamp(src.sides || (mode === 'd1' ? 1 : 6), 1, 100),
-    entries: Array.isArray(src.entries)
-      ? src.entries.filter(e => e && typeof e === 'object').map(entry => ({
-        id: entry.id || fdUid('ent'),
-        text: String(entry.text || ''),
-        type: FD_ENTRY_TYPES.some(t => t.value === entry.type) ? entry.type : '推动',
-        theme: String(entry.theme || ''),
-        min: fdClamp(entry.min, 1, 100),
-        max: fdClamp(entry.max, 1, 100),
-        weight: fdClamp(entry.weight || 1, 1, 99),
-        conditions: Array.isArray(entry.conditions)
-          ? entry.conditions.filter(c => c && typeof c === 'object').map(c => ({
-            path: String(c.path || ''),
-            op: FD_CONDITION_OPS.includes(c.op) ? c.op : '=',
-            value: String(c.value ?? '')
-          }))
-          : []
-      }))
-      : []
-  }
-}
-
-function fdNormalizeEventGroup(group) {
-  const src = group && typeof group === 'object' ? group : {}
-  return {
-    id: src.id || fdUid('evg'),
-    name: String(src.name || '未命名事件组'),
-    tracks: Array.isArray(src.tracks) ? src.tracks.map(fdNormalizeTrack) : [],
-    updatedAt: Number(src.updatedAt) || Date.now()
-  }
-}
-
-function fdNormalizeSkillGroup(group) {
-  const src = group && typeof group === 'object' ? group : {}
-  return {
-    id: src.id || fdUid('skg'),
-    name: String(src.name || '未命名技能组'),
-    rule: FD_RULES.some(r => r.id === src.rule) ? src.rule : '2d6',
-    mvuPath: String(src.mvuPath || ''),
-    skills: fdNormalizeSkill(src.skills),
-    updatedAt: Number(src.updatedAt) || Date.now()
-  }
-}
-
-function fdNormalizePlotline(line) {
-  const src = line && typeof line === 'object' ? line : {}
-  const status = FD_PLOT_STATUS.some(s => s.value === src.status) ? src.status : 'active'
-  return {
-    id: src.id || fdUid('plot'),
-    title: String(src.title || '未命名剧情线'),
-    origin: String(src.origin || ''),
-    progress: String(src.progress || ''),
-    status,
-    createdAt: Number(src.createdAt) || Date.now()
-  }
 }
 
 /* ===== src/client/styles.js ===== */
@@ -624,23 +261,6 @@ const CSS_TEXT = `
 }
 .fd-section-note { font-size: 11.5px; opacity: 0.62; }
 
-.fd-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 8px;
-}
-.fd-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 9px 10px;
-  border-radius: 10px;
-  background: var(--fd-fill);
-  border: 1px solid var(--fd-line-soft);
-}
-.fd-card-title { font-size: 12.5px; font-weight: 650; }
-.fd-card-sub { font-size: 11.5px; opacity: 0.66; }
-
 .fd-row {
   display: flex;
   align-items: center;
@@ -742,9 +362,6 @@ const CSS_TEXT = `
 .fd-input.is-inline { min-height: 30px; padding: 3px 8px; }
 .fd-field { display: flex; flex-direction: column; gap: 4px; }
 .fd-field-label { font-size: 11.5px; font-weight: 650; opacity: 0.82; }
-.fd-inline-fields { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
-.fd-inline-fields > * { flex: 1 1 150px; min-width: 0; }
-
 .fd-switch {
   position: relative;
   width: 44px;
@@ -798,7 +415,6 @@ const CSS_TEXT = `
 .fd-list-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
 .fd-empty { font-size: 12px; opacity: 0.6; padding: 6px 2px; }
 .fd-hint { font-size: 11.5px; opacity: 0.66; }
-.fd-error { font-size: 12px; color: var(--fd-bad); }
 .fd-toast {
   position: sticky;
   bottom: 0;
@@ -824,17 +440,6 @@ const CSS_TEXT = `
   border-bottom: 1px solid var(--fd-line-soft);
 }
 .fd-track-body { display: flex; flex-direction: column; gap: 6px; padding: 8px 9px; }
-.fd-entry {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 7px 8px;
-  border-radius: 9px;
-  border: 1px solid var(--fd-line-soft);
-  background: var(--fd-fill);
-}
-.fd-entry-row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
-.fd-cond { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; padding-top: 4px; border-top: 1px dashed var(--fd-line-soft); }
 .fd-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
 
 /* ---------- 输入栏上方非阻塞揭晓动效条 ---------- */
@@ -932,7 +537,6 @@ const CSS_TEXT = `
 }
 .fd-turn-dt { opacity: 0.6; white-space: nowrap; }
 .fd-turn-dd { margin: 0; word-break: break-word; }
-.fd-turn-events { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 3px; }
 
 /* ---------- 状态卡 ---------- */
 .fd-status { display: flex; flex-direction: column; gap: 9px; font-size: 12.5px; color: var(--dsh-ink, inherit); }
@@ -1105,15 +709,6 @@ const CSS_TEXT = `
   gap: 8px;
   flex-wrap: wrap;
 }
-.fd-profile-note {
-  font-size: 11.5px;
-  line-height: 1.68;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: var(--fd-accent-soft);
-  border: 1px solid var(--fd-line-soft);
-  word-break: break-word;
-}
 .fd-profile-head {
   display: flex;
   align-items: baseline;
@@ -1223,10 +818,8 @@ const CSS_TEXT = `
 
 /* ---------- 手机竖屏 / 窄栏单列 ---------- */
 @media (max-width: 720px) {
-  .fd-card-grid { grid-template-columns: 1fr; }
   .fd-tabbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fd-tab { flex: 1 1 auto; }
-  .fd-inline-fields > * { flex: 1 1 100%; }
   .fd-live-sub { white-space: normal; }
   .fd-row { align-items: flex-start; }
 }
@@ -1242,7 +835,7 @@ const CSS_TEXT = `
 
 /* ===== src/client/bridge.js ===== */
 /* ------------------------------------------------------------------ *
- * bridge.js —— 宿主 RPC 安全桥、本地持久化、工作台视图模型归一化、导入导出
+ * bridge.js —— 宿主 RPC 安全桥、本地持久化、工作台视图模型归一化
  * 所有宿主调用均经 fdCall 包裹：宿主未实现该接口时返回 { ok:false }，绝不抛错。
  * ------------------------------------------------------------------ */
 
@@ -1260,17 +853,7 @@ function fdSafe(fn, fallback) {
 const FD_RPC_ALIASES = {
   'fate-dice:workbench': ['fate-dice:read-workbench', 'fate-dice:workbench-state'],
   'fate-dice:save-global-settings': ['fate-dice:save-settings', 'fate-dice:global-settings'],
-  'fate-dice:save-skill-groups': ['fate-dice:skill-groups-save', 'fate-dice:save-skills'],
-  'fate-dice:save-event-groups': ['fate-dice:event-groups-save', 'fate-dice:save-events'],
-  'fate-dice:save-binding': ['fate-dice:bind-groups', 'fate-dice:save-bind'],
-  'fate-dice:plotline': ['fate-dice:plotlines', 'fate-dice:plot-line'],
-  'fate-dice:pause-next-roll': ['fate-dice:pause-next', 'fate-dice:pause-events'],
-  'fate-dice:block-theme': ['fate-dice:theme-block'],
-  'fate-dice:unblock-theme': ['fate-dice:theme-unblock'],
-  'fate-dice:clear-cooldown': ['fate-dice:clear-cooldowns'],
-  'fate-dice:scene-resume': ['fate-dice:resume-scene'],
-  'fate-dice:import-preview': ['fate-dice:preview-import'],
-  'fate-dice:import-apply': ['fate-dice:apply-import']
+  'fate-dice:save-binding': ['fate-dice:bind-groups', 'fate-dice:save-bind']
 }
 
 function fdCall(ui, rpc, payload) {
@@ -1339,6 +922,7 @@ function fdNumber(value, fallback) {
   return Number.isFinite(num) ? num : fallback
 }
 
+/* 仅保留 6 项检定参数；其余历史字段一律丢弃 */
 function fdNormalizeSettings(raw) {
   const src = raw && typeof raw === 'object' ? raw : {}
   const settings = { ...FD_DEFAULT_SETTINGS }
@@ -1350,52 +934,21 @@ function fdNormalizeSettings(raw) {
   if (typeof src.damperLinkage === 'boolean') settings.damperLinkage = src.damperLinkage
   if (typeof src.allowHeuristicFallback === 'boolean') settings.allowHeuristicFallback = src.allowHeuristicFallback
   else if (typeof src.heuristicFallback === 'boolean') settings.allowHeuristicFallback = src.heuristicFallback
-  settings.maxPlotPush = fdClamp(fdNumber(src.maxPlotPush, FD_DEFAULT_SETTINGS.maxPlotPush), 0, 3)
-  settings.maxAmbience = fdClamp(fdNumber(src.maxAmbience, FD_DEFAULT_SETTINGS.maxAmbience), 0, 3)
-  settings.themeCooldown = fdClamp(fdNumber(src.themeCooldown, FD_DEFAULT_SETTINGS.themeCooldown), 0, 5)
-  settings.scenePath = String(src.scenePath || settings.scenePath || '')
   return settings
-}
-
-function fdNormalizeThemeList(raw) {
-  if (!raw) return []
-  if (Array.isArray(raw)) {
-    return raw
-      .map(item => (typeof item === 'string' ? { theme: item, rounds: 0 } : {
-        theme: String((item && (item.theme || item.name || item.key)) || ''),
-        rounds: fdClamp(fdNumber(item && (item.rounds ?? item.left ?? item.remaining), 0), 0, 99)
-      }))
-      .filter(item => item.theme)
-  }
-  if (typeof raw === 'object') {
-    return Object.keys(raw).map(theme => {
-      const value = raw[theme]
-      const rounds = typeof value === 'object' && value !== null ? fdNumber(value.rounds ?? value.left, 0) : fdNumber(value, 0)
-      return { theme, rounds: fdClamp(rounds, 0, 99) }
-    }).filter(item => item.theme)
-  }
-  return []
 }
 
 function fdNormalizeRecent(raw) {
   if (!Array.isArray(raw)) return []
-  return raw.filter(item => item && typeof item === 'object').map(item => {
-    const eventCount = fdNumber(
-      item.eventCount ?? item.eventsCount ?? (Array.isArray(item.events) ? item.events.length : undefined),
-      0
-    )
-    return {
-      turn: fdNumber(item.turn, 0),
-      check: String(item.check || item.skill || '检定'),
-      total: fdNumber(item.total, 0),
-      tier: String(item.tier || 'success'),
-      tierLabel: String(item.tierLabel || item.tier || '结果'),
-      hidden: Boolean(item.hidden),
-      eventCount: Math.max(0, eventCount),
-      damper: Boolean(item.damperSynced ?? item.damper ?? false),
-      rolledAt: fdNumber(item.rolledAt, 0)
-    }
-  })
+  return raw.filter(item => item && typeof item === 'object').map(item => ({
+    turn: fdNumber(item.turn, 0),
+    check: String(item.check || item.skill || '检定'),
+    total: fdNumber(item.total, 0),
+    tier: String(item.tier || 'success'),
+    tierLabel: String(item.tierLabel || item.tier || '结果'),
+    hidden: Boolean(item.hidden),
+    damper: Boolean(item.damperSynced ?? item.damper ?? false),
+    rolledAt: fdNumber(item.rolledAt, 0)
+  }))
 }
 
 function fdBindStatusSummary(view, status) {
@@ -1533,22 +1086,11 @@ function fdSaveProfileCache(gameId, profile) {
 
 function fdEmptyWorkbench() {
   const cachedSettings = fdNormalizeSettings(fdStoreGet(FD_STORAGE_KEYS.settings, FD_DEFAULT_SETTINGS))
-  const cachedSkills = fdStoreGet(FD_STORAGE_KEYS.skillGroups, [])
-  const cachedEvents = fdStoreGet(FD_STORAGE_KEYS.eventGroups, [])
   return {
     settings: cachedSettings,
     rule: '2d6',
     autoCheck: true,
-    multiTrack: true,
-    enhanced: false,
-    paused: false,
-    skillGroups: Array.isArray(cachedSkills) ? cachedSkills.map(fdNormalizeSkillGroup) : [],
-    eventGroups: Array.isArray(cachedEvents) ? cachedEvents.map(fdNormalizeEventGroup) : [],
-    skillTemplates: FD_SKILL_TEMPLATES.map(item => ({ id: item.id, name: item.name, rule: item.rule, note: item.note, count: item.skills.length })),
-    binding: { skillGroupId: '', eventGroupId: '', sceneEventGroupId: '', sceneSuspended: false },
-    plotlines: [],
-    blockedThemes: [],
-    cooldowns: [],
+    binding: { autoCheck: true },
     damper: { available: false, linkage: cachedSettings.damperLinkage },
     judgeStatus: { available: false },
     summary: { total: 0, counts: {}, recent: [] },
@@ -1570,44 +1112,11 @@ function fdMergeWorkbench(base, raw) {
     view.settings = fdNormalizeSettings({ ...view.settings, ...(settingsSrc || {}), ...(settingsSrc ? {} : payload) })
   }
   if (payload.rule) view.rule = FD_RULES.some(r => r.id === payload.rule) ? payload.rule : view.rule
+  const binding = payload.binding || payload.bind || null
+  if (binding && typeof binding === 'object' && typeof binding.autoCheck === 'boolean') view.autoCheck = binding.autoCheck
   if (typeof payload.autoCheck === 'boolean') view.autoCheck = payload.autoCheck
   else if (typeof payload.autoSkillCheck === 'boolean') view.autoCheck = payload.autoSkillCheck
-  if (typeof payload.multiTrack === 'boolean') view.multiTrack = payload.multiTrack
-  else if (typeof payload.multiTrackEvents === 'boolean') view.multiTrack = payload.multiTrackEvents
-  if (typeof payload.enhanced === 'boolean') view.enhanced = payload.enhanced
-  else if (typeof payload.enhanceMode === 'boolean') view.enhanced = payload.enhanceMode
-  if (typeof payload.paused === 'boolean') view.paused = payload.paused
-  else if (typeof payload.pauseNext === 'boolean') view.paused = payload.pauseNext
-
-  const skillGroups = payload.skillGroups || (payload.groups && payload.groups.skillGroups)
-  if (Array.isArray(skillGroups)) view.skillGroups = skillGroups.map(fdNormalizeSkillGroup)
-  const eventGroups = payload.eventGroups || (payload.groups && payload.groups.eventGroups)
-  if (Array.isArray(eventGroups)) view.eventGroups = eventGroups.map(fdNormalizeEventGroup)
-  const templates = payload.skillTemplates || payload.templates
-  if (Array.isArray(templates) && templates.length) {
-    view.skillTemplates = templates.map(item => ({
-      id: item.id || fdUid('tpl'),
-      name: String(item.name || '样板技能组'),
-      rule: FD_RULES.some(r => r.id === item.rule) ? item.rule : '2d6',
-      note: String(item.note || item.description || ''),
-      count: Array.isArray(item.skills) ? item.skills.length : fdNumber(item.count, 0),
-      skills: Array.isArray(item.skills) ? fdNormalizeSkill(item.skills) : []
-    }))
-  }
-
-  const binding = payload.binding || payload.bind || null
-  if (binding && typeof binding === 'object') {
-    view.binding = {
-      skillGroupId: String(binding.skillGroupId || binding.skill || ''),
-      eventGroupId: String(binding.eventGroupId || binding.events || ''),
-      sceneEventGroupId: String(binding.sceneEventGroupId || binding.sceneEvent || ''),
-      sceneSuspended: Boolean(binding.sceneSuspended ?? binding.sceneDisabled ?? false)
-    }
-  }
-  if (Array.isArray(payload.plotlines)) view.plotlines = payload.plotlines.map(fdNormalizePlotline)
-  else if (Array.isArray(payload.plotLines)) view.plotlines = payload.plotLines.map(fdNormalizePlotline)
-  if (payload.blockedThemes || payload.blocked) view.blockedThemes = fdNormalizeThemeList(payload.blockedThemes || payload.blocked)
-  if (payload.cooldowns || payload.cooldownThemes) view.cooldowns = fdNormalizeThemeList(payload.cooldowns || payload.cooldownThemes)
+  view.binding = { ...view.binding, autoCheck: view.autoCheck }
 
   const damper = payload.damper || payload.damperBridge || {}
   view.damper = {
@@ -1666,51 +1175,11 @@ function fdPersistSettings(ui, settings) {
   return fdCall(ui, FD_RPC.saveSettings, { settings: normalized }).then(res => ({ ...res, local: true }))
 }
 
-function fdPersistSkillGroups(ui, gameId, groups) {
-  const list = (Array.isArray(groups) ? groups : []).map(fdNormalizeSkillGroup)
-  fdStoreSet(FD_STORAGE_KEYS.skillGroups, list)
-  return fdCall(ui, FD_RPC.saveSkillGroups, { gameId: gameId || null, skillGroups: list }).then(res => ({ ...res, local: true }))
-}
-
-function fdPersistEventGroups(ui, gameId, groups) {
-  const list = (Array.isArray(groups) ? groups : []).map(fdNormalizeEventGroup)
-  fdStoreSet(FD_STORAGE_KEYS.eventGroups, list)
-  return fdCall(ui, FD_RPC.saveEventGroups, { gameId: gameId || null, eventGroups: list }).then(res => ({ ...res, local: true }))
-}
-
+/* 本局绑定仅同步「自动行动检定」开关与骰制 */
 function fdPersistBinding(ui, gameId, binding) {
   if (!gameId) return Promise.resolve({ ok: false, error: '需要进入对话后绑定' })
-  return fdCall(ui, FD_RPC.saveBinding, { gameId, binding })
-}
-
-function fdPlotlineAction(ui, gameId, action, line) {
-  if (!gameId) return Promise.resolve({ ok: false, error: '需要进入对话后管理剧情线' })
-  return fdCall(ui, FD_RPC.plotline, { gameId, action, plotline: line || null })
-}
-
-function fdPauseNextRoll(ui, gameId, paused) {
-  if (!gameId) return Promise.resolve({ ok: false, error: '需要进入对话后使用' })
-  return fdCall(ui, FD_RPC.pauseNext, { gameId, paused: Boolean(paused) })
-}
-
-function fdBlockTheme(ui, gameId, theme, rounds) {
-  if (!gameId) return Promise.resolve({ ok: false, error: '需要进入对话后使用' })
-  return fdCall(ui, FD_RPC.blockTheme, { gameId, theme, rounds: fdClamp(rounds, 1, 5) })
-}
-
-function fdUnblockTheme(ui, gameId, theme) {
-  if (!gameId) return Promise.resolve({ ok: false, error: '需要进入对话后使用' })
-  return fdCall(ui, FD_RPC.unblockTheme, { gameId, theme })
-}
-
-function fdClearCooldown(ui, gameId) {
-  if (!gameId) return Promise.resolve({ ok: false, error: '需要进入对话后使用' })
-  return fdCall(ui, FD_RPC.clearCooldown, { gameId })
-}
-
-function fdSceneResume(ui, gameId) {
-  if (!gameId) return Promise.resolve({ ok: false, error: '需要进入对话后使用' })
-  return fdCall(ui, FD_RPC.sceneResume, { gameId })
+  const autoCheck = binding && typeof binding.autoCheck === 'boolean' ? binding.autoCheck : undefined
+  return fdCall(ui, FD_RPC.saveBinding, { gameId, binding: { autoCheck } })
 }
 
 function fdFreeRoll(ui, gameId, expression) {
@@ -1758,185 +1227,6 @@ function fdSaveProfileNote(ui, gameId, payload) {
   const body = { gameId: gameId || null, customNote, rule }
   if (!rule) delete body.rule
   return fdCall(ui, FD_RPC.saveProfileNote, body).then(res => ({ ...res, customNote }))
-}
-
-/* ---------------- 导入导出 ---------------- */
-
-function fdLocalParseConfig(text) {
-  const trimmed = String(text || '').trim()
-  if (!trimmed) return { ok: false, error: '内容为空' }
-  let obj = null
-  try {
-    obj = JSON.parse(trimmed)
-  } catch (error) {
-    return { ok: false, error: 'JSON 解析失败：' + ((error && error.message) || '格式错误') }
-  }
-  const skillGroups = []
-  const eventGroups = []
-  const warnings = []
-
-  const pushSkills = raw => {
-    if (!Array.isArray(raw)) return
-    raw.forEach(item => {
-      if (!item || typeof item !== 'object') return
-      const group = fdNormalizeSkillGroup(item)
-      if (group.skills.length) skillGroups.push(group)
-      else if (Array.isArray(item.skills) && item.skills.length) skillGroups.push(group)
-    })
-  }
-  const pushEvents = raw => {
-    if (!Array.isArray(raw)) return
-    raw.forEach(item => {
-      if (!item || typeof item !== 'object') return
-      eventGroups.push(fdNormalizeEventGroup(item))
-    })
-  }
-
-  let format = '未知格式'
-  let node = obj
-  if (obj && typeof obj === 'object' && obj.plugin === 'auto-random-input') {
-    format = 'AutoRandomInput 配置包'
-    node = obj.config || obj.data || obj
-  } else if (obj && typeof obj === 'object' && obj.config && typeof obj.config === 'object') {
-    format = 'AutoRandomInput 配置包'
-    node = { ...obj.config, skillGroups: obj.skillGroups || obj.skills }
-  }
-  if (Array.isArray(node)) {
-    const looksLikeTracks = node.some(item => item && (item.tracks || item.entries || item.name))
-    if (looksLikeTracks) {
-      format = format === '未知格式' ? '事件组片段' : format
-      node.forEach(item => {
-        if (item && item.tracks) eventGroups.push(fdNormalizeEventGroup(item))
-        else if (item && Array.isArray(item.entries)) {
-          eventGroups.push(fdNormalizeEventGroup({
-            name: item.name || '导入事件组',
-            tracks: [{ name: item.name || '主轨', mode: 'dn', sides: item.sides || 6, entries: item.entries }]
-          }))
-        }
-      })
-    }
-  } else if (node && typeof node === 'object') {
-    const versioned = node.version || (node.meta && node.meta.version)
-    pushSkills(node.skillGroups || node.skills || node.skillPools || node.skillGroupPool)
-    pushEvents(node.eventGroups || node.events || node.eventPools || node.eventGroupPool)
-    if (node.tracks && Array.isArray(node.tracks)) {
-      eventGroups.push(fdNormalizeEventGroup({ name: node.name || '导入事件组', tracks: node.tracks }))
-    }
-    if (!skillGroups.length && !eventGroups.length && node.data) {
-      const inner = fdLocalParseConfig(JSON.stringify(node.data))
-      if (inner.ok) {
-        skillGroups.push(...inner.skillGroups)
-        eventGroups.push(...inner.eventGroups)
-        inner.warnings.forEach(w => warnings.push(w))
-        format = inner.format
-      }
-    }
-    if (format === '未知格式') {
-      if (versioned || node.skillGroups || node.eventGroups) format = '命运之骰 v2 原生配置'
-    }
-  }
-
-  if (!skillGroups.length && !eventGroups.length) {
-    return { ok: false, error: '未在文件中识别到技能组或事件组', format, skillGroups, eventGroups, warnings }
-  }
-  if (!skillGroups.length) warnings.push('未识别到技能组')
-  if (!eventGroups.length) warnings.push('未识别到事件组')
-  return { ok: true, format, skillGroups, eventGroups, warnings }
-}
-
-function fdNormalizePreview(raw) {
-  const src = raw && typeof raw === 'object' ? raw : {}
-  const pick = value => (Array.isArray(value) ? value : null)
-  const skills = pick(src.skillGroups) || pick(src.skills) || []
-  const events = pick(src.eventGroups) || pick(src.events) || []
-  return {
-    format: String(src.format || src.source || src.kind || '宿主识别格式'),
-    skillGroups: skills.map(fdNormalizeSkillGroup).filter(group => group.skills.length),
-    eventGroups: events.map(fdNormalizeEventGroup),
-    skillCount: fdNumber(src.skillGroupCount ?? (Array.isArray(src.skillGroups) ? skills.length : src.skillGroups), skills.length),
-    eventCount: fdNumber(src.eventGroupCount ?? (Array.isArray(src.eventGroups) ? events.length : src.eventGroups), events.length),
-    warnings: Array.isArray(src.warnings) ? src.warnings.map(String) : []
-  }
-}
-
-function fdImportPreview(ui, text, gameId) {
-  return fdCall(ui, FD_RPC.importPreview, { gameId: gameId || null, text }).then(res => {
-    if (res.ok && res.data) {
-      const hostView = fdNormalizePreview(res.data)
-      if (hostView.skillGroups.length || hostView.eventGroups.length) {
-        return { ok: true, source: 'host', ...hostView }
-      }
-      if (hostView.skillCount || hostView.eventCount) return { ok: true, source: 'host', ...hostView }
-    }
-    const local = fdLocalParseConfig(text)
-    if (!local.ok) return { ok: false, error: local.error, source: 'local', format: local.format, skillGroups: [], eventGroups: [], skillCount: 0, eventCount: 0, warnings: [] }
-    return {
-      ok: true,
-      source: 'local',
-      format: local.format,
-      skillGroups: local.skillGroups,
-      eventGroups: local.eventGroups,
-      skillCount: local.skillGroups.length,
-      eventCount: local.eventGroups.length,
-      warnings: local.warnings
-    }
-  })
-}
-
-function fdImportApply(ui, gameId, preview) {
-  const payload = {
-    gameId: gameId || null,
-    skillGroups: (preview && preview.skillGroups) || [],
-    eventGroups: (preview && preview.eventGroups) || []
-  }
-  return fdCall(ui, FD_RPC.importApply, payload).then(res => ({ ...res, localGroups: payload }))
-}
-
-function fdSampleConfig() {
-  const sampleEvent = fdCreateGenericEventGroup('示例：通用剧情样板组')
-  return {
-    version: 2,
-    kind: 'dsh-tavern-fate-dice/config',
-    exportedAt: new Date().toISOString(),
-    skillGroups: [
-      fdNormalizeSkillGroup(fdSkillGroupFromTemplate(FD_SKILL_TEMPLATES[0])),
-      fdNormalizeSkillGroup(fdSkillGroupFromTemplate(FD_SKILL_TEMPLATES[2]))
-    ],
-    eventGroups: [fdNormalizeEventGroup(sampleEvent)],
-    settings: { ...FD_DEFAULT_SETTINGS }
-  }
-}
-
-function fdDownloadJson(filename, data) {
-  return fdSafe(() => {
-    const text = JSON.stringify(data, null, 2)
-    if (typeof document === 'undefined') return false
-    const blob = new Blob([text], { type: 'application/json;charset=utf-8' })
-    const url = (typeof URL !== 'undefined' && URL.createObjectURL) ? URL.createObjectURL(blob) : ''
-    if (!url) return false
-    const link = document.createElement('a')
-    link.href = url
-    link.download = filename
-    link.style.display = 'none'
-    document.body.appendChild(link)
-    link.click()
-    setTimeout(() => {
-      fdSafe(() => document.body.removeChild(link))
-      fdSafe(() => URL.revokeObjectURL(url))
-    }, 0)
-    return true
-  }, false)
-}
-
-function fdReadFileText(file) {
-  if (!file) return Promise.reject(new Error('未选择文件'))
-  if (typeof file.text === 'function') return file.text()
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(new Error('文件读取失败'))
-    reader.readAsText(file)
-  })
 }
 
 function fdTierOf(tier) {
@@ -2112,35 +1402,6 @@ function FdText(props) {
   })
 }
 
-function FdArea(props) {
-  const { value, onChange, placeholder, rows } = props || {}
-  return h('textarea', {
-    className: 'fd-textarea',
-    rows: rows || 6,
-    value: value === undefined || value === null ? '' : String(value),
-    placeholder: placeholder || '',
-    onChange: e => (typeof onChange === 'function' ? onChange(e.target.value) : undefined)
-  })
-}
-
-function FdNum(props) {
-  const { value, onChange, min, max, step, ariaLabel } = props || {}
-  return h('input', {
-    className: 'fd-input is-num',
-    type: 'number',
-    value: value === undefined || value === null ? 0 : value,
-    min: min === undefined ? undefined : min,
-    max: max === undefined ? undefined : max,
-    step: step === undefined ? 1 : step,
-    'aria-label': ariaLabel || undefined,
-    onChange: e => {
-      if (typeof onChange !== 'function') return
-      const next = Number(e.target.value)
-      onChange(Number.isFinite(next) ? next : 0)
-    }
-  })
-}
-
 function FdSelect(props) {
   const { value, onChange, options, ariaLabel, placeholder } = props || {}
   const list = Array.isArray(options) ? options : []
@@ -2191,10 +1452,6 @@ function FdRow(props) {
   )
 }
 
-function FdEmpty(props) {
-  return h('div', { className: 'fd-empty' }, (props && props.children) || '暂无数据')
-}
-
 function FdCollapse(props) {
   const { title, sub, right, defaultOpen, children } = props || {}
   const [open, setOpen] = useState(Boolean(defaultOpen))
@@ -2214,7 +1471,7 @@ function FdCollapse(props) {
 
 /* ===== src/client/widgets.js ===== */
 /* ------------------------------------------------------------------ *
- * widgets.js —— 聊天流挂件：输入栏揭晓动效条 / 楼层折叠胶囊 / 状态卡
+ * widgets.js —— 聊天流挂件：输入栏揭晓动效条 / 楼层折叠检定胶囊 / 状态卡
  * 三处挂载点在无数据时均返回 null 或原 children（零占位、零样式污染）
  * ------------------------------------------------------------------ */
 
@@ -2265,22 +1522,6 @@ function formatRollSummary(roll, revealed) {
   return `${roll.check}检定 · ${dicePart} · ${roll.tierLabel}`
 }
 
-function fdEventLabel(item) {
-  if (!item) return ''
-  if (typeof item === 'string') return item
-  const text = item.text || item.content || item.label || ''
-  const theme = item.theme ? `#${item.theme}` : ''
-  const track = item.trackName || item.track || ''
-  const prefix = track ? track + ' · ' : ''
-  return `${prefix}${theme ? theme + ' ' : ''}${text}`.trim()
-}
-
-function fdEventList(event) {
-  if (!event) return []
-  const raw = Array.isArray(event.events) ? event.events : (Array.isArray(event.draws) ? event.draws : [])
-  return raw.filter(Boolean)
-}
-
 function fdDamperChip(roll) {
   if (!roll) return null
   const damper = roll.damper || roll.damperLink || roll.linkage
@@ -2304,7 +1545,6 @@ function LiveRollBanner(props) {
   const isFree = Boolean(event && event.kind === 'free')
   const roll = isFree ? null : (event && event.roll) || null
   const freeResult = isFree ? (event && event.result) || null : null
-  const eventItems = fdEventList(event)
   const hidden = Boolean(roll && roll.hidden && !revealed)
   const eventId = event ? event.id : null
 
@@ -2334,7 +1574,7 @@ function LiveRollBanner(props) {
     }, animation === 'compact' ? 320 : 760)
     const hider = setTimeout(() => {
       if (typeof onDismiss === 'function') onDismiss()
-    }, eventItems.length ? 5200 : 4200)
+    }, 4200)
     return () => {
       clearInterval(ticker)
       clearTimeout(stopper)
@@ -2364,7 +1604,7 @@ function LiveRollBanner(props) {
       '请前往酒馆「设置 › 叙事阻尼器」填写决策模型与 API Key（轻触收起）')))
   }
 
-  if (!roll && !freeResult && !eventItems.length) return null
+  if (!roll && !freeResult) return null
 
   const tier = hidden ? 'hidden' : fdTierOf(isFree ? 'success' : (roll ? roll.tier : 'success'))
   const faces = isFree
@@ -2374,9 +1614,7 @@ function LiveRollBanner(props) {
 
   const titleText = isFree
     ? `自由骰 ${freeResult.expression || ''}`
-    : roll
-      ? `${roll.check}检定（${roll.difficultyLabel || '判定'}）`
-      : '本轮随机事件'
+    : `${roll.check}检定（${roll.difficultyLabel || '判定'}）`
 
   const subText = rolling
     ? '正在投掷命运真骰…'
@@ -2384,9 +1622,7 @@ function LiveRollBanner(props) {
       ? `骰面 [${(freeResult.dice || []).join(', ')}]${freeResult.bonus ? (freeResult.bonus > 0 ? ' +' : ' ') + freeResult.bonus : ''} · 轻触收起`
       : hidden
         ? '结果已暗中注入本轮裁定（轻触偷看）'
-        : roll
-          ? `${formatRollSummary(roll, true)} · 轻触收起`
-          : `${eventItems.length} 条随机事件已注入本轮 · 轻触收起`
+        : `${formatRollSummary(roll, true)} · 轻触收起`
 
   return h('div', {
     className: 'fd-root',
@@ -2402,17 +1638,15 @@ function LiveRollBanner(props) {
       else if (typeof onDismiss === 'function') onDismiss()
     }
   },
-  roll || isFree
-    ? h('div', { className: 'fd-die-stage' },
-      (faces.length ? faces : ['?']).slice(0, 3).map((face, idx) => h(DieGlyph, {
-        key: idx,
-        sides,
-        label: rolling && !hidden ? tickFace : face,
-        rolling,
-        tier,
-        hidden
-      })))
-    : h('div', { className: 'fd-die-stage' }, h('span', { 'aria-hidden': 'true', style: { fontSize: 20 } }, '✦')),
+  h('div', { className: 'fd-die-stage' },
+    (faces.length ? faces : ['?']).slice(0, 3).map((face, idx) => h(DieGlyph, {
+      key: idx,
+      sides,
+      label: rolling && !hidden ? tickFace : face,
+      rolling,
+      tier,
+      hidden
+    }))),
   h('div', { className: 'fd-live-body' },
     h('div', { className: 'fd-live-title' },
       h('span', { className: 'fd-turn-summary', style: { minWidth: 0 } }, titleText),
@@ -2422,24 +1656,13 @@ function LiveRollBanner(props) {
             ? `总计 ${freeResult.total}`
             : hidden
               ? '暗骰 · 点按揭晓'
-              : roll
-                ? `${roll.tierLabel || ''} · ${roll.total}`
-                : `事件 ${eventItems.length}`)
+              : `${roll.tierLabel || ''} · ${roll.total}`)
         : null,
       !rolling ? fdDamperChip(roll) : null),
-    h('div', { className: 'fd-live-sub' }, subText),
-    !rolling && eventItems.length
-      ? h('div', { className: 'fd-btn-row', style: { marginTop: 4 } },
-        eventItems.slice(0, 3).map((item, idx) => h('span', {
-          key: idx,
-          className: 'fd-event-pill',
-          title: fdEventLabel(item)
-        }, fdEventLabel(item))))
-      : null
-  )))
+    h('div', { className: 'fd-live-sub' }, subText))))
 }
 
-/* 输入栏上方停靠：同时消费真骰揭晓与随机事件揭示两个状态通道 */
+/* 输入栏上方停靠：只消费真骰揭晓状态通道 */
 function ComposerLiveDock(props) {
   const { ui, sessionId, gameId } = props || {}
   const [liveEvent, setLiveEvent] = useState(null)
@@ -2470,27 +1693,6 @@ function ComposerLiveDock(props) {
     }
   }, [keys.join('|')])
 
-  useEffect(() => {
-    if (!keys.length) return undefined
-    const merge = data => {
-      if (!data) return
-      const items = Array.isArray(data.events) ? data.events : (Array.isArray(data) ? data : [])
-      if (!items.length) return
-      setLiveEvent(prev => {
-        const base = prev && prev.id ? prev : { id: `events-${Date.now()}`, animation: 'compact' }
-        return { ...base, events: items }
-      })
-    }
-    const offs = []
-    keys.forEach(key => {
-      offs.push(fdWatch(ui, key, 'live-events', merge))
-      offs.push(fdWatch(ui, key, 'event-draw', merge))
-    })
-    return () => {
-      offs.forEach(off => off())
-    }
-  }, [keys.join('|')])
-
   if (!liveEvent) return null
   return h('div', { className: 'fd-root', style: { padding: '0 2px 4px' } },
     h(LiveRollBanner, { event: liveEvent, onDismiss: () => setLiveEvent(null) }))
@@ -2499,24 +1701,28 @@ function ComposerLiveDock(props) {
 function fdBuildTurnDetails(record, peeked) {
   const roll = record.roll || {}
   const breakdown = roll.modifierBreakdown || {}
-  const events = Array.isArray(record.events) ? record.events : []
   const covered = Boolean(roll.hidden && !peeked)
-  const rows = []
+  if (covered) {
+    return h('dl', { className: 'fd-turn-details' },
+      h('dt', { className: 'fd-turn-dt' }, '暗骰'),
+      h('dd', { className: 'fd-turn-dd' }, '结果尚未揭晓，点按胶囊头部偷看'))
+  }
 
-  rows.push(h('dt', { key: 'dt-rule', className: 'fd-turn-dt' }, '规则与点数'))
+  const rows = []
+  rows.push(h('dt', { key: 'dt-rule', className: 'fd-turn-dt' }, '骰面算式'))
   rows.push(h('dd', { key: 'dd-rule', className: 'fd-turn-dd' },
     `${roll.rule || 'd6'} 原骰 [${(roll.dice || []).join(', ')}]`
     + ` = ${roll.total}（目标${roll.rule === 'd100' ? ' ≤ ' : ' ≥ '}${roll.target === undefined ? '—' : roll.target}）`))
 
   const skillBonus = fdNumber(breakdown.skillBonus ?? roll.skillBonus, 0)
-  rows.push(h('dt', { key: 'dt-skill', className: 'fd-turn-dt' }, '技能加值'))
+  rows.push(h('dt', { key: 'dt-skill', className: 'fd-turn-dt' }, '角色能力修正'))
   rows.push(h('dd', { key: 'dd-skill', className: 'fd-turn-dd' },
     `${roll.check || '检定'} ${skillBonus >= 0 ? '+' : ''}${skillBonus}`
     + (roll.modifier ? `（总修正 ${roll.modifier > 0 ? '+' : ''}${roll.modifier}）` : '')))
 
   if (fdNumber(breakdown.varModifier, 0) || (Array.isArray(breakdown.matchedVars) && breakdown.matchedVars.length)) {
     const matched = Array.isArray(breakdown.matchedVars) ? breakdown.matchedVars : []
-    rows.push(h('dt', { key: 'dt-var', className: 'fd-turn-dt' }, 'MVU 变量加值'))
+    rows.push(h('dt', { key: 'dt-var', className: 'fd-turn-dt' }, 'MVU 变量修正'))
     rows.push(h('dd', { key: 'dd-var', className: 'fd-turn-dd' },
       `${fdNumber(breakdown.varModifier, 0) >= 0 ? '+' : ''}${fdNumber(breakdown.varModifier, 0)}`
       + (matched.length ? ` · ${matched.map(v => `${v.label || v.path || '变量'}(${v.raw ?? v.value ?? ''})`).join('、')}` : '')))
@@ -2533,21 +1739,9 @@ function fdBuildTurnDetails(record, peeked) {
       + (damper.reason ? ` · ${damper.reason}` : '')))
   }
 
-  rows.push(h('dt', { key: 'dt-diff', className: 'fd-turn-dt' }, '难度定级'))
+  rows.push(h('dt', { key: 'dt-diff', className: 'fd-turn-dt' }, '难度理由'))
   rows.push(h('dd', { key: 'dd-diff', className: 'fd-turn-dd' }, `${roll.difficultyLabel || '判定'} · ${roll.reason || '本地启发式快判'}`))
 
-  if (events.length) {
-    rows.push(h('dt', { key: 'dt-ev', className: 'fd-turn-dt' }, '命中事件'))
-    rows.push(h('dd', { key: 'dd-ev', className: 'fd-turn-dd' },
-      h('div', { className: 'fd-turn-events' },
-        events.map((item, idx) => h('span', { key: idx, className: 'fd-event-pill', title: fdEventLabel(item) }, fdEventLabel(item))))))
-  }
-
-  if (covered) {
-    return h('dl', { className: 'fd-turn-details' },
-      h('dt', { className: 'fd-turn-dt' }, '暗骰'),
-      h('dd', { className: 'fd-turn-dd' }, '结果尚未揭晓，点按胶囊头部偷看'))
-  }
   return h('dl', { className: 'fd-turn-details' }, rows)
 }
 
@@ -2576,15 +1770,11 @@ function TurnRollCapsule(props) {
   }, [gameId, turn])
 
   const roll = record && record.roll ? record.roll : null
-  const events = record && Array.isArray(record.events) ? record.events : []
-  if (record === undefined || !record || (!roll && !events.length)) return children || null
+  if (record === undefined || !record || !roll) return children || null
 
-  const covered = Boolean(roll && roll.hidden && !peeked)
-  const tier = covered ? 'hidden' : fdTierOf(roll ? roll.tier : 'success')
-  const summary = roll
-    ? formatRollSummary(roll, peeked)
-    : `本轮事件 ×${events.length}`
-  const extra = events.length ? ` · 事件 ${events.length}` : ''
+  const covered = Boolean(roll.hidden && !peeked)
+  const tier = covered ? 'hidden' : fdTierOf(roll.tier)
+  const summary = formatRollSummary(roll, peeked)
 
   return h(Fragment, null,
     h('div', { className: 'fd-root', style: { padding: '0 0 2px' } },
@@ -2600,11 +1790,11 @@ function TurnRollCapsule(props) {
           }
         },
         h('span', { className: 'fd-turn-head-left' },
-          h('span', { 'aria-hidden': 'true' }, covered ? '🎴' : (roll ? '🎲' : '✦')),
-          h('span', { className: 'fd-turn-summary' }, summary + extra),
-          roll && roll.damper ? h('span', { className: 'fd-event-pill' }, '⛓ 阻尼') : null),
+          h('span', { 'aria-hidden': 'true' }, covered ? '🎴' : '🎲'),
+          h('span', { className: 'fd-turn-summary' }, summary),
+          roll.damper ? h('span', { className: 'fd-event-pill' }, '⛓ 阻尼') : null),
         h('span', { className: 'fd-tier-pill', 'data-tier': tier },
-          covered ? '点按揭晓' : (roll ? (roll.tierLabel || '结果') : `事件 ${events.length}`))),
+          covered ? '点按揭晓' : (roll.tierLabel || '结果'))),
         open ? fdBuildTurnDetails(record, peeked) : null)),
     children || null)
 }
@@ -2624,16 +1814,7 @@ function StatusDiceSection(props) {
     })
     const offSummary = fdWatch(ui, gameId, 'summary', summary => {
       if (!alive || !summary) return
-      const counts = summary.counts && typeof summary.counts === 'object' ? summary.counts : {}
-      setView(prev => ({
-        ...(prev || fdEmptyWorkbench()),
-        stats: {
-          total: fdNumber(summary.total, 0),
-          good: fdNumber(counts.critical, 0) + fdNumber(counts.success, 0),
-          bad: fdNumber(counts.costly, 0) + fdNumber(counts.failure, 0) + fdNumber(counts.fumble, 0)
-        },
-        recent: fdNormalizeRecent(summary.recent)
-      }))
+      setView(prev => fdBindStatusSummary(prev || fdEmptyWorkbench(), { summary }))
     })
     const offWorkbench = fdWatch(ui, gameId, 'workbench-sync', payload => {
       if (!alive || !payload) return
@@ -2649,7 +1830,6 @@ function StatusDiceSection(props) {
   const current = view || fdEmptyWorkbench()
   const judgeReady = Boolean(current.judgeStatus && current.judgeStatus.available)
   const stats = current.stats || { total: 0, good: 0, bad: 0 }
-  const activeLines = (current.plotlines || []).filter(line => line.status === 'active').slice(0, 2)
   const recent = (current.recent || []).slice(0, 5)
 
   return h('div', { className: 'fd-root fd-status' },
@@ -2675,25 +1855,19 @@ function StatusDiceSection(props) {
       h('div', { className: 'fd-stat-cell' },
         h('span', { className: 'fd-stat-num' }, String(stats.bad || 0)),
         h('span', { className: 'fd-stat-lbl' }, '代价+失手'))),
-    activeLines.length
-      ? h('div', { className: 'fd-list' },
-        h('span', { className: 'fd-hint' }, '活跃剧情线'),
-        activeLines.map(line => h('div', { key: line.id, className: 'fd-list-item' },
-          h('span', { className: 'fd-row-title' }, '📖 ' + line.title),
-          h('span', { className: 'fd-hint' }, line.progress ? line.progress.slice(0, 18) : '进展中'))))
-      : null,
     recent.length
       ? h('div', { className: 'fd-list' },
         recent.map(item => h('div', { key: `${item.turn}-${item.rolledAt}`, className: 'fd-list-item' },
-          h('span', null, `第 ${item.turn} 轮 · ${item.check}${item.eventCount ? ` · 事件 ${item.eventCount}` : ''}`),
+          h('span', null, `第 ${item.turn} 轮 · ${item.check}`),
           h('span', { className: 'fd-hint' }, item.hidden ? '暗骰' : `${item.total} ${item.tierLabel}`))))
       : h('div', { className: 'fd-hint' }, '本局尚无检定记录，发送一轮行动后开始记录'))
 }
 
 /* ===== src/client/workbench.js ===== */
 /* ------------------------------------------------------------------ *
- * workbench.js —— 右侧栏「插件」卡片区工作台外壳 + 总览标签页
+ * workbench.js —— 右侧栏「插件」卡片区极简工作台外壳（双页签）
  * 注册点：ui.registerPanel({ id: 'fate-dice', title: '命运之骰', render })
+ * 架构：.fd-root.fd-workbench → 固定顶栏 .fd-wb-top + 独立纵向滚动区 .fd-wb-scroll
  * ------------------------------------------------------------------ */
 
 function fdToastResult(res, localNote) {
@@ -2722,18 +1896,18 @@ function fdLocalRollExpression(expression) {
   }
 }
 
+/* 自由骰小工具：默认折叠，纯娱乐投掷，不写入剧情也不触发阻尼器 */
 function FreeRollCard(props) {
-  const { gameId, notify } = props || {}
+  const { gameId, notify, ui } = props || {}
   const [expr, setExpr] = useState('2d6')
   const [result, setResult] = useState(null)
   const [busy, setBusy] = useState(false)
-  const [open, setOpen] = useState(false)
 
   const roll = value => {
     const expression = String(value || expr || '').trim()
     if (!expression) return
     setBusy(true)
-    fdFreeRoll(props.ui, gameId, expression).then(res => {
+    fdFreeRoll(ui, gameId, expression).then(res => {
       if (res.ok && res.data && res.data.result) setResult(res.data.result)
       else {
         const local = fdLocalRollExpression(expression)
@@ -2745,128 +1919,47 @@ function FreeRollCard(props) {
     }).finally(() => setBusy(false))
   }
 
-  return h('div', { className: 'fd-section' },
-    h('div', { className: 'fd-section-head' },
-      h('span', { className: 'fd-section-title' }, '🎲 自由骰小工具'),
-      h(FdHelp, {
-        title: '自由骰小工具',
-        text: [
-          '支持 ndm 与加减修正量表达式，例如 2d6+1、1d20、3d10-2：前缀为骰子个数，d 后为面数，后面可跟 +N / -N。',
-          '投掷优先走宿主侧密码学真随机数；宿主接口不可用时退回本地 Math.random 模拟，并在结果里标注「本地模拟」以便区分。',
-          '这里只投骰与展示骰面，不写入剧情行动文本，也不会触发叙事阻尼器请求；结果仅留在本机界面。'
-        ]
-      }),
-      h('div', { className: 'fd-btn-row' },
-        h(FdChip, { onClick: () => setOpen(prev => !prev) }, open ? '收起' : '展开'))),
-    open
-      ? h(Fragment, null,
-        h('div', { className: 'fd-btn-row' },
-          ['2d6', '1d20', '1d100', '1d6', '2d10'].map(item => h(FdChip, {
-            key: item,
-            onClick: () => { setExpr(item); roll(item) }
-          }, item))),
-        h('div', { className: 'fd-btn-row' },
-          h('div', { style: { flex: '1 1 140px' } }, h(FdText, {
-            value: expr,
-            placeholder: '骰子表达式，如 2d6+1 / 1d20 / 1d100',
-            mono: true,
-            onChange: setExpr
-          })),
-          h(FdBtn, { primary: true, disabled: busy, onClick: () => roll() }, busy ? '投掷中…' : '投掷')),
-        result
-          ? h('div', { className: 'fd-row' },
-            h('div', { className: 'fd-row-main' },
-              h('span', { className: 'fd-row-title' }, `${result.expression} = ${result.total}`),
-              h('span', { className: 'fd-row-sub' }, `骰面 [${(result.dice || []).join(', ')}]${result.bonus ? (result.bonus > 0 ? ' +' : ' ') + result.bonus : ''}${result.local ? ' · 本地模拟' : ''}`)),
-            h('div', { className: 'fd-die-stage' },
-              (result.dice || []).slice(0, 3).map((face, idx) => h(DieGlyph, {
-                key: idx,
-                sides: result.sides || 6,
-                label: face,
-                tier: 'success'
-              }))))
-          : h('div', { className: 'fd-hint' }, '仅输入骰子表达式，不涉及剧情行动文本'))
-      : h('div', { className: 'fd-hint' }, '支持 2d6+1 / 1d20 / 1d100 等表达式'))
-}
-
-function PlotlineList(props) {
-  const { view, onCreate, onUpdate, onRemove, onStatus } = props || {}
-  const [editing, setEditing] = useState('')
-  const [draft, setDraft] = useState({ title: '', origin: '', progress: '' })
-  const all = view.plotlines || []
-  const active = all.filter(line => line.status === 'active').slice(0, 3)
-  const others = all.filter(line => !active.includes(line))
-
-  const beginEdit = line => {
-    setEditing(line.id)
-    setDraft({ title: line.title, origin: line.origin, progress: line.progress })
-  }
-  const commit = () => {
-    if (!editing) return
-    onUpdate && onUpdate(editing, { title: draft.title.trim() || '未命名剧情线', origin: draft.origin, progress: draft.progress })
-    setEditing('')
-  }
-
-  const renderLine = line => {
-    const isEditing = editing === line.id
-    const statusLabel = (FD_PLOT_STATUS.find(s => s.value === line.status) || FD_PLOT_STATUS[0]).label
-    return h('div', { key: line.id, className: 'fd-row', style: { alignItems: 'flex-start' } },
+  return h(FdCollapse, {
+    title: '🎲 自由骰小工具',
+    sub: '默认折叠 · 纯娱乐投掷',
+    right: h(FdHelp, {
+      title: '自由骰小工具',
+      text: [
+        '支持 ndm 与加减修正量表达式，例如 2d6+1、1d20、3d10-2：前缀为骰子个数，d 后为面数，后面可跟 +N / -N。',
+        '投掷优先走宿主侧密码学真随机数；宿主接口不可用时退回本地 Math.random 模拟，并在结果里标注「本地模拟」以便区分。',
+        '这里只投骰与展示骰面，不写入剧情行动文本，也不会触发叙事阻尼器请求；结果仅留在本机界面。'
+      ]
+    })
+  },
+  h('div', { className: 'fd-btn-row' },
+    ['2d6+1', '1d20', '1d100', '2d6', '1d6'].map(item => h(FdChip, {
+      key: item,
+      onClick: () => { setExpr(item); roll(item) }
+    }, item))),
+  h('div', { className: 'fd-btn-row' },
+    h('div', { style: { flex: '1 1 140px' } }, h(FdText, {
+      value: expr,
+      placeholder: '骰子表达式，如 2d6+1 / 1d20 / 1d100',
+      mono: true,
+      onChange: setExpr
+    })),
+    h(FdBtn, { primary: true, disabled: busy, onClick: () => roll() }, busy ? '投掷中…' : '投掷')),
+  result
+    ? h('div', { className: 'fd-row' },
       h('div', { className: 'fd-row-main' },
-        isEditing
-          ? h(Fragment, null,
-            h(FdText, { value: draft.title, onChange: v => setDraft({ ...draft, title: v }), placeholder: '剧情线标题' }),
-            h(FdText, { value: draft.origin, onChange: v => setDraft({ ...draft, origin: v }), placeholder: '起因' }),
-            h(FdText, { value: draft.progress, onChange: v => setDraft({ ...draft, progress: v }), placeholder: '当前进展' }))
-          : h(Fragment, null,
-            h('span', { className: 'fd-row-title' }, '📖 ' + line.title),
-            h('span', { className: 'fd-row-sub' }, `起因：${line.origin || '未填写'}`),
-            h('span', { className: 'fd-row-sub' }, `进展：${line.progress || '尚未推进'}`))),
-      h('div', { className: 'fd-row-end' },
-        h(FdBadge, { tone: line.status === 'active' ? 'ok' : (line.status === 'paused' ? 'warn' : 'off') }, statusLabel),
-        isEditing
-          ? h(FragBtnSave, { onSave: commit, onCancel: () => setEditing('') })
-          : h('div', { className: 'fd-btn-row' },
-            h(FdBtn, { small: true, onClick: () => beginEdit(line) }, '纠偏'),
-            line.status === 'active'
-              ? h(FdBtn, { small: true, onClick: () => onStatus && onStatus(line.id, 'paused') }, '暂停')
-              : line.status === 'paused'
-                ? h(FdBtn, { small: true, onClick: () => onStatus && onStatus(line.id, 'active') }, '恢复')
-                : null,
-            line.status !== 'closed'
-              ? h(FdBtn, { small: true, onClick: () => onStatus && onStatus(line.id, 'closed') }, '完结')
-              : null,
-            h(FdBtn, { small: true, danger: true, onClick: () => onRemove && onRemove(line.id) }, '删除'))))
-  }
-
-  return h('div', { className: 'fd-section' },
-    h('div', { className: 'fd-section-head' },
-      h('span', { className: 'fd-section-title' }, '📖 正在跟进的持续剧情线'),
-      h(FdHelp, {
-        title: '正在跟进的持续剧情线',
-        text: [
-          '最多同时跟进 3 条活跃剧情线；每条记录标题、起因与当前进展，模型会在每轮生成时把活跃剧情线一并纳入上下文，推动故事沿着已铺设的线索前进。',
-          '「纠偏」可直接改写标题/起因/进展，用于模型跑偏后及时校正；「暂停」保留记录但本轮不推进，「完结」归档到「其他剧情线」折叠区，「删除」则彻底移除。',
-          '剧情线按本局 gameId 独立保存，切换对话互不影响。'
-        ]
-      }),
-      h('div', { className: 'fd-btn-row' },
-        h(FdBtn, { small: true, primary: true, onClick: () => onCreate && onCreate() }, '＋ 新增剧情线'))),
-    active.length
-      ? h('div', { className: 'fd-list' }, active.map(renderLine))
-      : h('div', { className: 'fd-hint' }, '尚无活跃剧情线：新增后模型会在每轮推进并保持前后一致'),
-    others.length
-      ? h(FdCollapse, { title: `其他剧情线（${others.length}）`, sub: '暂停 / 已完结' }, others.map(renderLine))
-      : null)
+        h('span', { className: 'fd-row-title' }, `${result.expression} = ${result.total}`),
+        h('span', { className: 'fd-row-sub' }, `骰面 [${(result.dice || []).join(', ')}]${result.bonus ? (result.bonus > 0 ? ' +' : ' ') + result.bonus : ''}${result.local ? ' · 本地模拟' : ''}`)),
+      h('div', { className: 'fd-die-stage' },
+        (result.dice || []).slice(0, 3).map((face, idx) => h(DieGlyph, {
+          key: idx,
+          sides: result.sides || 6,
+          label: face,
+          tier: 'success'
+        }))))
+    : h('div', { className: 'fd-hint' }, '仅输入骰子表达式，不涉及剧情行动文本'))
 }
 
-function FragBtnSave(props) {
-  const { onSave, onCancel } = props || {}
-  return h('div', { className: 'fd-btn-row' },
-    h(FdBtn, { small: true, primary: true, onClick: onSave }, '保存'),
-    h(FdBtn, { small: true, onClick: onCancel }, '取消'))
-}
-
-/* 决策模型未就绪时的醒目引导横幅：跨标签页常驻，可收起详情但保留横幅 */
+/* 决策模型未就绪时的醒目引导横幅：常驻在「检定与能力」页首，可收起详情但保留横幅 */
 function DecisionModelGuideBanner(props) {
   const { view, onRecheck, checking } = props || {}
   const [open, setOpen] = useState(true)
@@ -2905,137 +1998,10 @@ function DecisionModelGuideBanner(props) {
   )
 }
 
-function OverviewTab(props) {
-  const { ui, gameId, view, hasGame, notify, actions } = props || {}
-  const judge = view.judgeStatus || { available: false }
-  const damper = view.damper || { available: false, linkage: false }
-  const stats = view.stats || { total: 0, good: 0, bad: 0 }
-  const recent = (view.recent || []).slice(0, 8)
-
-  const toggle = (key, next) => actions && actions.setGameFlags({ [key]: next })
-
-  return h(Fragment, null,
-    h('div', { className: 'fd-badge-row' },
-      h(FdBadge, { tone: judge.available ? 'ok' : (view.settings && view.settings.allowHeuristicFallback ? 'off' : 'warn') },
-        judge.available
-          ? `⚡ 决策模型：${judge.provider || '已就绪'}`
-          : (view.settings && view.settings.allowHeuristicFallback ? '🧭 本地关键词兜底' : '⚠️ 待配置阻尼决策模型')),
-      h(FdBadge, { tone: damper.available ? (damper.linkage ? 'ok' : 'warn') : 'off' },
-        damper.available
-          ? (damper.linkage ? '⛓ 叙事阻尼器双向联动' : '⛓ 阻尼器可用 · 未联动')
-          : '⛓ 未检测到叙事阻尼器'),
-      view.source === 'local' ? h(FdBadge, { tone: 'off' }, '🖥 本地配置模式') : null),
-
-    h('div', { className: 'fd-card-grid' },
-      h('div', { className: 'fd-card' },
-        h('div', { className: 'fd-row-main' },
-          h('div', { className: 'fd-label-row' },
-            h('span', { className: 'fd-card-title' }, '自动技能检定'),
-            h(FdHelp, {
-              title: '自动技能检定',
-              text: [
-                '你在主聊天框照常发送一行行动描述后，插件会在发送前拦截本轮输入，把它交给叙事阻尼器的决策模型评估本次行动的不确定性。',
-                '模型会结合【角色卡/玩家人设 + 启用世界书 + 当前 MVU 变量 + 近期正文】实时评定主角在该行动上的能力加减值（−2 ~ +3），并按处境裁定 5 档难度（极难 / 困难 / 普通 / 容易 / 极易）——无需任何手填技能表。',
-                '随后由密码学真随机数投骰，把骰面、总计、档位结论注入本轮上下文，再交还给宿主继续生成正文——整个过程不额外占用一次对话请求。',
-                '角色能力画像在「角色能力」标签页可查看，随受伤、突破或装备变化自动演进。'
-              ]
-            })),
-          h('span', { className: 'fd-card-sub' }, '发送前毫秒定难并投掷真骰')),
-        h(FdSwitch, { on: view.autoCheck, label: '自动技能检定', onChange: next => toggle('autoCheck', next) })),
-      h('div', { className: 'fd-card' },
-        h('div', { className: 'fd-row-main' },
-          h('div', { className: 'fd-label-row' },
-            h('span', { className: 'fd-card-title' }, '多轨随机事件'),
-            h(FdHelp, {
-              title: '多轨随机事件',
-              text: [
-                '开启后每一轮发送时，绑定的事件组会按各条轨道分别独立投掷真骰，轨道之间互不影响、互不稀释概率。',
-                '命中的事件会被静默注入本轮提示词，供模型自然融入叙事，不会额外弹出聊天气泡或打断正文。',
-                '关闭时只保留单轨抽取逻辑。'
-              ]
-            })),
-          h('span', { className: 'fd-card-sub' }, '多条轨道同时抽取并注入本轮')),
-        h(FdSwitch, { on: view.multiTrack, label: '多轨随机事件', onChange: next => toggle('multiTrack', next) })),
-      h('div', { className: 'fd-card' },
-        h('div', { className: 'fd-row-main' },
-          h('div', { className: 'fd-label-row' },
-            h('span', { className: 'fd-card-title' }, '剧情增强 3.2 双轨模式'),
-            h(FdHelp, {
-              title: '剧情增强 3.2 双轨模式',
-              text: [
-                '开启后支持「长期常驻事件组 + 当前场景追加事件组」叠加抽取：常驻组保证世界观底色连续，追加组贴合眼前场景。',
-                '同时启用每轮「剧情推动 / 氛围描写」的数量上限、同主题冷却（避免同一题材连续刷屏）、临时屏蔽（本轮禁选某组或某事件）、AND 条件过滤（多条件同时满足才命中）以及持续剧情线追踪。',
-                '关闭后回到单组抽取，上述增强约束不再生效。'
-              ]
-            })),
-          h('span', { className: 'fd-card-sub' }, '长期事件组 + 当前场景追加事件组')),
-        h(FdSwitch, { on: view.enhanced, label: '剧情增强双轨', onChange: next => toggle('enhanced', next) })),
-      h('div', { className: 'fd-card' },
-        h('div', { className: 'fd-row-main' },
-          h('div', { className: 'fd-label-row' },
-            h('span', { className: 'fd-card-title' }, '下一次发送暂停随机推动'),
-            h(FdHelp, {
-              title: '下一次发送暂停随机推动',
-              text: [
-                '点按后，仅下一条新发送会把「剧情推动」类随机事件的每轮上限临时置为 0，让本轮专注于你指定的剧情走向。',
-                '常驻要求与氛围描写不受影响，仍会正常抽取；本轮结算完成后该暂停会自动恢复，无需手动关闭。'
-              ]
-            })),
-          h('span', { className: 'fd-card-sub' }, hasGame ? '本轮只投检定，不抽随机事件' : '进入对话后可用')),
-        h(FdBtn, {
-          small: true,
-          primary: view.paused,
-          disabled: !hasGame,
-          onClick: () => actions && actions.pauseNext(!view.paused)
-        }, view.paused ? '已暂停 · 点按恢复' : '暂停一次'))),
-
-    h(PlotlineList, {
-      view,
-      onCreate: () => actions && actions.createPlotline(),
-      onUpdate: (id, patch) => actions && actions.updatePlotline(id, patch),
-      onStatus: (id, status) => actions && actions.setPlotlineStatus(id, status),
-      onRemove: id => actions && actions.removePlotline(id)
-    }),
-
-    h('div', { className: 'fd-section' },
-      h('div', { className: 'fd-section-head' },
-        h('span', { className: 'fd-section-title' }, '📊 本局统计与最近记录'),
-        h(FdHelp, {
-          title: '本局统计与最近记录',
-          text: [
-            '统计口径：累计检定 = 本局自动检定与自由骰投掷的总次数；大成功+成功 = 档位 critical 与 success 之和；代价+失手 = costly、failure 与 fumble 之和。',
-            '最近记录保留最近 8 轮，每行显示轮次、所用技能、事件条数、是否经过叙事阻尼器联动，以及总计骰值与档位标签；暗骰只显示结果标签不暴露骰面。',
-            '数据全部落本地存储，切换对话即按本局 gameId 分别统计，不会串局。'
-          ]
-        }),
-        h('span', { className: 'fd-section-note' }, hasGame ? '最近 8 轮' : '需要进入对话')),
-      h('div', { className: 'fd-stat-grid' },
-        h('div', { className: 'fd-stat-cell' },
-          h('span', { className: 'fd-stat-num' }, String(stats.total || 0)),
-          h('span', { className: 'fd-stat-lbl' }, '累计检定')),
-        h('div', { className: 'fd-stat-cell' },
-          h('span', { className: 'fd-stat-num' }, String(stats.good || 0)),
-          h('span', { className: 'fd-stat-lbl' }, '大成功/成功')),
-        h('div', { className: 'fd-stat-cell' },
-          h('span', { className: 'fd-stat-num' }, String(stats.bad || 0)),
-          h('span', { className: 'fd-stat-lbl' }, '代价/失手'))),
-      recent.length
-        ? h('div', { className: 'fd-list' },
-          recent.map(item => h('div', { key: `${item.turn}-${item.rolledAt}`, className: 'fd-list-item' },
-            h('span', null, `第 ${item.turn} 轮 · ${item.check}`),
-            h('span', { className: 'fd-btn-row' },
-              item.eventCount ? h('span', { className: 'fd-event-pill' }, `事件 ${item.eventCount}`) : null,
-              item.damper ? h('span', { className: 'fd-event-pill' }, '⛓ 阻尼') : null,
-              h('span', { className: 'fd-hint' }, item.hidden ? '暗骰' : `${item.total} ${item.tierLabel}`)))))
-        : h('div', { className: 'fd-hint' }, '本局尚无检定记录')),
-
-    h(FreeRollCard, { ui, gameId, notify }))
-}
-
 function WorkbenchPanel(props) {
   const { ui, gameId } = props || {}
   const hasGame = Boolean(gameId)
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useState('checks')
   const [view, setView] = useState(fdEmptyWorkbench)
   const [checking, setChecking] = useState(false)
   const [toast, setToast] = useState('')
@@ -3093,18 +2059,19 @@ function WorkbenchPanel(props) {
     })
   }
 
-  const persistGroups = (kind, list) => {
-    patch(() => ({ [kind]: list }))
-    const save = kind === 'skillGroups' ? fdPersistSkillGroups : fdPersistEventGroups
-    return save(ui, gameId, list).then(res => {
-      notify(fdToastResult(res, kind === 'skillGroups' ? '技能组已保存在本地' : '事件组已保存在本地'))
-      return list
-    })
+  const setAutoCheck = next => {
+    patch(prev => ({ autoCheck: next, binding: { ...prev.binding, autoCheck: next } }))
+    if (!hasGame) {
+      notify('开关已记录：进入任意对话后生效')
+      return
+    }
+    fdPersistBinding(ui, gameId, { autoCheck: next })
+      .then(res => notify(fdToastResult(res, '开关已记录，进入对话后由宿主生效')))
   }
 
   const actions = {
     persistSettings,
-    persistGroups,
+    setAutoCheck,
     setRule(rule) {
       patch(() => ({ rule }))
       notify(`检定骰制已切换为 ${fdRuleMeta(rule).label}`)
@@ -3115,92 +2082,17 @@ function WorkbenchPanel(props) {
         characterProfile: profile ? fdNormalizeCharacterProfile(profile) : prev.characterProfile,
         contextSources: contextSources ? fdNormalizeContextSources(contextSources) : prev.contextSources
       }))
-    },
-    setGameFlags(flags) {
-      patch(prev => {
-        const next = { ...prev, ...flags }
-        if (flags.autoCheck !== undefined || flags.multiTrack !== undefined || flags.enhanced !== undefined) {
-          if (hasGame) {
-            fdPersistBinding(ui, gameId, { ...prev.binding, autoCheck: next.autoCheck, multiTrack: next.multiTrack, enhanced: next.enhanced })
-              .then(res => notify(fdToastResult(res, '开关已记录，进入对话后由宿主生效')))
-          } else {
-            notify('开关已记录：进入任意对话后生效')
-          }
-        }
-        return next
-      })
-    },
-    pauseNext(paused) {
-      patch(() => ({ paused }))
-      fdPauseNextRoll(ui, gameId, paused).then(res => {
-        notify(res.ok ? (paused ? '下一次发送已暂停随机推动' : '已恢复随机推动') : '仅本地面板已标记：' + String(res.error || '宿主接口不可用'))
-      })
-    },
-    createPlotline() {
-      const activeCount = (view.plotlines || []).filter(line => line.status === 'active').length
-      if (activeCount >= 3) {
-        notify('活跃剧情线已达 3 条上限，请先暂停或完结一条')
-        return
-      }
-      const line = fdCreatePlotline()
-      patch(prev => ({ plotlines: [...(prev.plotlines || []), line] }))
-      fdPlotlineAction(ui, gameId, 'add', line).then(res => {
-        if (!res.ok) notify('新剧情线已添加到本地面板（宿主接口不可用）')
-        else notify('剧情线已创建，模型将逐轮推进')
-      })
-    },
-    updatePlotline(id, linePatch) {
-      patch(prev => ({
-        plotlines: (prev.plotlines || []).map(line => (line.id === id ? { ...line, ...linePatch } : line))
-      }))
-      fdPlotlineAction(ui, gameId, 'update', { id, ...linePatch }).then(res => {
-        notify(res.ok ? '剧情线已纠偏并保存' : '剧情线已在本地面板纠偏')
-      })
-    },
-    setPlotlineStatus(id, status) {
-      patch(prev => ({
-        plotlines: (prev.plotlines || []).map(line => (line.id === id ? { ...line, status } : line))
-      }))
-      fdPlotlineAction(ui, gameId, 'status', { id, status }).then(res => {
-        if (!res.ok) notify('状态已更新（仅本地）')
-      })
-    },
-    removePlotline(id) {
-      patch(prev => ({ plotlines: (prev.plotlines || []).filter(line => line.id !== id) }))
-      fdPlotlineAction(ui, gameId, 'remove', { id }).then(res => {
-        notify(res.ok ? '剧情线已删除' : '剧情线已从本地面板删除')
-      })
-    },
-    binding() {
-      return view.binding || {}
-    },
-    setBinding(nextBinding) {
-      patch(prev => ({ binding: { ...prev.binding, ...nextBinding } }))
-      if (!hasGame) {
-        notify('绑定已记录：进入对话后生效')
-        return Promise.resolve({ ok: false, error: '需要进入对话' })
-      }
-      return fdPersistBinding(ui, gameId, { ...view.binding, ...nextBinding }).then(res => {
-        notify(fdToastResult(res, '绑定已保存到本地'))
-        return res
-      })
     }
   }
 
   const tabs = [
-    ['overview', '总览'],
-    ['checks', '角色能力'],
-    ['events', '随机事件'],
-    ['settings', '设置与导入导出']
+    ['checks', '检定与能力'],
+    ['settings', '检定设置']
   ]
 
-  const body = tab === 'checks'
-    ? h(ChecksTab, { ui, gameId, hasGame, view, actions, notify })
-    : tab === 'events'
-      ? h(EventsTab, { ui, gameId, hasGame, view, actions, notify })
-      : tab === 'settings'
-        ? h(SettingsTab, { ui, gameId, hasGame, view, actions, notify })
-        : h(OverviewTab, { ui, gameId, hasGame, view, actions, notify })
+  const body = tab === 'settings'
+    ? h(SettingsTab, { ui, gameId, hasGame, view, actions, notify })
+    : h(ChecksTab, { ui, gameId, hasGame, view, actions, notify, checking, onRecheck: recheckModel })
 
   return h('div', { className: 'fd-root fd-workbench' },
     h('div', { className: 'fd-wb-top' },
@@ -3208,8 +2100,8 @@ function WorkbenchPanel(props) {
         h('div', null,
           h('h3', { className: 'fd-wb-title' }, '🎲 命运之骰'),
           h('p', { className: 'fd-wb-sub' }, hasGame
-            ? '本局工作台：骰制、角色能力画像、随机事件与阻尼联动'
-            : '全局设置与共享库可随时编辑；进入任意对话后可配置本局绑定与剧情线')),
+            ? '本局工作台：检定骰制、AI 能力画像与统计一眼看懂'
+            : '全局检定设置可随时编辑；进入任意对话后自动开启本局检定')),
         h('div', { className: 'fd-btn-row' },
           h(FdBadge, { tone: hasGame ? 'ok' : 'off' }, hasGame ? '已绑定本局' : '未进入对话'))),
       h('div', { className: 'fd-tabbar', role: 'tablist' },
@@ -3221,15 +2113,13 @@ function WorkbenchPanel(props) {
           className: 'fd-tab' + (tab === value ? ' is-active' : ''),
           onClick: () => setTab(value)
         }, label)))),
-    h('div', { className: 'fd-wb-scroll' },
-      h(DecisionModelGuideBanner, { view, onRecheck: recheckModel, checking }),
-      body),
+    h('div', { className: 'fd-wb-scroll' }, body),
     toast ? h('div', { className: 'fd-toast', role: 'status' }, toast) : null)
 }
 
 /* ===== src/client/tab-checks.js ===== */
 /* ------------------------------------------------------------------ *
- * tab-checks.js —— 「角色能力（AI 自动）」标签页
+ * tab-checks.js —— 页签 1「检定与能力」（默认页）
  * 设计原则：玩家零手填。骰制只选风格，能力加减值全部由决策模型
  * 依据【角色卡/人设 + 世界书 + MVU 变量 + 近期正文】实时评定。
  * ------------------------------------------------------------------ */
@@ -3284,13 +2174,18 @@ function ContextSourceCell(props) {
 }
 
 function ChecksTab(props) {
-  const { ui, gameId, hasGame, view, actions, notify } = props || {}
-  const profile = view.characterProfile || fdEmptyCharacterProfile()
-  const context = view.contextSources || fdEmptyContextSources()
+  const { ui, gameId, hasGame, view, actions, notify, checking, onRecheck } = props || {}
+  const judge = view.judgeStatus || { available: false }
+  const damper = view.damper || { available: false, linkage: false }
+  const settings = view.settings || FD_DEFAULT_SETTINGS
   const rule = view.rule || '2d6'
   const meta = fdRuleMeta(rule)
+  const profile = view.characterProfile || fdEmptyCharacterProfile()
+  const context = view.contextSources || fdEmptyContextSources()
   const traits = Array.isArray(profile.traits) ? profile.traits : []
   const highlights = Array.isArray(profile.mvuHighlights) ? profile.mvuHighlights : []
+  const stats = view.stats || { total: 0, good: 0, bad: 0 }
+  const recent = (view.recent || []).slice(0, 8)
   const [refreshing, setRefreshing] = useState(false)
   const [noteDraft, setNoteDraft] = useState(profile.customNote || '')
   const [savingNote, setSavingNote] = useState(false)
@@ -3344,7 +2239,43 @@ function ChecksTab(props) {
   const nameText = profile.characterName || context.cardName || context.playerName || '主角'
 
   return h(Fragment, null,
-    /* ---------------- 1. 检定骰制 ---------------- */
+    /* ---------------- 0. 状态徽章行 + 未配模型引导 ---------------- */
+    h('div', { className: 'fd-badge-row' },
+      h(FdBadge, { tone: judge.available ? 'ok' : (settings.allowHeuristicFallback ? 'off' : 'warn') },
+        judge.available
+          ? `⚡ 决策模型：${judge.provider || '已就绪'}`
+          : (settings.allowHeuristicFallback ? '🧭 本地关键词兜底' : '⚠️ 待配置阻尼决策模型')),
+      h(FdBadge, { tone: damper.available ? (damper.linkage ? 'ok' : 'warn') : 'off' },
+        damper.available
+          ? (damper.linkage ? '⛓ 叙事阻尼器双向联动' : '⛓ 阻尼器可用 · 未联动')
+          : '⛓ 未检测到叙事阻尼器'),
+      view.source === 'local' ? h(FdBadge, { tone: 'off' }, '🖥 本地配置模式') : null),
+    h(DecisionModelGuideBanner, { view, onRecheck, checking }),
+
+    /* ---------------- 1. 自动行动检定 ---------------- */
+    h(FdSection, {
+      title: '⚡ 自动行动检定',
+      note: '发送前定难并投掷真骰',
+      help: [
+        '你在主聊天框照常发送一行行动描述后，插件会在生成正文前把它交给叙事阻尼器的决策模型评估本次行动的不确定性。',
+        '模型会结合【角色卡/玩家人设 + 启用世界书 + 当前 MVU 变量 + 近期正文】实时评定主角在该行动上的能力加减值（−2 ~ +3），并按处境裁定 5 档难度（极难 / 困难 / 普通 / 容易 / 极易）——无需任何手填技能表。',
+        '随后由密码学真随机数投骰，把骰面、总计、档位结论注入本轮上下文，再交还给宿主继续生成正文——整个过程不额外消耗一次主模型对话轮次。',
+        '角色能力画像在下方「AI 动态角色能力画像」中可查看，随受伤、突破或装备变化自动演进。',
+        '关闭本开关后不再自动检定：正文照常生成，只是没有骰子与难度裁定。'
+      ].join('\n')
+    },
+      h(FdRow, {
+        plain: true,
+        title: '自动行动检定',
+        sub: '发送行动前毫秒定难并投掷密码学真骰，不额外占用对话轮次'
+      },
+      h(FdSwitch, {
+        on: Boolean(view.autoCheck),
+        label: '自动行动检定',
+        onChange: next => (actions && actions.setAutoCheck ? actions.setAutoCheck(next) : undefined)
+      }))),
+
+    /* ---------------- 2. 检定骰制 ---------------- */
     h(FdSection, {
       title: '🎲 检定骰制',
       note: meta.hint,
@@ -3363,9 +2294,9 @@ function ChecksTab(props) {
           active: rule === item.id,
           onClick: () => switchRule(item.id)
         }, item.label))),
-      h('div', { className: 'fd-hint' }, '切换即同步宿主与后台画像，能力加减值由 AI 自动折算')),
+      h('div', { className: 'fd-hint' }, '切换即同步宿主与后台画像，下方能力加值由 AI 自动重算')),
 
-    /* ---------------- 2. AI 动态角色能力画像 ---------------- */
+    /* ---------------- 3. AI 动态角色能力画像 ---------------- */
     h(FdSection, {
       title: '🤖 AI 动态角色能力画像',
       note: hasProfile ? `已识别 ${traits.length} 条能力` : '尚未建档',
@@ -3373,7 +2304,7 @@ function ChecksTab(props) {
         '本页没有任何需要你填写的数字表格：主角在每项行动上的能力加减值，全部由决策模型在「发送前检定」时实时评定。',
         '评定依据是四类上下文：① 角色卡 / 玩家人设；② 当前启用的世界书条目；③ MVU 实时变量（属性、状态、装备等）；④ 近期正文记忆。模型据此判断这次行动属于主角的强项、普通还是短板，并给出 −2 ~ +3 的能力档位。',
         '下方画像由后台在每轮结算时自动演进：受伤、突破、装备更替、关系变化都会让特长与短板随之增减，无需手动维护。',
-        '「从本局设定与正文重新提取」会立刻让 AI 重新通读一遍上下文并重建画像，适合刚导入角色卡、刚改过世界书、或剧情发生重大转折后手动刷新一次。',
+        '「✨ 从本局设定与正文重新提取」会立刻让 AI 重新通读一遍上下文并重建画像，适合刚导入角色卡、刚改过世界书、或剧情发生重大转折后手动刷新一次。',
         '画像只是给 AI 的参考快照，即使尚未建档，每轮发前检定依然会实时读取人设与 MVU 自动定加值——所以这里空着也完全不影响游玩。'
       ].join('\n')
     },
@@ -3388,31 +2319,8 @@ function ChecksTab(props) {
           ? h(FdBadge, { tone: 'off' }, `更新于第 ${profile.updatedTurn} 轮`)
           : null,
         !hasGame ? h('span', { className: 'fd-hint' }, '进入对话后可用') : null),
-      h('div', { className: 'fd-profile-note' },
-        '数值修正全由 AI 自动完成，无需手动配置！每次发送行动时，决策模型会自动结合【角色卡/玩家人设 + 启用世界书 + 当前 MVU 变量 + 近期正文】实时评定主角在该行动上的能力加减值；每轮后台结算时还会随受伤、突破或装备变化自动演进下方画像。'),
-      hasProfile
-        ? h(Fragment, null,
-          h('div', { className: 'fd-profile-head' },
-            h('span', { className: 'fd-profile-name' }, nameText),
-            profile.archetype ? h('span', { className: 'fd-profile-arch' }, profile.archetype) : null),
-          h('div', { className: 'fd-profile-grid' },
-            traits.map(item => h(ProfileTraitCard, { key: item.id || item.label, trait: item }))))
-        : h('div', { className: 'fd-hint' },
-          '进入对话完成首轮回复后后台将自动建立角色能力画像，也可点击右上角按钮立即让 AI 提取；即使尚未建档，每轮发前检定仍会实时读取人设与 MVU 自动定加值。')),
 
-    /* ---------------- 3. 四维上下文源 ---------------- */
-    h(FdSection, {
-      title: '📡 自动接入的四维上下文源',
-      note: 'AI 评定能力的全部依据',
-      help: [
-        '这四格是决策模型评定能力加减值时实际读取的上下文，全部自动接入，无需任何手动配置。',
-        '角色卡 / 人设：读取当前对话绑定的角色卡与你的玩家人设，决定主角的身份、背景与基本能力倾向。',
-        '激活世界书：只统计当前处于启用状态的条目（关键词命中后才注入），它们提供世界观规则、势力设定等硬约束。',
-        'MVU 实时变量：读取魔法变量更新（MVU）里的属性、状态、装备等指标，是「受伤 / 突破 / 换装备」后能力随之变化的直接来源。',
-        '近期正文记忆：取最近若干轮正文作为短期记忆，保证判定与刚刚发生的情节一致，不会前后矛盾。',
-        '若某一格显示未接入，通常是因为尚未进入对话、该对话没有角色卡，或世界书 / MVU 变量尚未产生数据，不影响基础判定。'
-      ].join('\n')
-    },
+      /* 四源上下文接入小卡片 */
       h('div', { className: 'fd-ctx-grid' },
         h(ContextSourceCell, {
           title: '角色卡 / 人设',
@@ -3424,42 +2332,53 @@ function ChecksTab(props) {
           title: '激活世界书',
           on: fdNumber(context.loreCount, 0) > 0,
           value: fdNumber(context.loreCount, 0) > 0 ? `${context.loreCount} 条规则` : '暂无启用条目',
-          sub: fdNumber(context.loreCount, 0) > 0 ? '关键词命中后注入判定' : '启用世界书后自动接入'
+          sub: '关键词命中后注入判定'
         }),
         h(ContextSourceCell, {
           title: 'MVU 实时变量',
           on: fdNumber(context.mvuKeyCount, 0) > 0,
           value: fdNumber(context.mvuKeyCount, 0) > 0 ? `自动识别 ${context.mvuKeyCount} 项指标` : '暂无变量',
-          sub: fdNumber(context.mvuKeyCount, 0) > 0 ? '受伤/突破/装备变化会实时反映' : 'MVU 产生数据后自动接入'
+          sub: '受伤/突破/装备变化会实时反映'
         },
           highlights.length
             ? h('div', { className: 'fd-mvu-preview' },
-              highlights.slice(0, 6).map((item, idx) => h('span', {
+              highlights.slice(0, 4).map((item, idx) => h('span', {
                 key: (item && item.key) || idx,
                 className: 'fd-mvu-pill'
               }, `${(item && item.key) || ''}${item && item.value !== '' ? '：' + item.value : ''}`)))
             : null),
         h(ContextSourceCell, {
-          title: '近期正文记忆',
+          title: '近期正文',
           on: fdNumber(context.historyTurns, 0) > 0,
           value: fdNumber(context.historyTurns, 0) > 0 ? `最近 ${context.historyTurns} 轮` : '暂无正文',
           sub: context.backgroundModelReady ? '后台结算模型已就绪' : '后台结算模型待配置'
-        }))),
+        })),
 
-    /* ---------------- 4. 可选备注（默认折叠） ---------------- */
-    h(FdCollapse, {
-      title: '补充角色背景备注（可选，默认无需填写）',
-      sub: '仅补卡面未写明的设定',
-      right: h(FdHelp, {
-        title: '补充角色背景备注',
-        text: [
-          '这一栏完全可选：只有当角色卡与世界书里没写、但你又希望 AI 在判定时参考的设定，才需要填一句。',
-          '例如「主角左眼失明但听觉极敏锐」「右手旧伤，长时间挥剑会脱力」——这类细节写进备注后，AI 在评定相关行动的能力加减值时会一并参考。',
-          '备注只保存一句话，不涉及任何数字表格；留空即表示完全依赖角色卡 / 世界书 / MVU / 正文自动推演。',
-          '点「保存备注」后会同步宿主（宿主未实现该接口时保存在本地浏览器），下次检定立即生效。'
-        ].join('\n')
-      })
-    },
+      /* 特长 / 短板卡片网格 */
+      hasProfile
+        ? h(Fragment, null,
+          h('div', { className: 'fd-profile-head' },
+            h('span', { className: 'fd-profile-name' }, nameText),
+            profile.archetype ? h('span', { className: 'fd-profile-arch' }, profile.archetype) : null),
+          h('div', { className: 'fd-profile-grid' },
+            traits.map(item => h(ProfileTraitCard, { key: item.id || item.label, trait: item }))))
+        : h('div', { className: 'fd-hint' },
+          '进入对话完成首轮回复后后台将自动建立角色能力画像；即使尚未建档，每轮发前检定仍会实时读取人设与 MVU 自动定加值。'),
+
+      /* 可选单行补充备注：默认折叠 */
+      h(FdCollapse, {
+        title: '补充角色背景备注（可选，默认无需填写）',
+        sub: '仅补卡面未写明的设定',
+        right: h(FdHelp, {
+          title: '补充角色背景备注',
+          text: [
+            '这一栏完全可选：只有当角色卡与世界书里没写、但你又希望 AI 在判定时参考的设定，才需要填一句。',
+            '例如「主角左眼失明但听觉极敏锐」「右手旧伤，长时间挥剑会脱力」——这类细节写进备注后，AI 在评定相关行动的能力加减值时会一并参考。',
+            '备注只保存一句话，不涉及任何数字表格；留空即表示完全依赖角色卡 / 世界书 / MVU / 正文自动推演。',
+            '点「保存备注」后会同步宿主（宿主未实现该接口时保存在本地浏览器），下次检定立即生效。'
+          ].join('\n')
+        })
+      },
       h('div', { className: 'fd-field' },
         h(FdText, {
           value: noteDraft,
@@ -3469,822 +2388,147 @@ function ChecksTab(props) {
         })),
       h('div', { className: 'fd-btn-row' },
         h(FdBtn, { small: true, primary: true, disabled: savingNote, onClick: saveNote }, savingNote ? '保存中…' : '保存备注'),
-        h(FdBtn, { small: true, onClick: () => setNoteDraft('') }, '清空'))))
-}
+        h(FdBtn, { small: true, onClick: () => setNoteDraft('') }, '清空')))),
 
-/* ===== src/client/tab-events.js ===== */
-/* ------------------------------------------------------------------ *
- * tab-events.js —— 随机事件标签页：样板组一键生成 / 绑定与场景追加 / 共享组管理 / 多轨骰编辑器
- * ------------------------------------------------------------------ */
-
-function TrackEditor(props) {
-  const { track, index, onPatch, onRemove } = props || {}
-  const mode = track.mode
-  const entryPatch = (entryIdx, patch) => onPatch(track.id, {
-    entries: track.entries.map((entry, i) => (i === entryIdx ? { ...entry, ...patch } : entry))
-  })
-
-  return h(FdCollapse, {
-    key: track.id || index,
-    title: `${track.name || '未命名轨'}（${FD_TRACK_MODES.find(m => m.value === mode) ? FD_TRACK_MODES.find(m => m.value === mode).label : mode} · ${track.entries.length} 条${track.enabled ? '' : ' · 已停用'}）`,
-    defaultOpen: index === 0,
-    right: [
-      h(FdSwitch, {
-        key: 'sw',
-        on: track.enabled,
-        label: '启用该轨',
-        onChange: next => onPatch(track.id, { enabled: next })
-      }),
-      h(FdBtn, { key: 'del', small: true, danger: true, onClick: () => onRemove(track.id) }, '删除轨')
-    ]
-  },
-  h('div', { className: 'fd-inline-fields' },
-    h(FdField, {
-      label: '轨名称',
-      help: '只是给你自己看的标签（折叠标题与删除时辨认用），不影响抽取逻辑；建议直接写这条轨的叙事职能，如「进展波折」「雨夜环境音」。'
-    },
-      h(FdText, { value: track.name, onChange: value => onPatch(track.id, { name: value }), placeholder: '例如：进展波折' })),
-    h(FdField, {
-      label: '模式',
+    /* ---------------- 4. 本局检定统计与最近记录 ---------------- */
+    h(FdSection, {
+      title: '📊 本局检定统计与最近记录',
+      note: hasGame ? '最近 8 轮' : '需要进入对话',
       help: [
-        'd1 常驻：整条轨的所有条目每轮全部生效，不受每轮上限与主题冷却限制，sides 固定为 1；因为「全部」都带上，建议一条轨只放 1 条。',
-        'dn 等权骰：掷 1~sides 后把骰面按条目数均分映射到条目，概率近似均等、不会空抽；面数建议 ≥ 条目数，否则靠后的条目分不到骰面。',
-        'd100 区间表：掷 1~100 后按条目的 min–max 区间命中，按顺序取第一条命中的；没有区间覆盖则本轮该轨不产出。',
-        'weighted 权重池：按相对权重抽取，权重比即概率比，权重和不必等于 100。',
-        '切换模式时会自动把 sides 调成该模式的合理默认值（d1→1、d100→100、其余保留原值）。'
+        '统计口径：累计检定 = 本局自动检定与自由骰投掷的总次数；大成功+成功 = 档位 critical 与 success 之和；代价+失手 = costly、failure 与 fumble 之和。',
+        '最近记录保留最近 8 轮，每行显示轮次、所用技能、是否经过叙事阻尼器联动，以及总计骰值与档位标签；暗骰只显示「暗骰」标签不暴露骰面。',
+        '数据按本局 gameId 分别统计，切换对话不会串局。'
       ].join('\n')
     },
-      h(FdSelect, {
-        value: mode,
-        options: FD_TRACK_MODES,
-        onChange: value => onPatch(track.id, {
-          mode: value,
-          sides: value === 'd1' ? 1 : (value === 'd100' ? 100 : track.sides)
-        })
-      })),
-    h(FdField, {
-      label: '面数 sides',
-      help: '仅在 dn 等权骰模式（以及按面数分档的判定）下有意义：面数越多，单条条目被抽中的概率越低、空抽概率越高；1~100 有效。d1 常驻固定为 1，d100 区间表固定为 100，其余模式建议设成「条目数量」或略大于条目数，让每条都有机会又保留一点空拍。'
-    },
-      h(FdNum, {
-        value: track.sides,
-        min: 1,
-        max: 100,
-        onChange: value => onPatch(track.id, { sides: fdClamp(value, 1, 100) })
-      }))),
+      h('div', { className: 'fd-stat-grid' },
+        h('div', { className: 'fd-stat-cell' },
+          h('span', { className: 'fd-stat-num' }, String(stats.total || 0)),
+          h('span', { className: 'fd-stat-lbl' }, '累计检定')),
+        h('div', { className: 'fd-stat-cell' },
+          h('span', { className: 'fd-stat-num' }, String(stats.good || 0)),
+          h('span', { className: 'fd-stat-lbl' }, '大成功/成功')),
+        h('div', { className: 'fd-stat-cell' },
+          h('span', { className: 'fd-stat-num' }, String(stats.bad || 0)),
+          h('span', { className: 'fd-stat-lbl' }, '代价/失手'))),
+      recent.length
+        ? h('div', { className: 'fd-list' },
+          recent.map(item => h('div', { key: `${item.turn}-${item.rolledAt}`, className: 'fd-list-item' },
+            h('span', null, `第 ${item.turn} 轮 · ${item.check}`),
+            h('span', { className: 'fd-btn-row' },
+              item.damper ? h('span', { className: 'fd-event-pill' }, '⛓ 阻尼') : null,
+              h('span', { className: 'fd-hint' }, item.hidden ? '暗骰' : `${item.total} ${item.tierLabel}`)))))
+        : h('div', { className: 'fd-hint' }, '本局尚无检定记录，发送一轮行动后开始记录')),
 
-  h(FdRow, {
-    plain: true,
-    title: '条目类型与主题标签',
-    help: [
-      '条目类型决定这条事件算「实质推进」还是「氛围润色」，并分别受设置页的两个上限约束：',
-      '· 剧情推动：实质转折、阻碍、线索、关系变化——受「每轮剧情推动上限（0~3 条）」限制，超出上限的推动条目本轮直接丢弃。',
-      '· 氛围描写：光影、神态、环境细节、镜头语言——受「每轮氛围描写上限（0~3 条）」限制，与推动各算各的，不互相抢名额。',
-      '· 常驻固定：命中即无条件带上，不受两个上限、也不受主题冷却限制（d1 常驻轨里的条目全部按这个规则处理，所以常驻轨不宜放多条）。',
-      '主题标签（线索/阻碍/关系/压迫/机会/氛围/代价/转折，也可自填）用于三件事：① 本轮去重——同一主题一轮最多只选 1 条（按轨道顺序先到先得）；② 同主题冷却——推动类条目命中后，接下来 N 个成功结算的新用户轮内不再抽中同主题推动（氛围类不参与冷却）；③ 设置页「临时主题屏蔽器」按主题名临时过滤，屏蔽期间带该主题的条目一律跳过（推动与氛围都算）。'
-    ].join('\n')
-  }),
-  h(FdRow, {
-    plain: true,
-    title: '区间 / 权重 / AND 触发条件',
-    help: [
-      '区间（仅 d100 区间表显示）：本条目的 min–max 百分命中范围，例如 1 与 3 表示掷出 1~3 才命中；区间重叠时按条目顺序取第一条命中的，掷到没有任何区间覆盖的点数则本轮该轨不产出事件。',
-      '权重（仅 weighted 权重池显示）：1~99，数字越大越容易被抽中，代表相对比例而非绝对百分比。',
-      'AND 触发条件：条目下方的折叠区，可加任意多条条件，全部同时满足时该条才会真正生效；任一不满足，本轮该条被丢弃（不会改抽同轨其他条目）。三种写法——',
-      '① MVU 变量：路径填 `好感.女主`（或 `/主角/意志`），运算符 `≥`，值填 `60`，即「女主好感 ≥ 60 才可能触发」。值看起来是数字时按数值比较，否则按文本比较；支持 = ≠ > < ≥ ≤ 包含 不包含。',
-      '② 玩家输入关键词：把「路径」留空，关键词填在「值」里，多个用逗号/分号分隔（如 `告白，亲上去`），任意一个出现在玩家输入里即满足；运算符选「不包含」则反过来——输入里出现这些词时该条被屏蔽。注意关键词一定填在「值」里，填到路径里会被当成变量路径、永远匹配不上。',
-      '③ 持续剧情线状态：路径写 `剧情线:<剧情线ID>`（如 `剧情线:plot-abc123`），运算符 `=`，值填 `active` / `paused` / `closed`，按该剧情线当前状态决定是否放行。',
-      '没有条件＝任意输入都可能命中。'
-    ].join('\n')
-  }),
-
-  track.entries.length
-    ? track.entries.map((entry, entryIdx) => h('div', { key: entry.id || entryIdx, className: 'fd-entry' },
-      h('div', { className: 'fd-entry-row' },
-        h('div', { style: { flex: '1 1 200px' } }, h(FdText, {
-          value: entry.text,
-          placeholder: '事件内容文本',
-          onChange: value => entryPatch(entryIdx, { text: value })
-        })),
-        h('div', { style: { flex: '0 0 118px' } }, h(FdSelect, {
-          value: entry.type,
-          options: FD_ENTRY_TYPES,
-          onChange: value => entryPatch(entryIdx, { type: value })
-        })),
-        h('div', { style: { flex: '0 0 96px' } }, h(FdText, {
-          value: entry.theme,
-          placeholder: '主题',
-          onChange: value => entryPatch(entryIdx, { theme: value })
-        }))),
-      h('div', { className: 'fd-entry-row' },
-        mode === 'd100'
-          ? h(Fragment, null,
-            h('span', { className: 'fd-hint' }, '区间'),
-            h(FdNum, { value: entry.min, min: 1, max: 100, ariaLabel: '起始', onChange: value => entryPatch(entryIdx, { min: fdClamp(value, 1, 100) }) }),
-            h('span', { className: 'fd-hint' }, '—'),
-            h(FdNum, { value: entry.max, min: 1, max: 100, ariaLabel: '结束', onChange: value => entryPatch(entryIdx, { max: fdClamp(value, 1, 100) }) }))
-          : mode === 'weighted'
-            ? h(Fragment, null,
-              h('span', { className: 'fd-hint' }, '权重'),
-              h(FdNum, { value: entry.weight, min: 1, max: 99, ariaLabel: '权重', onChange: value => entryPatch(entryIdx, { weight: fdClamp(value, 1, 99) }) }))
-            : null,
-        h(FdBtn, {
-          small: true,
-          danger: true,
-          onClick: () => onPatch(track.id, { entries: track.entries.filter((_, i) => i !== entryIdx) })
-        }, '删除条目')),
-      h(FdCollapse, {
-        title: `AND 条件（${entry.conditions.length}）`,
-        sub: '全部满足才可能抽中',
-        right: [h(FdBtn, {
-          key: 'add-cond',
-          small: true,
-          onClick: () => entryPatch(entryIdx, {
-            conditions: [...entry.conditions, { path: '', op: '=', value: '' }]
-          })
-        }, '＋ 条件')]
-      },
-      entry.conditions.length
-        ? entry.conditions.map((cond, condIdx) => h('div', { key: condIdx, className: 'fd-cond' },
-          h('div', { style: { flex: '1 1 120px' } }, h(FdText, {
-            value: cond.path,
-            placeholder: 'MVU 路径 / 输入词 / 剧情线状态',
-            onChange: value => entryPatch(entryIdx, {
-              conditions: entry.conditions.map((c, i) => (i === condIdx ? { ...c, path: value } : c))
-            })
-          })),
-          h('div', { style: { flex: '0 0 84px' } }, h(FdSelect, {
-            value: cond.op,
-            options: FD_CONDITION_OPS.map(op => ({ value: op, label: op })),
-            onChange: value => entryPatch(entryIdx, {
-              conditions: entry.conditions.map((c, i) => (i === condIdx ? { ...c, op: value } : c))
-            })
-          })),
-          h('div', { style: { flex: '1 1 100px' } }, h(FdText, {
-            value: cond.value,
-            placeholder: '值',
-            onChange: value => entryPatch(entryIdx, {
-              conditions: entry.conditions.map((c, i) => (i === condIdx ? { ...c, value } : c))
-            })
-          })),
-          h(FdBtn, {
-            small: true,
-            danger: true,
-            onClick: () => entryPatch(entryIdx, { conditions: entry.conditions.filter((_, i) => i !== condIdx) })
-          }, '×')))
-        : h('div', { className: 'fd-hint' }, '无条件：任意输入都可能命中')))
-    )
-    : h('div', { className: 'fd-hint' }, '该轨暂无条目'),
-  h('div', { className: 'fd-btn-row' },
-    h(FdBtn, {
-      small: true,
-      primary: true,
-      onClick: () => onPatch(track.id, {
-        entries: [...track.entries, {
-          id: fdUid('ent'),
-          text: '新事件条目',
-          type: '推动',
-          theme: '',
-          min: 1,
-          max: 1,
-          weight: 1,
-          conditions: []
-        }]
-      })
-    }, '＋ 添加条目')))
-}
-
-function EventsTab(props) {
-  const { ui, gameId, hasGame, view, actions, notify } = props || {}
-  const groups = view.eventGroups || []
-  const binding = view.binding || {}
-  const [workingId, setWorkingId] = useState('')
-  const [draft, setDraft] = useState(null)
-  const [nameDraft, setNameDraft] = useState('')
-
-  useEffect(() => {
-    if (workingId) return
-    const preset = binding.eventGroupId || (groups[0] && groups[0].id) || ''
-    if (preset) setWorkingId(preset)
-  }, [binding.eventGroupId, groups.length])
-
-  useEffect(() => {
-    const found = groups.find(group => group.id === workingId)
-    if (found) {
-      setDraft(fdClone(found))
-      setNameDraft(found.name)
-    } else if (!workingId) {
-      setDraft(fdCreateEventGroup('未命名事件组'))
-      setNameDraft('')
-    }
-  }, [workingId, groups.length])
-
-  const current = draft || fdCreateEventGroup('未命名事件组')
-
-  const patchTrack = (trackId, patch) => setDraft({
-    ...current,
-    tracks: current.tracks.map(track => (track.id === trackId ? { ...track, ...patch } : track))
-  })
-
-  const saveGroup = () => {
-    const target = workingId || current.id || fdUid('evg')
-    const group = fdNormalizeEventGroup({ ...current, id: target, name: (current.name || '事件组').trim() })
-    const list = groups.some(item => item.id === target)
-      ? groups.map(item => (item.id === target ? group : item))
-      : [...groups, group]
-    setWorkingId(target)
-    actions.persistGroups('eventGroups', list)
-    if (notify) notify('事件组已保存')
-  }
-
-  const addGenericGroup = () => {
-    const group = fdNormalizeEventGroup(fdCreateGenericEventGroup('通用剧情样板组'))
-    setWorkingId(group.id)
-    actions.persistGroups('eventGroups', [...groups, group])
-    if (hasGame) actions.setBinding({ eventGroupId: group.id })
-    if (notify) notify('已创建通用剧情样板组（d1 常驻 + d6 波折 + d4 氛围 + d3 节奏）')
-  }
-
-  const addTrack = () => setDraft({
-    ...current,
-    tracks: [...current.tracks, fdNormalizeTrack({ name: '新轨道', mode: 'dn', sides: 6, entries: [] })]
-  })
-
-  const sections = []
-
-  sections.push(h(FdSection, {
-    title: '✨ 快速生成',
-    note: '常驻肘击 + 进展波折 + 情绪氛围 + 叙事节奏',
-    help: [
-      '「通用剧情样板组」是一套开箱即用的四轨剧情引擎，点一次就为你新建一个独立事件组（不会改动、也不会覆盖你已有的任何组），若已进入对话还会顺手绑定为本局长期事件组。',
-      '它内置四条轨道：① 常驻肘击（d1 常驻）——只有一条「局势持续施压：任何行动都带着额外代价」，每轮必定附带、且不占用随机名额，用来保证故事永远有阻力；② 进展波折（d6 等权骰）——6 条剧情推动：线索浮现、计划受阻、第三方插手、时间压力、关系升温或结冰、环境骤变，每轮按六面骰抽 1 条；③ 情绪氛围（d4 等权骰）——4 条氛围：暖意、紧张、远处杂音、沉默，负责光影与神态层面的细腻感；④ 叙事节奏（d3 等权骰）——3 条镜头语言：拉远概括、细节定格、节奏骤快被打断，用来控制单轮的叙述步调。',
-      '四条轨道各抽各的、互不排斥，但最终仍受「每轮推动上限 / 氛围上限」和「同主题本轮只选 1 条」约束：典型单轮产出是「1 条常驻 + 1 条推动 + 1 条氛围」，而叙事节奏轨的三条也属于「氛围」主题，通常只有先出现的氛围条目生效——想让节奏轨抢到名额，把它的主题改成「节奏」之类的独立标签即可。',
-      '常驻肘击轨是 d1 常驻，轨内所有条目每轮全部生效，不受上限与冷却限制（所以默认只放 1 条）。',
-      '生成后就是一个普通共享事件组，可以自由改轨、改条目、删轨、改模式，也可以「复制组」派生出不同题材的变体。'
-    ].join('\n')
-  }, h('div', { className: 'fd-btn-row' },
-    h(FdBtn, { primary: true, onClick: addGenericGroup }, '＋ 添加通用剧情样板组'))))
-
-  if (hasGame) {
-    const bindingChildren = [
-      h('div', { key: 'long', className: 'fd-inline-fields' },
-        h(FdField, {
-          label: '长期事件组',
-          help: '本局的常驻事件组，整场对话都在抽取范围内；下拉里列出全部共享事件组（括号内是轨道数）。改选立即生效、不需要保存。选「未绑定」＝本局不再产出长期事件，但场景追加组（若有）仍会照常工作。'
-        },
-          h(FdSelect, {
-            value: binding.eventGroupId || '',
-            options: groups.map(item => ({ value: item.id, label: item.name + '（' + item.tracks.length + ' 轨）' })),
-            placeholder: '未绑定',
-            onChange: value => actions.setBinding({ eventGroupId: value })
-          })))
-    ]
-    if (view.enhanced) {
-      bindingChildren.push(h('div', { key: 'scene', className: 'fd-inline-fields' },
-        h(FdField, {
-          label: '当前场景追加事件组',
-          help: '只在这一场戏里额外叠加的事件组：它的轨道与长期事件组同时抽取、互不顶替，适合放「雨夜追踪」「拍卖会现场」这类场景专属事件。场景一旦切换会自动停用（防串味），可用下方「恢复场景追加」按新场景重新启用，或直接改选更匹配的组。留空＝本场景不追加任何事件。'
-        },
-          h(FdSelect, {
-            value: binding.sceneEventGroupId || '',
-            options: groups.map(item => ({ value: item.id, label: item.name })),
-            placeholder: '未配置场景追加',
-            onChange: value => actions.setBinding({ sceneEventGroupId: value })
-          }))))
-      bindingChildren.push(binding.sceneSuspended
-        ? h(FdRow, {
-          key: 'suspend',
-          title: '场景追加已因场景切换停用',
-          sub: '恢复后将按新场景重新匹配事件组',
-          help: [
-            '为什么会出现这一行：你在设置页填了「本局场景位置 MVU 变量路径」后，面板每轮都会读一次那个变量；一旦它的值变了（换场景了），旧的场景追加组会被自动挂起，避免新场景里还在抽上一个场景的专属事件。',
-            '「恢复场景追加」＝把挂起状态清掉，让场景追加组重新参与抽取；建议先把「当前场景追加事件组」改成匹配新场景的组，再点恢复，否则会把上一场的组重新启用。',
-            '宿主接口不可用时会直接在面板内清除挂起标记，面板侧同样生效。不填场景变量路径时这块永远不会出现，场景追加只能手动切换。'
-          ].join('\n')
-        },
-          h(FdBtn, {
-            small: true,
-            primary: true,
-            onClick: () => {
-              fdSceneResume(ui, gameId).then(res => {
-                actions.setBinding({ sceneSuspended: false })
-                if (notify) notify(res.ok ? '场景追加已恢复' : '已在面板内恢复（宿主接口不可用）')
-              })
-            }
-          }, '恢复场景追加'))
-        : h('div', { key: 'scene-hint', className: 'fd-hint' }, '场景追加事件组在场景切换时会自动停用，可在上方恢复'))
-    } else {
-      bindingChildren.push(h('div', { key: 'off', className: 'fd-hint' }, '开启「剧情增强 3.2 双轨模式」（总览页）后可配置场景追加事件组'))
-    }
-    sections.push(h(FdSection, {
-      title: '🔗 本局绑定',
-      note: view.enhanced ? '剧情增强 3.2 双轨已开启' : '双轨未开启',
-      help: [
-        '绑定分两层，两层的结果是「叠加」而不是「二选一」：',
-        '① 长期事件组：本局的常驻底座，整场对话一直都在，每轮都参与抽取；换个组长线题材就换它。',
-        '② 当前场景追加事件组：只在这一场戏里额外叠上去的临时组（例如「雨夜追踪」「拍卖会现场」），与长期组的轨道各抽各的，两组的条目一起进入当轮的候选池；若两者选的是同一个组则不会重复叠加。',
-        '场景切换时这些临时组会自动停用（面板里显示「场景追加已因场景切换停用」），避免离开场景后还在抽「拍卖会台上的木槌声」；点「恢复场景追加」可手动按新场景重新启用，也可以直接把追加组换成匹配新场景的组。',
-        '两层都可留空：留空即该层不产出任何事件，不影响另一层。需要「换场景自动换组」的，请在设置页填「本局场景位置 MVU 变量路径」。',
-        '「剧情增强 3.2 双轨」未开启时只能绑定长期组，场景追加整层隐藏。'
-      ].join('\n')
-    }, bindingChildren))
-  } else {
-    sections.push(h(FdSection, { title: '🔗 本局绑定', note: '进入任意对话后可配置' },
-      h('div', { className: 'fd-hint' }, '未进入对话：共享事件组仍可自由编辑与导出')))
-  }
-
-  sections.push(h(FdSection, {
-    title: '🗂 共享事件组',
-    help: [
-      '「共享事件组库」是跨对话共用的本地组库：这里每个组都能被任意对话绑定，改一次全局生效。下拉框只负责「选中哪个组来编辑」，选中本身不会绑定本局——绑定请在「本局绑定」里做，或在快速生成时自动绑。',
-      '「新建组」给你一个只含 1 条推动条目的空壳；「复制组」把当前编辑中的组连轨道带条目一起复制成「 · 副本」，适合在原组上做出题材变体；「保存事件组」把当前草稿就地写回选中的那个组（会覆盖共享库里的旧值，所有引用它的对话都会变）；「删除组」从库中移除，正在绑定的对话会变成空指向。',
-      '样板组（快速生成出来的四轨组）与手搓组在库里地位完全平等——样板只是省事，不是特殊类型，照样可以删轨、改模式、另存为新组。',
-      '未进入对话时也能自由编辑、导入、导出这些组，绑定栏会隐藏。'
-    ].join('\n'),
-    actions: [
-      h(FdBtn, {
-        key: 'new',
-        small: true,
-        onClick: () => {
-          const group = fdNormalizeEventGroup(fdCreateEventGroup('新建事件组'))
-          setWorkingId(group.id)
-          actions.persistGroups('eventGroups', [...groups, group])
-        }
-      }, '新建组'),
-      h(FdBtn, {
-        key: 'copy',
-        small: true,
-        onClick: () => {
-          const group = fdNormalizeEventGroup({ ...current, id: fdUid('evg'), name: (current.name || '事件组') + ' · 副本' })
-          setWorkingId(group.id)
-          actions.persistGroups('eventGroups', [...groups, group])
-        }
-      }, '复制组'),
-      h(FdBtn, { key: 'save', small: true, primary: true, onClick: saveGroup }, '保存事件组'),
-      h(FdBtn, {
-        key: 'del',
-        small: true,
-        danger: true,
-        disabled: !workingId,
-        onClick: () => {
-          setWorkingId('')
-          actions.persistGroups('eventGroups', groups.filter(item => item.id !== workingId))
-          if (notify) notify('事件组已删除')
-        }
-      }, '删除组')
-    ]
-  },
-  h('div', { className: 'fd-inline-fields' },
-    h(FdSelect, {
-      value: workingId,
-      onChange: setWorkingId,
-      options: groups.map(item => ({ value: item.id, label: item.name + '（' + item.tracks.length + ' 轨）' })),
-      placeholder: groups.length ? '选择事件组…' : '暂无事件组'
-    })),
-  h('div', { className: 'fd-inline-fields' },
-    h(FdField, {
-      label: '组名 / 重命名',
-      help: '只改当前编辑中草稿的名字，点「保存事件组」才写回共享库。重名不会报错也不会合并，库里允许同名，建议用「题材 · 用途」的写法区分（如「废土 · 夜巡追加」），避免绑定下拉里认不出来。'
-    },
-      h(FdText, {
-        value: nameDraft,
-        placeholder: '事件组名称',
-        onChange: value => {
-          setNameDraft(value)
-          setDraft({ ...current, name: value })
-        }
-      })))))
-
-  sections.push(h(FdSection, {
-    title: '🎰 多轨骰子编辑器',
-    note: current.tracks.length + ' 轨 · ' + current.tracks.reduce((sum, track) => sum + track.entries.length, 0) + ' 条事件',
-    help: [
-      '每条轨道就是一颗独立的小骰子，单轮各摇一次，互不影响；轨道里的每条条目都可能被抽中。总数上限由设置页的两个上限控制，轨道多不等于单轮一定塞满。',
-      '轨道模式决定「怎么从条目里挑」，与面数 sides 配合使用：',
-      '· d1 常驻：整条轨的所有条目每轮全部带上，且不受每轮上限与主题冷却限制，用于「世界永远在施压」这类恒定底色。因为全部条目都会生效，建议一条轨只放 1 条；sides 固定为 1。',
-      '· dn 等权骰：掷 1~sides，把骰面按条目数量均分映射到条目（第 floor((点数−1)×条目数/面数) 条），概率近似均等、不会空抽。条目数少于面数时每条被覆盖的面更多；条目多于面数时部分条目永远分不到骰面——所以面数建议 ≥ 条目数。',
-      '· d100 区间表：掷 1~100，按每条条目自己填的 min–max 百分区间命中，按条目顺序取「第一条」命中的（区间重叠时排在前面的优先）；没有任何区间覆盖掷出的点数，则本轮该轨不产出事件。适合用数字精确安排「稀有 1~3、常见 40~80」。',
-      '· weighted 权重池：按每条条目的相对权重抽取，权重 1 与 5 的出现比是 1:5，权重和不必凑 100；想突出某条主线事件又不想手算区间时用它。',
-      '轨道右侧开关可临时停用整轨（保留内容不删、本轮不参与抽取）；「删除轨」则是彻底移除。'
-    ].join('\n'),
-    actions: [h(FdBtn, { key: 'track', small: true, onClick: addTrack }, '＋ 添加轨道')]
-  },
-  current.tracks.length
-    ? current.tracks.map((track, idx) => h(TrackEditor, {
-      key: track.id || idx,
-      track,
-      index: idx,
-      onPatch: patchTrack,
-      onRemove: trackId => setDraft({
-        ...current,
-        tracks: current.tracks.filter(item => item.id !== trackId)
-      })
-    }))
-    : h(FdEmpty, null, '暂无轨道：点击「添加通用剧情样板组」快速起步')))
-
-  sections.push(h('div', { key: 'tail', className: 'fd-btn-row' },
-    h(FdBtn, { primary: true, onClick: saveGroup }, '保存事件组'),
-    h(FdBtn, { onClick: addTrack }, '＋ 添加轨道')))
-
-  return h(Fragment, null, sections)
+    /* ---------------- 5. 自由骰小工具（默认折叠） ---------------- */
+    h(FreeRollCard, { ui, gameId, notify }))
 }
 
 /* ===== src/client/tab-settings.js ===== */
 /* ------------------------------------------------------------------ *
- * tab-settings.js —— 设置与导入导出：全局参数 / 临时主题屏蔽 / 配置导入导出中心
+ * tab-settings.js —— 页签 2「检定设置」：干净清爽的 6 项检定参数
+ * 每一项均带 ? 就地展开详细说明；底部单一「保存设置」主按钮。
  * ------------------------------------------------------------------ */
 
-function fdToggleIn(list, id) {
-  return list.includes(id) ? list.filter(item => item !== id) : [...list, id]
-}
-
 function SettingsTab(props) {
-  const { ui, gameId, hasGame, view, actions, notify } = props || {}
+  const { view, actions } = props || {}
   const settings = view.settings || FD_DEFAULT_SETTINGS
   const [draft, setDraft] = useState(settings)
-  const [themeInput, setThemeInput] = useState('')
-  const [exportEvents, setExportEvents] = useState([])
-  const [importText, setImportText] = useState('')
-  const [preview, setPreview] = useState(null)
-  const [busy, setBusy] = useState(false)
-  const skillGroups = view.skillGroups || []
-  const eventGroups = view.eventGroups || []
 
   useEffect(() => {
     setDraft(settings)
-  }, [settings.sensitivity, settings.toneBias, settings.autoHidden, settings.damperLinkage, settings.allowHeuristicFallback, settings.animation, settings.maxPlotPush, settings.maxAmbience, settings.themeCooldown, settings.scenePath])
-
-  /* 导入永远新建组：重名时自动追加序号，绝不覆盖已有数据 */
-  const fdImportName = (base, used) => {
-    const root = String(base || '未命名组') + ' · 导入'
-    let name = root
-    let seq = 2
-    while (used.has(name)) {
-      name = `${root} (${seq})`
-      seq += 1
-    }
-    used.add(name)
-    return name
-  }
-
-  useEffect(() => {
-    setExportEvents(eventGroups.map(item => item.id))
-  }, [eventGroups.length])
+  }, [settings.sensitivity, settings.toneBias, settings.autoHidden, settings.damperLinkage, settings.allowHeuristicFallback, settings.animation])
 
   const patchDraft = patch => setDraft({ ...draft, ...patch })
 
   const saveSettings = () => {
+    if (!actions || typeof actions.persistSettings !== 'function') return
     actions.persistSettings(draft)
-  }
-
-  /* 角色能力已改为 AI 随卡/正文自动生成：导出只打包全局设置 + 勾选的事件组 */
-  const buildExport = () => ({
-    version: 2,
-    kind: 'dsh-tavern-fate-dice/config',
-    exportedAt: new Date().toISOString(),
-    settings: { ...draft },
-    skillGroups: [],
-    eventGroups: eventGroups.filter(item => exportEvents.includes(item.id))
-  })
-
-  const doExport = () => {
-    const payload = buildExport()
-    const ok = fdDownloadJson(`fate-dice-config-${Date.now()}.json`, payload)
-    if (notify) notify(ok ? `已导出全局设置 + ${payload.eventGroups.length} 个事件组` : '浏览器不允许自动下载，请改用复制 JSON')
-  }
-
-  const downloadSample = () => {
-    const ok = fdDownloadJson('fate-dice-sample.json', fdSampleConfig())
-    if (notify) notify(ok ? '已下载示例模板' : '浏览器不允许自动下载')
-  }
-
-  const pickFile = file => {
-    if (!file) return
-    fdReadFileText(file).then(text => {
-      setImportText(text)
-      setPreview(null)
-      if (notify) notify(`已读取 ${file.name || '文件'}（${text.length} 字符），请点击「预览识别结果」`)
-    }).catch(error => {
-      if (notify) notify(String((error && error.message) || '文件读取失败'))
-    })
-  }
-
-  const doPreview = () => {
-    if (!importText.trim()) {
-      if (notify) notify('请先选择文件或粘贴 JSON 文本')
-      return
-    }
-    setBusy(true)
-    fdImportPreview(ui, importText, gameId).then(res => {
-      setPreview(res)
-      if (!res.ok) {
-        if (notify) notify(res.error || '无法识别该配置')
-        return
-      }
-      if (notify) notify(`识别为${res.format}：技能组 ${res.skillCount} / 事件组 ${res.eventCount}（来源：${res.source === 'host' ? '宿主' : '本地解析'}）`)
-    }).finally(() => setBusy(false))
-  }
-
-  const doApply = () => {
-    if (!preview || !preview.ok) {
-      if (notify) notify('请先预览并确认识别结果')
-      return
-    }
-    const usedSkillNames = new Set(skillGroups.map(item => item.name))
-    const usedEventNames = new Set(eventGroups.map(item => item.name))
-    const newSkills = (preview.skillGroups || []).map(group => fdNormalizeSkillGroup({ ...group, id: fdUid('skg'), name: fdImportName(group.name, usedSkillNames) }))
-    const newEvents = (preview.eventGroups || []).map(group => fdNormalizeEventGroup({ ...group, id: fdUid('evg'), name: fdImportName(group.name, usedEventNames) }))
-    if (newSkills.length) actions.persistGroups('skillGroups', [...skillGroups, ...newSkills])
-    if (newEvents) actions.persistGroups('eventGroups', [...eventGroups, ...newEvents])
-    fdImportApply(ui, gameId, { skillGroups: newSkills, eventGroups: newEvents }).then(res => {
-      if (notify) notify(res.ok
-        ? `已导入 ${newSkills.length} 个技能组 / ${newEvents.length} 个事件组`
-        : `已导入到本地面板：${newSkills.length} 个技能组 / ${newEvents.length} 个事件组（宿主接口不可用）`)
-    })
-    setPreview(null)
-    setImportText('')
   }
 
   return h(Fragment, null,
     h(FdSection, {
-      title: '⚙️ 全局参数',
+      title: '⚙️ 检定设置',
       note: '保存后对全部对话生效',
       help: [
-        '这一屏是全局设置：改的是草稿，只有点「保存全局设置」才落盘并对所有对话生效；点「还原」丢弃未保存的改动（回到上次保存值）。',
-        '参数分四类：① 检定触发与难度（触发灵敏度、叙事基调修正）；② 表现层（掷骰动画档位、感知自动暗骰）；③ 事件配额（每轮剧情推动上限、氛围描写上限、同主题冷却轮数）；④ 场景与联动（场景位置 MVU 路径、叙事阻尼器双向联动、无决策模型时本地兜底）。',
-        '各项之间没有硬性依赖，但改动骰制/技能组后建议顺手回检这里的两项配额，避免单轮被塞进过多事件。'
+        '这一屏是全局检定设置：改的是草稿，只有点底部「保存设置」才落盘并对所有对话生效。',
+        '参数分三类：① 触发与难度（触发灵敏度、叙事基调修正）；② 表现层（掷骰动画、感知自动暗骰）；③ 联动与兜底（叙事阻尼器双向联动、无决策模型时本地关键词兜底）。',
+        '每项标题右侧的 ? 可展开详细说明，收起后界面保持清爽单列布局。'
       ].join('\n')
     },
-      h('div', { className: 'fd-inline-fields' },
-        h(FdField, {
-          label: '触发灵敏度',
-          help: [
-            '决定「什么时候该自动发起一次技能检定」的门槛，越高越少打扰、越低越积极。',
-            '积极 35%：只要动作里有 35% 以上把握值得一掷就触发，主动尝试、探查、交涉几乎都会进检定，检定密度最高，适合想用骰子驱动细节的硬核跑团。',
-            '适中 55%（默认）：有明确动作意图或冲突时才触发，日常寒暄与纯情绪对话不掷骰，节奏最平衡。',
-            '谨慎 78%：只有高风险关键节点（生死、暴露、重大抉择）才触发，正文更连贯、骰子更稀有，适合重叙事的沉浸式长文。'
-          ].join('\n')
-        },
-          h(FdSelect, { value: draft.sensitivity, options: FD_SENSITIVITY_OPTIONS, onChange: value => patchDraft({ sensitivity: value }) })),
-        h(FdField, {
-          label: '叙事基调修正',
-          help: [
-            '在所有检定目标值上加一个统一偏置，用来整体调故事的宽容度，不改技能加值。',
-            '平衡 +0：按骰制原始概率走，成功与失败大致对半。',
-            '英雄 +1：目标值整体放宽，角色更容易成功、失败更像插曲，适合爽文、冒险与轻喜剧。',
-            '严苛 -1：目标值整体收紧，同样的技能在险境里更容易翻车，适合恐怖、悬疑、末日生存这类需要压迫感的题材。'
-          ].join('\n')
-        },
-          h(FdSelect, { value: draft.toneBias, options: FD_TONE_OPTIONS, onChange: value => patchDraft({ toneBias: value }) })),
-        h(FdField, {
-          label: '掷骰动画档位',
-          help: [
-            '骰子结果的呈现方式，纯表现层，不影响任何判定结果。',
-            '多面体弹跳：掷出后有多面体翻滚的弹跳动画，信息量最足，适合喜欢手感的跑团玩家。',
-            '极简闪现：只闪一下数字，几乎不占视觉空间。',
-            '关闭动画：直接出结果，适合批量推剧情或录屏。',
-            '三种档位都在「首字等待期」非阻塞播放——动画不会拖慢正文出字，也遵循系统的「减弱动态效果」设置；关掉系统动效后即使这里选了弹跳也会退化成静态呈现。'
-          ].join('\n')
-        },
-          h(FdSelect, { value: draft.animation, options: FD_ANIMATION_OPTIONS, onChange: value => patchDraft({ animation: value }) }))),
-      h('div', { className: 'fd-card-grid' },
-        h('div', { className: 'fd-card' },
-          h(FdRow, {
-            plain: true,
-            title: '感知自动暗骰',
-            sub: '观察/察觉类行动默认盖罩',
-            help: [
-              '开启后，察觉、侦查、识破谎言、微表情洞察这类感知型技能检定会自动走「暗骰」：正文只写角色主观能感知到的表象（「你总觉得他的笑有点用力」），不写骰点与成败结论，避免玩家读到「侦查 4 失败」就直接判断屋里没人。',
-              '想看真实点数时点楼层里的结算胶囊即可偷看，属于「事后复核」而非「实时剧透」。',
-              '关闭后这些检定照常明骰，成功/失败结论与点数都会出现在正文。单条能力的明骰/暗骰由 AI 在生成角色能力画像时自动标注（带「暗骰」标记），无需手动逐个勾选。'
-            ].join('\n')
-          },
-          h(FdSwitch, { on: draft.autoHidden, label: '感知自动暗骰', onChange: next => patchDraft({ autoHidden: next }) }))),
-        h('div', { className: 'fd-card' },
-          h(FdRow, {
-            plain: true,
-            title: '叙事阻尼器双向联动',
-            sub: '检定与事件配额互通，双向反馈',
-            help: [
-              '开启后本面板与酒馆「叙事阻尼器」的判定合并成单趟请求：一次调用同时拿到检定结果与阻尼器档位，省掉第二次往返的等待（关掉则各走各的）。',
-              '读取方向（改难度）：阻尼器的铺陈分（leverage）折算成额外 edge 加值；心理防线 ≥75 时社交/洞察难度 +1 档，亲密信任 ≥70 时社交/洞察难度 −1 档，张力/情欲高压 ≥75 时体能与对抗类 +1 档。这些档位会直接进入本次检定的修正。',
-              '回写方向（改后续容量）：真骰出点后把结果回传给阻尼器（交由酒馆侧的 applyDamperDiceShift 处理），成功则放宽推进档位、增加 MVU 变量配额，失败则收紧档位、压低配额——让骰子结果真的改变后续能推进的剧情量，而不是只改一句台词。',
-              '阻尼器未安装或未配置时，读取与回写都自动跳过，检定本身照常进行。'
-            ].join('\n')
-          },
-          h(FdSwitch, { on: draft.damperLinkage, label: '阻尼双向联动', onChange: next => patchDraft({ damperLinkage: next }) }))),
-        h('div', { className: 'fd-card' },
-          h(FdRow, {
-            plain: true,
-            title: '无决策模型时使用本地关键词兜底',
-            sub: '默认关闭：未配决策模型时不自动检定',
-            help: [
-              '默认关闭。关闭时，AI 自动检定必须先在酒馆「设置 › 叙事阻尼器」里配好决策模型与 API Key 才会执行——没有模型就安静地不掷骰，正文干净、也不会出现瞎判。',
-              '开启后，在纯离线环境、或暂时不想消耗 API Key 时，改用内置的本地动词规则做粗略检定：从玩家输入里提取动作动词与技能名做关键词匹配，命中即按该技能加值掷骰；匹配不上或语义模糊时直接跳过，绝不硬编结果。',
-              '本地兜底的判定明显不如决策模型精细（不懂上下文、不辨语气、容易把「假装要打」当成「打」），只适合试玩、离线演示或临时救急；一旦配好 API Key 建议关回默认。',
-              '该开关只影响「会不会自动生成检定」，不影响手动掷骰与事件抽取。'
-            ].join('\n')
-          },
-          h(FdSwitch, { on: Boolean(draft.allowHeuristicFallback), label: '无决策模型时本地兜底', onChange: next => patchDraft({ allowHeuristicFallback: next }) })))),
-      h('div', { className: 'fd-inline-fields' },
-        h(FdField, {
-          label: '每轮「剧情推动」上限',
-          help: [
-            '单轮最多注入几条「实质推进」类事件（转折、阻碍、线索、关系变化、第三方插手）。取值 0~3。',
-            '0：完全关闭推动类事件，故事只由玩家与角色互动推进，适合纯日常/纯感情线。1：默认，每轮最多一个变数，节奏稳。2~3：事件密度高，适合冒险、群像或快节奏悬疑，但连抽容易显得强行，建议配合同主题冷却。',
-            '这里只是天花板而不是保底：轨道没抽到、条件没满足、主题正在冷却，都可能一轮零推动。'
-          ].join('\n')
-        },
-          h(FdSelect, {
-            value: String(draft.maxPlotPush),
-            options: [0, 1, 2, 3].map(n => ({ value: String(n), label: `${n} 条` })),
-            onChange: value => patchDraft({ maxPlotPush: Number(value) })
-          })),
-        h(FdField, {
-          label: '每轮「氛围描写」上限',
-          help: [
-            '单轮最多注入几条「氛围描写」类事件（光影、神态、环境细节、镜头语言）。取值 0~3。',
-            '氛围条目与推动条目分开计数，不互相抢名额。0：只要干练的叙事、不要环境描写；1：默认，点缀一处细节；2~3：画面感更浓，适合抒情、恐怖氛围营造或慢节奏长文。',
-            '氛围不承担剧情功能，纯粹增强画面；拉满 3 条容易出现「形容词堆砌」，建议与推动上限的总和控制在 3 以内。'
-          ].join('\n')
-        },
-          h(FdSelect, {
-            value: String(draft.maxAmbience),
-            options: [0, 1, 2, 3].map(n => ({ value: String(n), label: `${n} 条` })),
-            onChange: value => patchDraft({ maxAmbience: Number(value) })
-          })),
-        h(FdField, {
-          label: '同主题冷却轮数',
-          help: [
-            '某个主题（线索/阻碍/关系/压迫/机会/氛围/代价/转折等）的「剧情推动」被成功抽中后，接下来 N 个成功结算的新用户轮内不再抽中同主题推动，防止连续几轮反复「线索、线索、线索」。取值 0~5。',
-            '0：不冷却，同一主题可以连轮出现；2：默认，两轮内避开；3~5：题材需要轮换感（悬疑揭底、群像调度）时调高。',
-            '只约束「剧情推动」类，氛围描写不受此限制；屏蔽中的主题在设置页「临时主题屏蔽器」里可直接撤销，冷却可在那里一键清空。'
-          ].join('\n')
-        },
-          h(FdSelect, {
-            value: String(draft.themeCooldown),
-            options: [0, 1, 2, 3, 4, 5].map(n => ({ value: String(n), label: `${n} 轮` })),
-            onChange: value => patchDraft({ themeCooldown: Number(value) })
-          }))),
       h(FdField, {
-        label: '本局场景位置 MVU 变量路径',
-        hint: '例如 场景.位置；用于场景切换时自动停用旧场景追加事件组',
+        label: '触发灵敏度',
         help: [
-          '填角色卡变量（MVU / stat_data）里表示「当前场景」的字段路径，如 `场景.位置`、`/地点/当前`。',
-          '作用：每轮读一次该变量，一旦值发生变化（从「雨夜小巷」变成「拍卖会大厅」），就自动停用旧的「当前场景追加事件组」并标记为待恢复，避免新场景里还在抽上场景的专属事件；点事件页的「恢复场景追加」按新场景重新启用。',
-          '留空＝不做场景联动，场景追加组只能手动切换。没有 MVU 变量系统的人物卡保持留空即可，功能完全不受影响。'
+          '决定「什么时候该自动发起一次检定」的门槛，越高越少打扰、越低越积极。',
+          '积极：只要尝试本身有不确定性就可能触发，主动尝试、探查、交涉几乎都会进检定，检定密度最高，适合想用骰子驱动细节的硬核跑团。',
+          '适中（默认）：有明确动作意图或冲突时才触发，日常寒暄与纯情绪对话不掷骰，节奏最平衡。',
+          '谨慎：只有高风险关键节点（生死、暴露、重大抉择）才触发，正文更连贯、骰子更稀有，适合重叙事的沉浸式长文。'
         ].join('\n')
-      }, h(FdText, {
-        value: draft.scenePath || '',
-        placeholder: '场景.位置',
-        onChange: value => patchDraft({ scenePath: value })
-      })),
-      h('div', { className: 'fd-btn-row' },
-        h(FdBtn, { primary: true, onClick: saveSettings }, '保存全局设置'),
-        h(FdBtn, { onClick: () => setDraft({ ...settings }) }, '还原'))),
+      },
+      h(FdSelect, { value: draft.sensitivity, options: FD_SENSITIVITY_OPTIONS, onChange: value => patchDraft({ sensitivity: value }) })),
 
-    h(FdSection, {
-      title: '🚫 临时主题屏蔽器',
-      note: hasGame ? '屏蔽期间该主题不会被抽中' : '进入对话后可用',
-      help: [
-        '在输入框里填一个主题名（与事件条目「主题」字段同名，如 阻碍、氛围、关系），点「屏蔽 5 轮」后，接下来 5 个成功结算的新用户轮内，该主题的条目会被直接过滤掉——不参与抽取、不会占配额。',
-        '屏蔽是临时的、按本局生效：计数随轮次自动递减，窗口结束自动失效；也可以在任何时候点「撤销」立刻解除，不必等倒计时（不想再看到「压迫」连发时最好用）。',
-        '下面的「冷却中的主题」是自动产生的、不能手动加的记录：某个主题的推动刚被抽中，就会按设置里的「同主题冷却轮数」进入冷却，这里能看到还剩几轮，也可以「一键清空冷却」全部放开。',
-        '屏蔽与冷却的区别：屏蔽是你主动禁止（可撤销、固定 5 轮），冷却是系统防重复（时长跟随设置）。两者同时命中时以屏蔽为准。',
-        '未进入对话时不显示这一块：屏蔽与冷却都挂在具体对话的运行时状态上。'
-      ].join('\n')
-    },
-    hasGame
-      ? h(Fragment, null,
-        h('div', { className: 'fd-inline-fields' },
-          h(FdText, { value: themeInput, placeholder: '主题名（如 阻碍）', onChange: setThemeInput }),
-          h('div', { style: { flex: '0 0 auto' } },
-            h(FdBtn, {
-              small: true,
-              primary: true,
-              onClick: () => {
-                const theme = themeInput.trim()
-                if (!theme) {
-                  if (notify) notify('请输入要屏蔽的主题名')
-                  return
-                }
-                fdBlockTheme(ui, gameId, theme, 5).then(res => {
-                  if (notify) notify(res.ok ? `已屏蔽主题「${theme}」5 轮` : '宿主接口不可用，未能写入屏蔽表')
-                })
-                setThemeInput('')
-              }
-            }, '屏蔽 5 轮'))),
-        (view.blockedThemes || []).length
-          ? h('div', { className: 'fd-list' },
-            view.blockedThemes.map(item => h('div', { key: item.theme, className: 'fd-list-item' },
-              h('span', null, `🚫 ${item.theme}`),
-              h('span', { className: 'fd-btn-row' },
-                h('span', { className: 'fd-hint' }, `剩余 ${item.rounds} 轮`),
-                h(FdBtn, {
-                  small: true,
-                  onClick: () => {
-                    fdUnblockTheme(ui, gameId, item.theme).then(res => {
-                      if (notify) notify(res.ok ? `已撤销屏蔽「${item.theme}」` : '宿主接口不可用')
-                    })
-                  }
-                }, '撤销')))))
-          : h('div', { className: 'fd-hint' }, '当前无生效中的屏蔽主题'),
-        (view.cooldowns || []).length
-          ? h('div', { className: 'fd-list' },
-            h('span', { className: 'fd-hint' }, '冷却中的主题'),
-            view.cooldowns.map(item => h('div', { key: item.theme, className: 'fd-list-item' },
-              h('span', null, `⏳ ${item.theme}`),
-              h('span', { className: 'fd-hint' }, `剩余 ${item.rounds} 轮`))),
-            h('div', { className: 'fd-btn-row' },
-              h(FdBtn, {
-                small: true,
-                onClick: () => {
-                  fdClearCooldown(ui, gameId).then(res => {
-                    if (notify) notify(res.ok ? '已清空全部主题冷却' : '宿主接口不可用')
-                  })
-                }
-              }, '一键清空冷却')))
-          : h('div', { className: 'fd-hint' }, '当前无冷却中的主题'))
-      : h('div', { className: 'fd-hint' }, '未进入对话：无法使用临时屏蔽')),
+      h(FdField, {
+        label: '叙事基调修正',
+        help: [
+          '在所有检定目标值上加一个统一偏置，用来整体调故事的宽容度，不改角色能力加值。',
+          '平衡（+0，默认）：按骰制原始概率走，成功与失败大致对半。',
+          '英雄（+1 宽容）：目标值整体放宽，角色更容易成功、失败更像插曲，适合爽文、冒险与轻喜剧。',
+          '严苛（-1 险境）：目标值整体收紧，同样的能力在险境里更容易翻车，适合恐怖、悬疑、末日生存这类需要压迫感的题材。'
+        ].join('\n')
+      },
+      h(FdSelect, { value: draft.toneBias, options: FD_TONE_OPTIONS, onChange: value => patchDraft({ toneBias: value }) })),
 
-    h(FdSection, {
-      title: '📤 导出配置',
-      note: '全局设置 + 勾选的事件组',
-      help: [
-        '导出的是一份自包含 JSON（version 2 / kind 为 dsh-tavern-fate-dice/config）：包含当前草稿里的全部全局参数与勾选的随机事件组，附导出时间戳，方便备份、跨设备迁移或分享给朋友。',
-        '角色能力已改为 AI 依据角色卡 / 世界书 / MVU / 正文自动生成，不再需要手动配置技能组，因此导出包默认只含「全局设置 + 勾选的事件组」；技能组字段仍保留为空数组，方便旧版本读取时不报错。',
-        '事件组里的一切（轨道模式、条目条件、权重、区间写法）都会原样带出，不截断。',
-        '「导出 JSON 文件」走浏览器下载，文件名带时间戳，不会覆盖旧备份；若浏览器拦截自动下载，可用「下载示例模板」拿到结构说明。',
-        '导出的是快照：导出后再改本地设置或事件组，旧文件不会跟着变。'
-      ].join('\n')
-    },
-      h('div', { className: 'fd-card' },
-        h('span', { className: 'fd-card-title' }, `事件组（${exportEvents.length}/${eventGroups.length}）`),
-        eventGroups.length
-          ? h('div', { className: 'fd-chip-group' },
-            eventGroups.map(group => h(FdChip, {
-              key: group.id,
-              active: exportEvents.includes(group.id),
-              onClick: () => setExportEvents(prev => fdToggleIn(prev, group.id))
-            }, group.name)))
-          : h('div', { className: 'fd-hint' }, '暂无事件组'),
-        h('div', { className: 'fd-btn-row' },
-          h(FdBtn, { small: true, onClick: () => setExportEvents(eventGroups.map(item => item.id)) }, '全选'),
-          h(FdBtn, { small: true, onClick: () => setExportEvents([]) }, '清空'))),
-      h('div', { className: 'fd-btn-row' },
-        h(FdBtn, { primary: true, onClick: doExport }, '导出 JSON 文件'),
-        h(FdBtn, { onClick: downloadSample }, '下载示例模板'))),
+      h(FdField, {
+        label: '掷骰动画',
+        help: [
+          '骰子结果的呈现方式，纯表现层，不影响任何判定结果。',
+          '多面体弹跳（默认）：掷出后有多面体翻滚的弹跳动画，信息量最足，适合喜欢手感的跑团玩家。',
+          '极简闪现：只闪一下数字，几乎不占视觉空间。',
+          '关闭动画：直接出结果，适合批量推剧情或录屏。',
+          '三种档位都在「首字等待期」非阻塞播放——动画不会拖慢正文出字，也遵循系统的「减弱动态效果」设置；关掉系统动效后会退化成静态呈现。'
+        ].join('\n')
+      },
+      h(FdSelect, { value: draft.animation, options: FD_ANIMATION_OPTIONS, onChange: value => patchDraft({ animation: value }) })),
 
-    h(FdSection, {
-      title: '📥 导入配置',
-      note: '支持原生 v2 与 AutoRandomInput 配置包',
-      help: [
-        '两种输入方式等价：选本地 .json 文件，或把 JSON 文本直接粘进下面的多行框。',
-        '自动识别两种格式：① 本插件原生 v2 配置（kind 为 dsh-tavern-fate-dice/config）；② 原版 AutoRandomInput 的 v1 / v2 配置文件——字段名、轨道结构、技能表、区间/权重写法都会自动转换成本插件的技能组与事件组，缺失的字段填默认值，无法映射的字段会在预览里以 warning 列出（不会静默丢弃）。',
-        '必须先「预览识别结果」再导入：预览会显示识别到的格式、将导入的技能组/事件组数量、数据来源（宿主识别或本地解析）以及每个组的名字与规模，确认无误再点「确认为新组导入」。',
-        '导入一律新建组：即使与已有组同名，也绝不会覆盖、不会合并原数据——名字会自动补「 · 导入」后缀（重名时再加序号区分），旧数据零风险。想拿导入数据替换某组，请手动改选或删掉旧组。',
-        '识别失败时这块会显示具体错误（JSON 语法错、找不到可识别的组、版本不支持等），改好文本或换文件再预览即可。',
-        '含技能组的旧 JSON 仍可正常导入：技能组会作为兼容数据保留下来（不再参与 AI 判定，角色能力已由 AI 依据角色卡/世界书/MVU/正文自动生成），不会报错也不会丢字段。'
-      ].join('\n')
-    },
-      h('div', { className: 'fd-btn-row' },
-        h('label', { className: 'fd-btn', style: { position: 'relative', overflow: 'hidden' } },
-          '选择本地 .json 文件',
-          h('input', {
-            type: 'file',
-            accept: '.json,application/json',
-            style: { position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' },
-            onChange: e => {
-              const file = e && e.target && e.target.files ? e.target.files[0] : null
-              pickFile(file)
-            }
-          }))),
-      h(FdArea, {
-        value: importText,
-        rows: 6,
-        placeholder: '或直接粘贴 JSON 文本…',
-        onChange: value => { setImportText(value); setPreview(null) }
-      }),
-      h('div', { className: 'fd-btn-row' },
-        h(FdBtn, { disabled: busy, onClick: doPreview }, busy ? '识别中…' : '预览识别结果'),
-        h(FdBtn, { primary: true, disabled: !preview || !preview.ok, onClick: doApply }, '确认为新组导入')),
-      preview && preview.ok
-        ? h('div', { className: 'fd-card' },
-          h('span', { className: 'fd-card-title' }, `识别格式：${preview.format}`),
-          h('span', { className: 'fd-card-sub' }, `将导入 技能组 ${preview.skillCount} 个 / 事件组 ${preview.eventCount} 个 · 来源 ${preview.source === 'host' ? '宿主识别' : '本地解析'}`),
-          (preview.warnings || []).length
-            ? h('span', { className: 'fd-hint' }, preview.warnings.join(' · '))
-            : null,
-          (preview.skillGroups || []).length
-            ? h('div', { className: 'fd-chip-group' }, preview.skillGroups.map(group => h('span', { key: group.id, className: 'fd-event-pill' }, `${group.name}（${group.skills.length} 技能）`)))
-            : null,
-          (preview.eventGroups || []).length
-            ? h('div', { className: 'fd-chip-group' }, preview.eventGroups.map(group => h('span', { key: group.id, className: 'fd-event-pill' }, `${group.name}（${group.tracks.length} 轨）`)))
-            : null)
-        : null,
-      preview && !preview.ok
-        ? h('div', { className: 'fd-error' }, preview.error || '无法识别')
-        : null))
+      h(FdRow, {
+        plain: true,
+        title: '感知类动作自动暗骰',
+        sub: '观察 / 察觉类行动默认盖罩',
+        help: [
+          '开启后，察觉、侦查、识破谎言、微表情洞察这类感知型检定会自动走「暗骰」：正文只写角色主观能感知到的表象（「你总觉得他的笑有点用力」），不写骰点与成败结论，避免玩家读到「侦查 4 失败」就直接判断屋里没人。',
+          '想看真实点数时点楼层里的检定胶囊即可偷看，属于「事后复核」而非「实时剧透」。',
+          '关闭后这些检定照常明骰，成功/失败结论与点数都会出现在正文。单条能力的明骰/暗骰由 AI 在生成角色能力画像时自动标注（带「暗骰」标记），无需手动逐个勾选。'
+        ].join('\n')
+      },
+      h(FdSwitch, { on: Boolean(draft.autoHidden), label: '感知类动作自动暗骰', onChange: next => patchDraft({ autoHidden: next }) })),
+
+      h(FdRow, {
+        plain: true,
+        title: '叙事阻尼器双向联动',
+        sub: '检定与阻尼配额互通，双向反馈',
+        help: [
+          '开启后本面板与酒馆「叙事阻尼器」的判定合并成单趟请求：一次调用同时拿到检定结果与阻尼器档位，省掉第二次往返的等待（关掉则各走各的）。',
+          '读取方向（改难度）：阻尼器的铺陈分（leverage）折算成额外边缘加值；心理防线 ≥75 时社交/洞察难度 +1 档，亲密信任 ≥70 时社交/洞察难度 −1 档，张力高压 ≥75 时体能与对抗类 +1 档。这些档位会直接进入本次检定的修正。',
+          '回写方向（改后续容量）：真骰出点后把结果回传给阻尼器，成功则放宽推进档位、增加 MVU 变量配额，失败则收紧档位、压低配额——让骰子结果真的改变后续能推进的剧情量。',
+          '阻尼器未安装或未配置时，读取与回写都自动跳过，检定本身照常进行。'
+        ].join('\n')
+      },
+      h(FdSwitch, { on: Boolean(draft.damperLinkage), label: '叙事阻尼器双向联动', onChange: next => patchDraft({ damperLinkage: next }) })),
+
+      h(FdRow, {
+        plain: true,
+        title: '无决策模型时使用本地关键词兜底',
+        sub: '默认关闭：未配决策模型时不自动检定',
+        help: [
+          '默认关闭。关闭时，AI 自动检定必须先在酒馆「设置 › 叙事阻尼器」里配好决策模型与 API Key 才会执行——没有模型就安静地不掷骰，正文干净、也不会出现瞎判。',
+          '开启后，在纯离线环境、或暂时不想消耗 API Key 时，改用内置的本地动词规则做粗略检定：从玩家输入里提取动作动词与技能名做关键词匹配，命中即按该技能加值掷骰；匹配不上或语义模糊时直接跳过，绝不硬编结果。',
+          '本地兜底的判定明显不如决策模型精细（不懂上下文、不辨语气、容易把「假装要打」当成「打」），只适合试玩、离线演示或临时救急；一旦配好 API Key 建议关回默认。'
+        ].join('\n')
+      },
+      h(FdSwitch, { on: Boolean(draft.allowHeuristicFallback), label: '无决策模型时使用本地关键词兜底', onChange: next => patchDraft({ allowHeuristicFallback: next }) }))),
+
+    h('div', { className: 'fd-btn-row' },
+      h(FdBtn, { primary: true, onClick: saveSettings }, '保存设置')),
+    h('div', { className: 'fd-hint' }, '保存后立即对全部对话生效；未保存的改动不会写入本地存储。'))
 }
 
 /* ===== src/client/main.js ===== */
@@ -4318,24 +2562,24 @@ function apply(ctx) {
   if (!ui) return
   fdEnsureStyleInjected()
 
-  // 1) 右侧栏「插件」卡片区：常驻四页签工作台（桌面与手机竖屏单列自适应）
+  // 1) 右侧栏「插件」卡片区：常驻双页签极简工作台（桌面与手机竖屏单列自适应）
   fdRegisterSafely(ctx, 'fate-dice: workbench panel', () => ui.registerPanel({
     id: FD_PANEL_ID,
     title: '命运之骰',
     render: ({ gameId } = {}) => h(FateDicePanel, { ui, gameId })
   }))
 
-  // 2) 输入栏上方非阻塞揭晓条：检定骰 + 本轮命中事件双展示，平时零占位
+  // 2) 输入栏上方非阻塞揭晓条：检定骰多面体揭晓，平时零占位
   fdRegisterSafely(ctx, 'fate-dice: composer slot', () => ui.registerComposerSlot({
     id: 'fate-dice-live',
     modes: ['play'],
     render: ({ sessionId, gameId } = {}) => h(ComposerLiveDock, { ui, sessionId: sessionId || gameId, gameId })
   }))
 
-  // 3) 楼层折叠胶囊：无检定且无事件时原样返回 children（零包裹）
+  // 3) 楼层折叠胶囊：无检定时原样返回 children（零包裹）
   fdRegisterSafely(ctx, 'fate-dice: turn view', () => ui.registerTurnView({
     id: 'fate-dice-turn',
-    label: '检定与事件胶囊',
+    label: '检定胶囊',
     render: ({ gameId, turn, settled, greeting, children } = {}) => {
       if (!settled || greeting || !turn) return children || null
       return h(TurnRollCapsule, { ui, gameId, turn, children })

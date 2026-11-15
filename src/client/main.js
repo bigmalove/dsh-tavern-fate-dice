@@ -28,24 +28,24 @@ function apply(ctx) {
   if (!ui) return
   fdEnsureStyleInjected()
 
-  // 1) 右侧栏「插件」卡片区：常驻四页签工作台（桌面与手机竖屏单列自适应）
+  // 1) 右侧栏「插件」卡片区：常驻双页签极简工作台（桌面与手机竖屏单列自适应）
   fdRegisterSafely(ctx, 'fate-dice: workbench panel', () => ui.registerPanel({
     id: FD_PANEL_ID,
     title: '命运之骰',
     render: ({ gameId } = {}) => h(FateDicePanel, { ui, gameId })
   }))
 
-  // 2) 输入栏上方非阻塞揭晓条：检定骰 + 本轮命中事件双展示，平时零占位
+  // 2) 输入栏上方非阻塞揭晓条：检定骰多面体揭晓，平时零占位
   fdRegisterSafely(ctx, 'fate-dice: composer slot', () => ui.registerComposerSlot({
     id: 'fate-dice-live',
     modes: ['play'],
     render: ({ sessionId, gameId } = {}) => h(ComposerLiveDock, { ui, sessionId: sessionId || gameId, gameId })
   }))
 
-  // 3) 楼层折叠胶囊：无检定且无事件时原样返回 children（零包裹）
+  // 3) 楼层折叠胶囊：无检定时原样返回 children（零包裹）
   fdRegisterSafely(ctx, 'fate-dice: turn view', () => ui.registerTurnView({
     id: 'fate-dice-turn',
-    label: '检定与事件胶囊',
+    label: '检定胶囊',
     render: ({ gameId, turn, settled, greeting, children } = {}) => {
       if (!settled || greeting || !turn) return children || null
       return h(TurnRollCapsule, { ui, gameId, turn, children })
