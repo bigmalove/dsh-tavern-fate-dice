@@ -10,7 +10,8 @@ const FD_STORAGE_PREFIX = 'fate-dice:'
 const FD_STORAGE_KEYS = {
   settings: 'fate-dice:save-global-settings',
   skillGroups: 'fate-dice:skill-groups',
-  eventGroups: 'fate-dice:event-groups'
+  eventGroups: 'fate-dice:event-groups',
+  characterProfile: 'fate-dice:character-profile'
 }
 
 /* 宿主 RPC 名称（宿主未实现时由 bridge 统一降级，绝不抛错） */
@@ -30,7 +31,10 @@ const FD_RPC = {
   clearCooldown: 'fate-dice:clear-cooldown',
   sceneResume: 'fate-dice:scene-resume',
   importPreview: 'fate-dice:import-preview',
-  importApply: 'fate-dice:import-apply'
+  importApply: 'fate-dice:import-apply',
+  /* AI 角色动态画像契约：宿主侧可选择性实现，未实现时由 bridge 降级为本地缓存 */
+  refreshProfile: 'fate-dice:refresh-profile',
+  saveProfileNote: 'fate-dice:save-profile-note'
 }
 
 const FD_RULES = [

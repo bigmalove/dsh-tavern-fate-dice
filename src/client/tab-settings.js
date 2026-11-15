@@ -11,7 +11,6 @@ function SettingsTab(props) {
   const settings = view.settings || FD_DEFAULT_SETTINGS
   const [draft, setDraft] = useState(settings)
   const [themeInput, setThemeInput] = useState('')
-  const [exportSkills, setExportSkills] = useState([])
   const [exportEvents, setExportEvents] = useState([])
   const [importText, setImportText] = useState('')
   const [preview, setPreview] = useState(null)
@@ -37,10 +36,6 @@ function SettingsTab(props) {
   }
 
   useEffect(() => {
-    setExportSkills(skillGroups.map(item => item.id))
-  }, [skillGroups.length])
-
-  useEffect(() => {
     setExportEvents(eventGroups.map(item => item.id))
   }, [eventGroups.length])
 
@@ -50,19 +45,20 @@ function SettingsTab(props) {
     actions.persistSettings(draft)
   }
 
+  /* 角色能力已改为 AI 随卡/正文自动生成：导出只打包全局设置 + 勾选的事件组 */
   const buildExport = () => ({
     version: 2,
     kind: 'dsh-tavern-fate-dice/config',
     exportedAt: new Date().toISOString(),
     settings: { ...draft },
-    skillGroups: skillGroups.filter(item => exportSkills.includes(item.id)),
+    skillGroups: [],
     eventGroups: eventGroups.filter(item => exportEvents.includes(item.id))
   })
 
   const doExport = () => {
     const payload = buildExport()
     const ok = fdDownloadJson(`fate-dice-config-${Date.now()}.json`, payload)
-    if (notify) notify(ok ? `已导出 ${payload.skillGroups.length} 个技能组 / ${payload.eventGroups.length} 个事件组` : '浏览器不允许自动下载，请改用复制 JSON')
+    if (notify) notify(ok ? `已导出全局设置 + ${payload.eventGroups.length} 个事件组` : '浏览器不允许自动下载，请改用复制 JSON')
   }
 
   const downloadSample = () => {
@@ -168,7 +164,7 @@ function SettingsTab(props) {
             help: [
               '开启后，察觉、侦查、识破谎言、微表情洞察这类感知型技能检定会自动走「暗骰」：正文只写角色主观能感知到的表象（「你总觉得他的笑有点用力」），不写骰点与成败结论，避免玩家读到「侦查 4 失败」就直接判断屋里没人。',
               '想看真实点数时点楼层里的结算胶囊即可偷看，属于「事后复核」而非「实时剧透」。',
-              '关闭后这些检定照常明骰，成功/失败结论与点数都会出现在正文。单个技能是否暗骰还可以在「技能检定 › 技能清单」里用 🎴/👁 逐个覆盖——那里的设置为准。'
+              '关闭后这些检定照常明骰，成功/失败结论与点数都会出现在正文。单条能力的明骰/暗骰由 AI 在生成角色能力画像时自动标注（带「暗骰」标记），无需手动逐个勾选。'
             ].join('\n')
           },
           h(FdSwitch, { on: draft.autoHidden, label: '感知自动暗骰', onChange: next => patchDraft({ autoHidden: next }) }))),
@@ -321,42 +317,28 @@ function SettingsTab(props) {
 
     h(FdSection, {
       title: '📤 导出配置',
-      note: '勾选要打包的共享库',
+      note: '全局设置 + 勾选的事件组',
       help: [
-        '导出的是一份自包含 JSON（version 2 / kind 为 dsh-tavern-fate-dice/config）：包含当前草稿里的全部全局参数、勾选的技能组、勾选的事件组，附导出时间戳，方便备份、跨设备迁移或分享给朋友。',
-        '默认两组都全选；点胶囊取消勾选即可只打包其中一个题材。组里的一切（骰制、加值、暗骰标记、MVU 路径、轨道模式、条目条件）都会原样带出，不截断。',
-        '「导出 JSON 文件」走浏览器下载，文件名带时间戳，不会覆盖旧备份；若浏览器拦截自动下载，可用「下载示例模板」拿到结构说明，或从导入框的 JSON 文本反向复制。',
-        '「下载示例模板」给的是最小可用样例（一堆空组结构），用来对照字段含义，不是你的真实数据。',
-        '导出的是快照：导出后再改本地组，旧文件不会跟着变。'
+        '导出的是一份自包含 JSON（version 2 / kind 为 dsh-tavern-fate-dice/config）：包含当前草稿里的全部全局参数与勾选的随机事件组，附导出时间戳，方便备份、跨设备迁移或分享给朋友。',
+        '角色能力已改为 AI 依据角色卡 / 世界书 / MVU / 正文自动生成，不再需要手动配置技能组，因此导出包默认只含「全局设置 + 勾选的事件组」；技能组字段仍保留为空数组，方便旧版本读取时不报错。',
+        '事件组里的一切（轨道模式、条目条件、权重、区间写法）都会原样带出，不截断。',
+        '「导出 JSON 文件」走浏览器下载，文件名带时间戳，不会覆盖旧备份；若浏览器拦截自动下载，可用「下载示例模板」拿到结构说明。',
+        '导出的是快照：导出后再改本地设置或事件组，旧文件不会跟着变。'
       ].join('\n')
     },
-      h('div', { className: 'fd-card-grid' },
-        h('div', { className: 'fd-card' },
-          h('span', { className: 'fd-card-title' }, `技能组（${exportSkills.length}/${skillGroups.length}）`),
-          skillGroups.length
-            ? h('div', { className: 'fd-chip-group' },
-              skillGroups.map(group => h(FdChip, {
-                key: group.id,
-                active: exportSkills.includes(group.id),
-                onClick: () => setExportSkills(prev => fdToggleIn(prev, group.id))
-              }, group.name)))
-            : h('div', { className: 'fd-hint' }, '暂无技能组'),
-          h('div', { className: 'fd-btn-row' },
-            h(FdBtn, { small: true, onClick: () => setExportSkills(skillGroups.map(item => item.id)) }, '全选'),
-            h(FdBtn, { small: true, onClick: () => setExportSkills([]) }, '清空'))),
-        h('div', { className: 'fd-card' },
-          h('span', { className: 'fd-card-title' }, `事件组（${exportEvents.length}/${eventGroups.length}）`),
-          eventGroups.length
-            ? h('div', { className: 'fd-chip-group' },
-              eventGroups.map(group => h(FdChip, {
-                key: group.id,
-                active: exportEvents.includes(group.id),
-                onClick: () => setExportEvents(prev => fdToggleIn(prev, group.id))
-              }, group.name)))
-            : h('div', { className: 'fd-hint' }, '暂无事件组'),
-          h('div', { className: 'fd-btn-row' },
-            h(FdBtn, { small: true, onClick: () => setExportEvents(eventGroups.map(item => item.id)) }, '全选'),
-            h(FdBtn, { small: true, onClick: () => setExportEvents([]) }, '清空')))),
+      h('div', { className: 'fd-card' },
+        h('span', { className: 'fd-card-title' }, `事件组（${exportEvents.length}/${eventGroups.length}）`),
+        eventGroups.length
+          ? h('div', { className: 'fd-chip-group' },
+            eventGroups.map(group => h(FdChip, {
+              key: group.id,
+              active: exportEvents.includes(group.id),
+              onClick: () => setExportEvents(prev => fdToggleIn(prev, group.id))
+            }, group.name)))
+          : h('div', { className: 'fd-hint' }, '暂无事件组'),
+        h('div', { className: 'fd-btn-row' },
+          h(FdBtn, { small: true, onClick: () => setExportEvents(eventGroups.map(item => item.id)) }, '全选'),
+          h(FdBtn, { small: true, onClick: () => setExportEvents([]) }, '清空'))),
       h('div', { className: 'fd-btn-row' },
         h(FdBtn, { primary: true, onClick: doExport }, '导出 JSON 文件'),
         h(FdBtn, { onClick: downloadSample }, '下载示例模板'))),
@@ -369,7 +351,8 @@ function SettingsTab(props) {
         '自动识别两种格式：① 本插件原生 v2 配置（kind 为 dsh-tavern-fate-dice/config）；② 原版 AutoRandomInput 的 v1 / v2 配置文件——字段名、轨道结构、技能表、区间/权重写法都会自动转换成本插件的技能组与事件组，缺失的字段填默认值，无法映射的字段会在预览里以 warning 列出（不会静默丢弃）。',
         '必须先「预览识别结果」再导入：预览会显示识别到的格式、将导入的技能组/事件组数量、数据来源（宿主识别或本地解析）以及每个组的名字与规模，确认无误再点「确认为新组导入」。',
         '导入一律新建组：即使与已有组同名，也绝不会覆盖、不会合并原数据——名字会自动补「 · 导入」后缀（重名时再加序号区分），旧数据零风险。想拿导入数据替换某组，请手动改选或删掉旧组。',
-        '识别失败时这块会显示具体错误（JSON 语法错、找不到可识别的组、版本不支持等），改好文本或换文件再预览即可。'
+        '识别失败时这块会显示具体错误（JSON 语法错、找不到可识别的组、版本不支持等），改好文本或换文件再预览即可。',
+        '含技能组的旧 JSON 仍可正常导入：技能组会作为兼容数据保留下来（不再参与 AI 判定，角色能力已由 AI 依据角色卡/世界书/MVU/正文自动生成），不会报错也不会丢字段。'
       ].join('\n')
     },
       h('div', { className: 'fd-btn-row' },

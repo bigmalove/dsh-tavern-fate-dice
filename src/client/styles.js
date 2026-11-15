@@ -30,6 +30,61 @@ const CSS_TEXT = `
 }
 .fd-root *, .fd-root *::before, .fd-root *::after { box-sizing: border-box; }
 
+/* ---------- 右侧栏工作台：双层弹性滚动架构 ----------
+ * 宿主 betterSidebar 的页签容器是固定高度 + overflow:hidden 的弹性盒，
+ * 因此面板根节点必须自己填满高度并把滚动交给内层 .fd-wb-scroll，
+ * 否则内容超出视口会被直接截断、无法下滑。 */
+.fd-root.fd-workbench {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 10px 12px 0;
+  gap: 0;
+}
+.fd-wb-top {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+.fd-wb-scroll {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px 2px 48px;
+}
+/* 子卡片在 flex 列中不许被压缩，否则永远撑不出滚动条 */
+.fd-wb-scroll > * { flex-shrink: 0; }
+.fd-wb-scroll::-webkit-scrollbar { width: 8px; }
+.fd-wb-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--fd-line);
+}
+.fd-wb-scroll::-webkit-scrollbar-track { background: transparent; }
+.fd-workbench > .fd-toast {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  z-index: 5;
+  box-shadow: var(--fd-shadow);
+}
+
 .fd-wb-head {
   display: flex;
   align-items: flex-start;
@@ -583,6 +638,113 @@ const CSS_TEXT = `
   line-height: 1.6;
   opacity: 0.72;
   word-break: break-word;
+}
+
+/* ---------- AI 角色能力画像 ---------- */
+.fd-profile-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fd-profile-note {
+  font-size: 11.5px;
+  line-height: 1.68;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--fd-accent-soft);
+  border: 1px solid var(--fd-line-soft);
+  word-break: break-word;
+}
+.fd-profile-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fd-profile-name { font-size: 13.5px; font-weight: 700; }
+.fd-profile-arch { font-size: 12px; opacity: 0.78; word-break: break-word; }
+.fd-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 6px;
+}
+.fd-profile-trait {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: var(--fd-fill);
+  border: 1px solid var(--fd-line-soft);
+  border-left-width: 3px;
+  min-width: 0;
+}
+.fd-profile-trait.is-good { border-left-color: var(--fd-ok); }
+.fd-profile-trait.is-bad { border-left-color: var(--fd-bad); }
+.fd-profile-trait.is-neutral { border-left-color: var(--fd-warn); }
+.fd-profile-trait-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fd-profile-trait-label { font-size: 12.5px; font-weight: 650; word-break: break-word; }
+.fd-profile-trait-bonus {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.fd-profile-trait-bonus.is-good { color: var(--fd-ok); }
+.fd-profile-trait-bonus.is-bad { color: var(--fd-bad); }
+.fd-profile-trait-bonus.is-neutral { color: var(--fd-warn); }
+.fd-profile-trait-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  font-size: 10.5px;
+  opacity: 0.72;
+}
+.fd-profile-trait-reason {
+  font-size: 11px;
+  line-height: 1.55;
+  opacity: 0.78;
+  word-break: break-word;
+}
+.fd-ctx-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+}
+.fd-ctx-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 9px;
+  border-radius: 10px;
+  background: var(--fd-fill);
+  border: 1px solid var(--fd-line-soft);
+  min-width: 0;
+}
+.fd-ctx-cell.is-on { border-color: color-mix(in oklab, var(--fd-ok) 38%, transparent); }
+.fd-ctx-cell.is-off { opacity: 0.72; }
+.fd-ctx-title { font-size: 11.5px; font-weight: 650; }
+.fd-ctx-value { font-size: 12px; word-break: break-word; }
+.fd-ctx-sub { font-size: 10.5px; opacity: 0.66; word-break: break-word; }
+.fd-mvu-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.fd-mvu-pill {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--fd-fill-strong);
+  border: 1px solid var(--fd-line-soft);
+  word-break: break-all;
 }
 
 @keyframes fd-tumble {

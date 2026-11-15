@@ -78,7 +78,12 @@ function fdStoreSet(key, value) {
 function fdEnsureStyleInjected() {
   fdSafe(() => {
     if (typeof document === 'undefined' || !document.head) return
-    if (document.getElementById(FD_STYLE_ID)) return
+    const existing = document.getElementById(FD_STYLE_ID)
+    if (existing) {
+      /* 客户端热重载后旧 <style> 仍在 DOM 中：必须比对并覆写，否则新样式永远不生效 */
+      if (existing.textContent !== CSS_TEXT) existing.textContent = CSS_TEXT
+      return
+    }
     const el = document.createElement('style')
     el.id = FD_STYLE_ID
     el.textContent = CSS_TEXT
@@ -168,6 +173,121 @@ function fdBindStatusSummary(view, status) {
   return next
 }
 
+function fdEmptyCharacterProfile() {
+  return {
+    characterName: '',
+    archetype: '',
+    traits: [],
+    mvuHighlights: [],
+    customNote: '',
+    updatedTurn: 0,
+    updatedAt: 0
+  }
+}
+
+function fdEmptyContextSources() {
+  return {
+    playerName: '',
+    hasCard: false,
+    cardName: '',
+    loreCount: 0,
+    mvuKeyCount: 0,
+    historyTurns: 0,
+    backgroundModelReady: false
+  }
+}
+
+const FD_PROFILE_SOURCES = ['角色卡', '世界书', 'MVU', '正文', '综合']
+
+function fdNormalizeProfileTrait(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {}
+  const label = String(src.label || src.name || src.trait || src.title || '').trim()
+  if (!label) return null
+  const source = FD_PROFILE_SOURCES.includes(src.source) ? src.source : '综合'
+  const bonus = fdClamp(fdNumber(src.bonus ?? src.value ?? src.mod, 0), -50, 50)
+  return {
+    id: String(src.id || (source + ':' + label)),
+    name: label,
+    label,
+    tier: fdClamp(fdNumber(src.tier, 0), -3, 3),
+    bonus,
+    tone: src.tone === 'good' || src.tone === 'bad' || src.tone === 'neutral'
+      ? src.tone
+      : (bonus > 0 ? 'good' : (bonus < 0 ? 'bad' : 'neutral')),
+    source,
+    hidden: Boolean(src.hidden ?? src.dark ?? false),
+    reason: String(src.reason || src.note || src.basis || '')
+  }
+}
+
+function fdNormalizeMvuHighlights(raw) {
+  if (!raw) return []
+  if (Array.isArray(raw)) {
+    return raw.map(item => {
+      if (item && typeof item === 'object') {
+        const key = String(item.key || item.name || item.path || '').trim()
+        if (!key) return null
+        return { key, value: String(item.value === undefined || item.value === null ? '' : item.value) }
+      }
+      const text = String(item || '').trim()
+      if (!text) return null
+      const idx = text.indexOf(':')
+      if (idx < 0) return { key: text, value: '' }
+      return { key: text.slice(0, idx).trim(), value: text.slice(idx + 1).trim() }
+    }).filter(Boolean).slice(0, 24)
+  }
+  if (typeof raw === 'object') {
+    return Object.keys(raw).slice(0, 24).map(key => ({ key, value: String(raw[key] === undefined || raw[key] === null ? '' : raw[key]) }))
+  }
+  return []
+}
+
+function fdNormalizeCharacterProfile(raw) {
+  const base = fdEmptyCharacterProfile()
+  if (!raw || typeof raw !== 'object') return base
+  const traits = Array.isArray(raw.traits) ? raw.traits.map(fdNormalizeProfileTrait).filter(Boolean).slice(0, 24) : []
+  return {
+    characterName: String(raw.characterName || raw.name || raw.character || ''),
+    archetype: String(raw.archetype || raw.tagline || raw.summary || ''),
+    traits,
+    mvuHighlights: fdNormalizeMvuHighlights(raw.mvuHighlights || raw.mvu || raw.variables),
+    customNote: String(raw.customNote || raw.note || ''),
+    updatedTurn: Math.max(0, fdNumber(raw.updatedTurn ?? raw.turn, 0)),
+    updatedAt: Math.max(0, fdNumber(raw.updatedAt, 0))
+  }
+}
+
+function fdNormalizeContextSources(raw) {
+  const base = fdEmptyContextSources()
+  if (!raw || typeof raw !== 'object') return base
+  return {
+    playerName: String(raw.playerName || raw.userName || ''),
+    hasCard: Boolean(raw.hasCard ?? raw.cardReady ?? false),
+    cardName: String(raw.cardName || raw.characterName || ''),
+    loreCount: Math.max(0, fdNumber(raw.loreCount ?? raw.worldbookCount ?? raw.lore, 0)),
+    mvuKeyCount: Math.max(0, fdNumber(raw.mvuKeyCount ?? raw.mvuCount ?? raw.variableCount, 0)),
+    historyTurns: Math.max(0, fdNumber(raw.historyTurns ?? raw.turns ?? raw.history, 0)),
+    backgroundModelReady: Boolean(raw.backgroundModelReady ?? raw.modelReady ?? false)
+  }
+}
+
+function fdProfileCacheKey(gameId) {
+  return String(gameId || '__global__')
+}
+
+function fdLoadProfileCache(gameId) {
+  const cache = fdStoreGet(FD_STORAGE_KEYS.characterProfile, null)
+  const src = cache && typeof cache === 'object' && !Array.isArray(cache) ? cache[fdProfileCacheKey(gameId)] : null
+  return fdNormalizeCharacterProfile(src)
+}
+
+function fdSaveProfileCache(gameId, profile) {
+  const cache = fdStoreGet(FD_STORAGE_KEYS.characterProfile, null)
+  const map = cache && typeof cache === 'object' && !Array.isArray(cache) ? { ...cache } : {}
+  map[fdProfileCacheKey(gameId)] = fdNormalizeCharacterProfile(profile)
+  return fdStoreSet(FD_STORAGE_KEYS.characterProfile, map)
+}
+
 function fdEmptyWorkbench() {
   const cachedSettings = fdNormalizeSettings(fdStoreGet(FD_STORAGE_KEYS.settings, FD_DEFAULT_SETTINGS))
   const cachedSkills = fdStoreGet(FD_STORAGE_KEYS.skillGroups, [])
@@ -191,6 +311,8 @@ function fdEmptyWorkbench() {
     summary: { total: 0, counts: {}, recent: [] },
     stats: { total: 0, good: 0, bad: 0 },
     recent: [],
+    characterProfile: fdLoadProfileCache(''),
+    contextSources: fdEmptyContextSources(),
     source: 'local'
   }
 }
@@ -261,6 +383,12 @@ function fdMergeWorkbench(base, raw) {
     view.recent = Array.isArray(summary.recent) ? fdNormalizeRecent(summary.recent) : view.recent
   }
   if (Array.isArray(payload.recent)) view.recent = fdNormalizeRecent(payload.recent)
+  if (payload.characterProfile || payload.profile) {
+    view.characterProfile = fdNormalizeCharacterProfile(payload.characterProfile || payload.profile)
+  }
+  if (payload.contextSources || payload.context) {
+    view.contextSources = fdNormalizeContextSources(payload.contextSources || payload.context)
+  }
   view.source = payload.source === 'local' ? 'local' : 'host'
   return view
 }
@@ -276,6 +404,11 @@ function fdLoadWorkbench(ui, gameId) {
         if (status.ok && status.data) {
           view = fdBindStatusSummary(view, status.data)
           if (!gameId) view.judgeStatus = status.data.judgeStatus || view.judgeStatus
+        }
+        const cachedProfile = fdLoadProfileCache(gameId)
+        const hasHostProfile = Boolean(view.characterProfile && (view.characterProfile.traits || []).length)
+        if (!hasHostProfile && (cachedProfile.traits.length || cachedProfile.customNote)) {
+          view = { ...view, characterProfile: cachedProfile }
         }
         if (!gameId) view.source = 'local'
         return view
@@ -339,6 +472,49 @@ function fdSceneResume(ui, gameId) {
 
 function fdFreeRoll(ui, gameId, expression) {
   return fdCall(ui, FD_RPC.freeRoll, { gameId: gameId || null, expression })
+}
+
+/* ---- AI 角色动态画像：刷新提取 / 备注保存 ---- */
+
+function fdRefreshProfile(ui, gameId) {
+  if (!gameId) {
+    return Promise.resolve({ ok: false, error: '需要进入对话后才能提取角色能力画像' })
+  }
+  return fdCall(ui, FD_RPC.refreshProfile, { gameId }).then(res => {
+    const data = (res && res.data) || null
+    const profile = fdNormalizeCharacterProfile(
+      (data && (data.characterProfile || data.profile)) || null
+    )
+    const contextSources = fdNormalizeContextSources(
+      (data && (data.contextSources || data.context)) || null
+    )
+    const hasProfile = Boolean(profile.characterName || profile.archetype || profile.traits.length)
+    if (hasProfile) fdSaveProfileCache(gameId, profile)
+    return {
+      ok: Boolean(res && res.ok && (!data || data.ok !== false)) && hasProfile,
+      error: (data && data.error) || (res && res.error) || (hasProfile ? '' : '宿主尚未返回画像数据'),
+      characterProfile: hasProfile ? profile : null,
+      contextSources,
+      raw: data
+    }
+  })
+}
+
+function fdSaveProfileNote(ui, gameId, payload) {
+  const src = payload && typeof payload === 'object' ? payload : {}
+  const customNote = String(src.customNote || '')
+  const rule = src.rule ? String(src.rule) : ''
+  const cached = fdLoadProfileCache(gameId)
+  if (gameId) {
+    fdSaveProfileCache(gameId, {
+      ...cached,
+      customNote,
+      updatedAt: Date.now()
+    })
+  }
+  const body = { gameId: gameId || null, customNote, rule }
+  if (!rule) delete body.rule
+  return fdCall(ui, FD_RPC.saveProfileNote, body).then(res => ({ ...res, customNote }))
 }
 
 /* ---------------- 导入导出 ---------------- */

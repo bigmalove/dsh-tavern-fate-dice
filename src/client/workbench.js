@@ -242,8 +242,9 @@ function OverviewTab(props) {
               title: '自动技能检定',
               text: [
                 '你在主聊天框照常发送一行行动描述后，插件会在发送前拦截本轮输入，把它交给叙事阻尼器的决策模型评估本次行动的不确定性。',
-                '模型返回后会结合角色技能表挑选最匹配的一项技能，并按处境裁定 5 档难度（极难 / 困难 / 普通 / 容易 / 极易）。',
-                '随后由密码学真随机数投骰，把骰面、总计、档位结论注入本轮上下文，再交还给宿主继续生成正文——整个过程不额外占用一次对话请求。'
+                '模型会结合【角色卡/玩家人设 + 启用世界书 + 当前 MVU 变量 + 近期正文】实时评定主角在该行动上的能力加减值（−2 ~ +3），并按处境裁定 5 档难度（极难 / 困难 / 普通 / 容易 / 极易）——无需任何手填技能表。',
+                '随后由密码学真随机数投骰，把骰面、总计、档位结论注入本轮上下文，再交还给宿主继续生成正文——整个过程不额外占用一次对话请求。',
+                '角色能力画像在「角色能力」标签页可查看，随受伤、突破或装备变化自动演进。'
               ]
             })),
           h('span', { className: 'fd-card-sub' }, '发送前毫秒定难并投掷真骰')),
@@ -415,6 +416,13 @@ function WorkbenchPanel(props) {
       patch(() => ({ rule }))
       notify(`检定骰制已切换为 ${fdRuleMeta(rule).label}`)
     },
+    /* AI 画像与上下文源：由 tab-checks 在提取/保存后回写视图 */
+    setProfile(profile, contextSources) {
+      patch(prev => ({
+        characterProfile: profile ? fdNormalizeCharacterProfile(profile) : prev.characterProfile,
+        contextSources: contextSources ? fdNormalizeContextSources(contextSources) : prev.contextSources
+      }))
+    },
     setGameFlags(flags) {
       patch(prev => {
         const next = { ...prev, ...flags }
@@ -488,7 +496,7 @@ function WorkbenchPanel(props) {
 
   const tabs = [
     ['overview', '总览'],
-    ['checks', '技能检定'],
+    ['checks', '角色能力'],
     ['events', '随机事件'],
     ['settings', '设置与导入导出']
   ]
@@ -501,25 +509,27 @@ function WorkbenchPanel(props) {
         ? h(SettingsTab, { ui, gameId, hasGame, view, actions, notify })
         : h(OverviewTab, { ui, gameId, hasGame, view, actions, notify })
 
-  return h('div', { className: 'fd-root' },
-    h('div', { className: 'fd-wb-head' },
-      h('div', null,
-        h('h3', { className: 'fd-wb-title' }, '🎲 命运之骰'),
-        h('p', { className: 'fd-wb-sub' }, hasGame
-          ? '本局工作台：骰制、技能组、随机事件与阻尼联动'
-          : '全局设置与共享库可随时编辑；进入任意对话后可配置本局绑定与剧情线')), 
-      h('div', { className: 'fd-btn-row' },
-        h(FdBadge, { tone: hasGame ? 'ok' : 'off' }, hasGame ? '已绑定本局' : '未进入对话'))),
-    h('div', { className: 'fd-tabbar', role: 'tablist' },
-      tabs.map(([value, label]) => h('button', {
-        key: value,
-        type: 'button',
-        role: 'tab',
-        'aria-selected': tab === value ? 'true' : 'false',
-        className: 'fd-tab' + (tab === value ? ' is-active' : ''),
-        onClick: () => setTab(value)
-      }, label))),
-    h(DecisionModelGuideBanner, { view, onRecheck: recheckModel, checking }),
-    body,
+  return h('div', { className: 'fd-root fd-workbench' },
+    h('div', { className: 'fd-wb-top' },
+      h('div', { className: 'fd-wb-head' },
+        h('div', null,
+          h('h3', { className: 'fd-wb-title' }, '🎲 命运之骰'),
+          h('p', { className: 'fd-wb-sub' }, hasGame
+            ? '本局工作台：骰制、角色能力画像、随机事件与阻尼联动'
+            : '全局设置与共享库可随时编辑；进入任意对话后可配置本局绑定与剧情线')),
+        h('div', { className: 'fd-btn-row' },
+          h(FdBadge, { tone: hasGame ? 'ok' : 'off' }, hasGame ? '已绑定本局' : '未进入对话'))),
+      h('div', { className: 'fd-tabbar', role: 'tablist' },
+        tabs.map(([value, label]) => h('button', {
+          key: value,
+          type: 'button',
+          role: 'tab',
+          'aria-selected': tab === value ? 'true' : 'false',
+          className: 'fd-tab' + (tab === value ? ' is-active' : ''),
+          onClick: () => setTab(value)
+        }, label)))),
+    h('div', { className: 'fd-wb-scroll' },
+      h(DecisionModelGuideBanner, { view, onRecheck: recheckModel, checking }),
+      body),
     toast ? h('div', { className: 'fd-toast', role: 'status' }, toast) : null)
 }

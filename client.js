@@ -29,7 +29,8 @@ const FD_STORAGE_PREFIX = 'fate-dice:'
 const FD_STORAGE_KEYS = {
   settings: 'fate-dice:save-global-settings',
   skillGroups: 'fate-dice:skill-groups',
-  eventGroups: 'fate-dice:event-groups'
+  eventGroups: 'fate-dice:event-groups',
+  characterProfile: 'fate-dice:character-profile'
 }
 
 /* 宿主 RPC 名称（宿主未实现时由 bridge 统一降级，绝不抛错） */
@@ -49,7 +50,10 @@ const FD_RPC = {
   clearCooldown: 'fate-dice:clear-cooldown',
   sceneResume: 'fate-dice:scene-resume',
   importPreview: 'fate-dice:import-preview',
-  importApply: 'fate-dice:import-apply'
+  importApply: 'fate-dice:import-apply',
+  /* AI 角色动态画像契约：宿主侧可选择性实现，未实现时由 bridge 降级为本地缓存 */
+  refreshProfile: 'fate-dice:refresh-profile',
+  saveProfileNote: 'fate-dice:save-profile-note'
 }
 
 const FD_RULES = [
@@ -483,6 +487,61 @@ const CSS_TEXT = `
   gap: 10px;
 }
 .fd-root *, .fd-root *::before, .fd-root *::after { box-sizing: border-box; }
+
+/* ---------- 右侧栏工作台：双层弹性滚动架构 ----------
+ * 宿主 betterSidebar 的页签容器是固定高度 + overflow:hidden 的弹性盒，
+ * 因此面板根节点必须自己填满高度并把滚动交给内层 .fd-wb-scroll，
+ * 否则内容超出视口会被直接截断、无法下滑。 */
+.fd-root.fd-workbench {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 10px 12px 0;
+  gap: 0;
+}
+.fd-wb-top {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+.fd-wb-scroll {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px 2px 48px;
+}
+/* 子卡片在 flex 列中不许被压缩，否则永远撑不出滚动条 */
+.fd-wb-scroll > * { flex-shrink: 0; }
+.fd-wb-scroll::-webkit-scrollbar { width: 8px; }
+.fd-wb-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--fd-line);
+}
+.fd-wb-scroll::-webkit-scrollbar-track { background: transparent; }
+.fd-workbench > .fd-toast {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  z-index: 5;
+  box-shadow: var(--fd-shadow);
+}
 
 .fd-wb-head {
   display: flex;
@@ -1039,6 +1098,113 @@ const CSS_TEXT = `
   word-break: break-word;
 }
 
+/* ---------- AI 角色能力画像 ---------- */
+.fd-profile-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fd-profile-note {
+  font-size: 11.5px;
+  line-height: 1.68;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--fd-accent-soft);
+  border: 1px solid var(--fd-line-soft);
+  word-break: break-word;
+}
+.fd-profile-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fd-profile-name { font-size: 13.5px; font-weight: 700; }
+.fd-profile-arch { font-size: 12px; opacity: 0.78; word-break: break-word; }
+.fd-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 6px;
+}
+.fd-profile-trait {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: var(--fd-fill);
+  border: 1px solid var(--fd-line-soft);
+  border-left-width: 3px;
+  min-width: 0;
+}
+.fd-profile-trait.is-good { border-left-color: var(--fd-ok); }
+.fd-profile-trait.is-bad { border-left-color: var(--fd-bad); }
+.fd-profile-trait.is-neutral { border-left-color: var(--fd-warn); }
+.fd-profile-trait-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fd-profile-trait-label { font-size: 12.5px; font-weight: 650; word-break: break-word; }
+.fd-profile-trait-bonus {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.fd-profile-trait-bonus.is-good { color: var(--fd-ok); }
+.fd-profile-trait-bonus.is-bad { color: var(--fd-bad); }
+.fd-profile-trait-bonus.is-neutral { color: var(--fd-warn); }
+.fd-profile-trait-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  font-size: 10.5px;
+  opacity: 0.72;
+}
+.fd-profile-trait-reason {
+  font-size: 11px;
+  line-height: 1.55;
+  opacity: 0.78;
+  word-break: break-word;
+}
+.fd-ctx-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+}
+.fd-ctx-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 9px;
+  border-radius: 10px;
+  background: var(--fd-fill);
+  border: 1px solid var(--fd-line-soft);
+  min-width: 0;
+}
+.fd-ctx-cell.is-on { border-color: color-mix(in oklab, var(--fd-ok) 38%, transparent); }
+.fd-ctx-cell.is-off { opacity: 0.72; }
+.fd-ctx-title { font-size: 11.5px; font-weight: 650; }
+.fd-ctx-value { font-size: 12px; word-break: break-word; }
+.fd-ctx-sub { font-size: 10.5px; opacity: 0.66; word-break: break-word; }
+.fd-mvu-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.fd-mvu-pill {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--fd-fill-strong);
+  border: 1px solid var(--fd-line-soft);
+  word-break: break-all;
+}
+
 @keyframes fd-tumble {
   0% { transform: translateY(-18px) rotateX(0deg) rotateZ(-200deg) scale(0.72); opacity: 0.25; }
   55% { transform: translateY(3px) rotateX(330deg) rotateZ(18deg) scale(1.1); opacity: 1; }
@@ -1155,7 +1321,12 @@ function fdStoreSet(key, value) {
 function fdEnsureStyleInjected() {
   fdSafe(() => {
     if (typeof document === 'undefined' || !document.head) return
-    if (document.getElementById(FD_STYLE_ID)) return
+    const existing = document.getElementById(FD_STYLE_ID)
+    if (existing) {
+      /* 客户端热重载后旧 <style> 仍在 DOM 中：必须比对并覆写，否则新样式永远不生效 */
+      if (existing.textContent !== CSS_TEXT) existing.textContent = CSS_TEXT
+      return
+    }
     const el = document.createElement('style')
     el.id = FD_STYLE_ID
     el.textContent = CSS_TEXT
@@ -1245,6 +1416,121 @@ function fdBindStatusSummary(view, status) {
   return next
 }
 
+function fdEmptyCharacterProfile() {
+  return {
+    characterName: '',
+    archetype: '',
+    traits: [],
+    mvuHighlights: [],
+    customNote: '',
+    updatedTurn: 0,
+    updatedAt: 0
+  }
+}
+
+function fdEmptyContextSources() {
+  return {
+    playerName: '',
+    hasCard: false,
+    cardName: '',
+    loreCount: 0,
+    mvuKeyCount: 0,
+    historyTurns: 0,
+    backgroundModelReady: false
+  }
+}
+
+const FD_PROFILE_SOURCES = ['角色卡', '世界书', 'MVU', '正文', '综合']
+
+function fdNormalizeProfileTrait(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {}
+  const label = String(src.label || src.name || src.trait || src.title || '').trim()
+  if (!label) return null
+  const source = FD_PROFILE_SOURCES.includes(src.source) ? src.source : '综合'
+  const bonus = fdClamp(fdNumber(src.bonus ?? src.value ?? src.mod, 0), -50, 50)
+  return {
+    id: String(src.id || (source + ':' + label)),
+    name: label,
+    label,
+    tier: fdClamp(fdNumber(src.tier, 0), -3, 3),
+    bonus,
+    tone: src.tone === 'good' || src.tone === 'bad' || src.tone === 'neutral'
+      ? src.tone
+      : (bonus > 0 ? 'good' : (bonus < 0 ? 'bad' : 'neutral')),
+    source,
+    hidden: Boolean(src.hidden ?? src.dark ?? false),
+    reason: String(src.reason || src.note || src.basis || '')
+  }
+}
+
+function fdNormalizeMvuHighlights(raw) {
+  if (!raw) return []
+  if (Array.isArray(raw)) {
+    return raw.map(item => {
+      if (item && typeof item === 'object') {
+        const key = String(item.key || item.name || item.path || '').trim()
+        if (!key) return null
+        return { key, value: String(item.value === undefined || item.value === null ? '' : item.value) }
+      }
+      const text = String(item || '').trim()
+      if (!text) return null
+      const idx = text.indexOf(':')
+      if (idx < 0) return { key: text, value: '' }
+      return { key: text.slice(0, idx).trim(), value: text.slice(idx + 1).trim() }
+    }).filter(Boolean).slice(0, 24)
+  }
+  if (typeof raw === 'object') {
+    return Object.keys(raw).slice(0, 24).map(key => ({ key, value: String(raw[key] === undefined || raw[key] === null ? '' : raw[key]) }))
+  }
+  return []
+}
+
+function fdNormalizeCharacterProfile(raw) {
+  const base = fdEmptyCharacterProfile()
+  if (!raw || typeof raw !== 'object') return base
+  const traits = Array.isArray(raw.traits) ? raw.traits.map(fdNormalizeProfileTrait).filter(Boolean).slice(0, 24) : []
+  return {
+    characterName: String(raw.characterName || raw.name || raw.character || ''),
+    archetype: String(raw.archetype || raw.tagline || raw.summary || ''),
+    traits,
+    mvuHighlights: fdNormalizeMvuHighlights(raw.mvuHighlights || raw.mvu || raw.variables),
+    customNote: String(raw.customNote || raw.note || ''),
+    updatedTurn: Math.max(0, fdNumber(raw.updatedTurn ?? raw.turn, 0)),
+    updatedAt: Math.max(0, fdNumber(raw.updatedAt, 0))
+  }
+}
+
+function fdNormalizeContextSources(raw) {
+  const base = fdEmptyContextSources()
+  if (!raw || typeof raw !== 'object') return base
+  return {
+    playerName: String(raw.playerName || raw.userName || ''),
+    hasCard: Boolean(raw.hasCard ?? raw.cardReady ?? false),
+    cardName: String(raw.cardName || raw.characterName || ''),
+    loreCount: Math.max(0, fdNumber(raw.loreCount ?? raw.worldbookCount ?? raw.lore, 0)),
+    mvuKeyCount: Math.max(0, fdNumber(raw.mvuKeyCount ?? raw.mvuCount ?? raw.variableCount, 0)),
+    historyTurns: Math.max(0, fdNumber(raw.historyTurns ?? raw.turns ?? raw.history, 0)),
+    backgroundModelReady: Boolean(raw.backgroundModelReady ?? raw.modelReady ?? false)
+  }
+}
+
+function fdProfileCacheKey(gameId) {
+  return String(gameId || '__global__')
+}
+
+function fdLoadProfileCache(gameId) {
+  const cache = fdStoreGet(FD_STORAGE_KEYS.characterProfile, null)
+  const src = cache && typeof cache === 'object' && !Array.isArray(cache) ? cache[fdProfileCacheKey(gameId)] : null
+  return fdNormalizeCharacterProfile(src)
+}
+
+function fdSaveProfileCache(gameId, profile) {
+  const cache = fdStoreGet(FD_STORAGE_KEYS.characterProfile, null)
+  const map = cache && typeof cache === 'object' && !Array.isArray(cache) ? { ...cache } : {}
+  map[fdProfileCacheKey(gameId)] = fdNormalizeCharacterProfile(profile)
+  return fdStoreSet(FD_STORAGE_KEYS.characterProfile, map)
+}
+
 function fdEmptyWorkbench() {
   const cachedSettings = fdNormalizeSettings(fdStoreGet(FD_STORAGE_KEYS.settings, FD_DEFAULT_SETTINGS))
   const cachedSkills = fdStoreGet(FD_STORAGE_KEYS.skillGroups, [])
@@ -1268,6 +1554,8 @@ function fdEmptyWorkbench() {
     summary: { total: 0, counts: {}, recent: [] },
     stats: { total: 0, good: 0, bad: 0 },
     recent: [],
+    characterProfile: fdLoadProfileCache(''),
+    contextSources: fdEmptyContextSources(),
     source: 'local'
   }
 }
@@ -1338,6 +1626,12 @@ function fdMergeWorkbench(base, raw) {
     view.recent = Array.isArray(summary.recent) ? fdNormalizeRecent(summary.recent) : view.recent
   }
   if (Array.isArray(payload.recent)) view.recent = fdNormalizeRecent(payload.recent)
+  if (payload.characterProfile || payload.profile) {
+    view.characterProfile = fdNormalizeCharacterProfile(payload.characterProfile || payload.profile)
+  }
+  if (payload.contextSources || payload.context) {
+    view.contextSources = fdNormalizeContextSources(payload.contextSources || payload.context)
+  }
   view.source = payload.source === 'local' ? 'local' : 'host'
   return view
 }
@@ -1353,6 +1647,11 @@ function fdLoadWorkbench(ui, gameId) {
         if (status.ok && status.data) {
           view = fdBindStatusSummary(view, status.data)
           if (!gameId) view.judgeStatus = status.data.judgeStatus || view.judgeStatus
+        }
+        const cachedProfile = fdLoadProfileCache(gameId)
+        const hasHostProfile = Boolean(view.characterProfile && (view.characterProfile.traits || []).length)
+        if (!hasHostProfile && (cachedProfile.traits.length || cachedProfile.customNote)) {
+          view = { ...view, characterProfile: cachedProfile }
         }
         if (!gameId) view.source = 'local'
         return view
@@ -1416,6 +1715,49 @@ function fdSceneResume(ui, gameId) {
 
 function fdFreeRoll(ui, gameId, expression) {
   return fdCall(ui, FD_RPC.freeRoll, { gameId: gameId || null, expression })
+}
+
+/* ---- AI 角色动态画像：刷新提取 / 备注保存 ---- */
+
+function fdRefreshProfile(ui, gameId) {
+  if (!gameId) {
+    return Promise.resolve({ ok: false, error: '需要进入对话后才能提取角色能力画像' })
+  }
+  return fdCall(ui, FD_RPC.refreshProfile, { gameId }).then(res => {
+    const data = (res && res.data) || null
+    const profile = fdNormalizeCharacterProfile(
+      (data && (data.characterProfile || data.profile)) || null
+    )
+    const contextSources = fdNormalizeContextSources(
+      (data && (data.contextSources || data.context)) || null
+    )
+    const hasProfile = Boolean(profile.characterName || profile.archetype || profile.traits.length)
+    if (hasProfile) fdSaveProfileCache(gameId, profile)
+    return {
+      ok: Boolean(res && res.ok && (!data || data.ok !== false)) && hasProfile,
+      error: (data && data.error) || (res && res.error) || (hasProfile ? '' : '宿主尚未返回画像数据'),
+      characterProfile: hasProfile ? profile : null,
+      contextSources,
+      raw: data
+    }
+  })
+}
+
+function fdSaveProfileNote(ui, gameId, payload) {
+  const src = payload && typeof payload === 'object' ? payload : {}
+  const customNote = String(src.customNote || '')
+  const rule = src.rule ? String(src.rule) : ''
+  const cached = fdLoadProfileCache(gameId)
+  if (gameId) {
+    fdSaveProfileCache(gameId, {
+      ...cached,
+      customNote,
+      updatedAt: Date.now()
+    })
+  }
+  const body = { gameId: gameId || null, customNote, rule }
+  if (!rule) delete body.rule
+  return fdCall(ui, FD_RPC.saveProfileNote, body).then(res => ({ ...res, customNote }))
 }
 
 /* ---------------- 导入导出 ---------------- */
@@ -2593,8 +2935,9 @@ function OverviewTab(props) {
               title: '自动技能检定',
               text: [
                 '你在主聊天框照常发送一行行动描述后，插件会在发送前拦截本轮输入，把它交给叙事阻尼器的决策模型评估本次行动的不确定性。',
-                '模型返回后会结合角色技能表挑选最匹配的一项技能，并按处境裁定 5 档难度（极难 / 困难 / 普通 / 容易 / 极易）。',
-                '随后由密码学真随机数投骰，把骰面、总计、档位结论注入本轮上下文，再交还给宿主继续生成正文——整个过程不额外占用一次对话请求。'
+                '模型会结合【角色卡/玩家人设 + 启用世界书 + 当前 MVU 变量 + 近期正文】实时评定主角在该行动上的能力加减值（−2 ~ +3），并按处境裁定 5 档难度（极难 / 困难 / 普通 / 容易 / 极易）——无需任何手填技能表。',
+                '随后由密码学真随机数投骰，把骰面、总计、档位结论注入本轮上下文，再交还给宿主继续生成正文——整个过程不额外占用一次对话请求。',
+                '角色能力画像在「角色能力」标签页可查看，随受伤、突破或装备变化自动演进。'
               ]
             })),
           h('span', { className: 'fd-card-sub' }, '发送前毫秒定难并投掷真骰')),
@@ -2766,6 +3109,13 @@ function WorkbenchPanel(props) {
       patch(() => ({ rule }))
       notify(`检定骰制已切换为 ${fdRuleMeta(rule).label}`)
     },
+    /* AI 画像与上下文源：由 tab-checks 在提取/保存后回写视图 */
+    setProfile(profile, contextSources) {
+      patch(prev => ({
+        characterProfile: profile ? fdNormalizeCharacterProfile(profile) : prev.characterProfile,
+        contextSources: contextSources ? fdNormalizeContextSources(contextSources) : prev.contextSources
+      }))
+    },
     setGameFlags(flags) {
       patch(prev => {
         const next = { ...prev, ...flags }
@@ -2839,7 +3189,7 @@ function WorkbenchPanel(props) {
 
   const tabs = [
     ['overview', '总览'],
-    ['checks', '技能检定'],
+    ['checks', '角色能力'],
     ['events', '随机事件'],
     ['settings', '设置与导入导出']
   ]
@@ -2852,317 +3202,275 @@ function WorkbenchPanel(props) {
         ? h(SettingsTab, { ui, gameId, hasGame, view, actions, notify })
         : h(OverviewTab, { ui, gameId, hasGame, view, actions, notify })
 
-  return h('div', { className: 'fd-root' },
-    h('div', { className: 'fd-wb-head' },
-      h('div', null,
-        h('h3', { className: 'fd-wb-title' }, '🎲 命运之骰'),
-        h('p', { className: 'fd-wb-sub' }, hasGame
-          ? '本局工作台：骰制、技能组、随机事件与阻尼联动'
-          : '全局设置与共享库可随时编辑；进入任意对话后可配置本局绑定与剧情线')), 
-      h('div', { className: 'fd-btn-row' },
-        h(FdBadge, { tone: hasGame ? 'ok' : 'off' }, hasGame ? '已绑定本局' : '未进入对话'))),
-    h('div', { className: 'fd-tabbar', role: 'tablist' },
-      tabs.map(([value, label]) => h('button', {
-        key: value,
-        type: 'button',
-        role: 'tab',
-        'aria-selected': tab === value ? 'true' : 'false',
-        className: 'fd-tab' + (tab === value ? ' is-active' : ''),
-        onClick: () => setTab(value)
-      }, label))),
-    h(DecisionModelGuideBanner, { view, onRecheck: recheckModel, checking }),
-    body,
+  return h('div', { className: 'fd-root fd-workbench' },
+    h('div', { className: 'fd-wb-top' },
+      h('div', { className: 'fd-wb-head' },
+        h('div', null,
+          h('h3', { className: 'fd-wb-title' }, '🎲 命运之骰'),
+          h('p', { className: 'fd-wb-sub' }, hasGame
+            ? '本局工作台：骰制、角色能力画像、随机事件与阻尼联动'
+            : '全局设置与共享库可随时编辑；进入任意对话后可配置本局绑定与剧情线')),
+        h('div', { className: 'fd-btn-row' },
+          h(FdBadge, { tone: hasGame ? 'ok' : 'off' }, hasGame ? '已绑定本局' : '未进入对话'))),
+      h('div', { className: 'fd-tabbar', role: 'tablist' },
+        tabs.map(([value, label]) => h('button', {
+          key: value,
+          type: 'button',
+          role: 'tab',
+          'aria-selected': tab === value ? 'true' : 'false',
+          className: 'fd-tab' + (tab === value ? ' is-active' : ''),
+          onClick: () => setTab(value)
+        }, label)))),
+    h('div', { className: 'fd-wb-scroll' },
+      h(DecisionModelGuideBanner, { view, onRecheck: recheckModel, checking }),
+      body),
     toast ? h('div', { className: 'fd-toast', role: 'status' }, toast) : null)
 }
 
 /* ===== src/client/tab-checks.js ===== */
 /* ------------------------------------------------------------------ *
- * tab-checks.js —— 技能检定标签页：骰制切换 / 12 套样板 / 共享技能组 / 加值预算 / 清单编辑
+ * tab-checks.js —— 「角色能力（AI 自动）」标签页
+ * 设计原则：玩家零手填。骰制只选风格，能力加减值全部由决策模型
+ * 依据【角色卡/人设 + 世界书 + MVU 变量 + 近期正文】实时评定。
  * ------------------------------------------------------------------ */
 
-function fdSkillNet(skills) {
-  return (skills || []).reduce((sum, skill) => sum + fdNumber(skill.bonus, 0), 0)
+const FD_PROFILE_SOURCE_TONE = {
+  '角色卡': 'ok',
+  '世界书': 'ok',
+  'MVU': 'warn',
+  '正文': 'off'
 }
 
-function fdDistributeBonuses(skills, meta, mode) {
-  const total = Math.max(0, skills.length)
-  if (!total) return []
-  const target = Number(meta.recommendedNet) || 0
-  const weights = skills.map((_, idx) => Math.max(1, total - idx))
-  const weightSum = weights.reduce((a, b) => a + b, 0)
-  if (mode === 'reset') {
-    return skills.map((skill, idx) => ({
-      ...skill,
-      bonus: fdClamp(Math.round((target * weights[idx]) / weightSum), meta.budgetMin, meta.budgetMax)
-    }))
-  }
-  return skills.map(skill => ({
-    ...skill,
-    bonus: fdClamp(
-      fdNumber(meta.budgetMin, -2) + Math.floor(Math.random() * (Number(meta.budgetMax) - Number(meta.budgetMin) + 1)),
-      meta.budgetMin,
-      meta.budgetMax
-    )
-  }))
+function fdProfileBonusText(bonus) {
+  const value = fdNumber(bonus, 0)
+  if (value > 0) return '+' + value
+  if (value < 0) return String(value)
+  return '±0'
+}
+
+function fdProfileToneOf(trait) {
+  const tone = trait && trait.tone
+  if (tone === 'good' || tone === 'bad' || tone === 'neutral') return tone
+  const bonus = fdNumber(trait && trait.bonus, 0)
+  if (bonus > 0) return 'good'
+  if (bonus < 0) return 'bad'
+  return 'neutral'
+}
+
+function ProfileTraitCard(props) {
+  const { trait } = props || {}
+  if (!trait) return null
+  const tone = fdProfileToneOf(trait)
+  const sourceTone = FD_PROFILE_SOURCE_TONE[trait.source] || 'off'
+  return h('div', { className: 'fd-profile-trait is-' + tone },
+    h('div', { className: 'fd-profile-trait-head' },
+      h('span', { className: 'fd-profile-trait-label' }, trait.label),
+      h('span', { className: 'fd-profile-trait-bonus is-' + tone }, fdProfileBonusText(trait.bonus))),
+    h('div', { className: 'fd-profile-trait-meta' },
+      h(FdBadge, { tone: sourceTone, title: '该条能力的判定来源' }, trait.source || '正文'),
+      trait.hidden ? h(FdBadge, { tone: 'off', title: '暗骰：不向玩家展示具体骰面' }, '暗骰') : null),
+    trait.reason ? h('span', { className: 'fd-profile-trait-reason' }, trait.reason) : null
+  )
+}
+
+function ContextSourceCell(props) {
+  const { title, on, value, sub, children } = props || {}
+  return h('div', { className: 'fd-ctx-cell ' + (on ? 'is-on' : 'is-off') },
+    h('span', { className: 'fd-ctx-title' }, title),
+    h('span', { className: 'fd-ctx-value' }, value),
+    sub ? h('span', { className: 'fd-ctx-sub' }, sub) : null,
+    children || null
+  )
 }
 
 function ChecksTab(props) {
   const { ui, gameId, hasGame, view, actions, notify } = props || {}
-  const groups = view.skillGroups || []
-  const [workingId, setWorkingId] = useState('')
-  const [draft, setDraft] = useState(null)
-  const [templateId, setTemplateId] = useState(FD_SKILL_TEMPLATES[0].id)
-  const [nameDraft, setNameDraft] = useState('')
+  const profile = view.characterProfile || fdEmptyCharacterProfile()
+  const context = view.contextSources || fdEmptyContextSources()
+  const rule = view.rule || '2d6'
+  const meta = fdRuleMeta(rule)
+  const traits = Array.isArray(profile.traits) ? profile.traits : []
+  const highlights = Array.isArray(profile.mvuHighlights) ? profile.mvuHighlights : []
+  const [refreshing, setRefreshing] = useState(false)
+  const [noteDraft, setNoteDraft] = useState(profile.customNote || '')
+  const [savingNote, setSavingNote] = useState(false)
 
   useEffect(() => {
-    if (workingId) return
-    const preset = (view.binding && view.binding.skillGroupId) || (groups[0] && groups[0].id) || ''
-    if (preset) setWorkingId(preset)
-  }, [view.binding && view.binding.skillGroupId, groups.length])
+    setNoteDraft(profile.customNote || '')
+  }, [profile.customNote])
 
-  useEffect(() => {
-    const found = groups.find(group => group.id === workingId)
-    if (found) {
-      setDraft(fdClone(found))
-      setNameDraft(found.name)
-    } else if (!workingId) {
-      setDraft({ id: '', name: '未命名技能组', rule: view.rule || '2d6', mvuPath: '', skills: [] })
-      setNameDraft('')
-    }
-  }, [workingId, groups.length, view.rule])
-
-  const hostTemplates = (view.skillTemplates || []).filter(item => Array.isArray(item.skills) && item.skills.length)
-  const templateOptions = hostTemplates
-    .concat(FD_SKILL_TEMPLATES.filter(item => !hostTemplates.some(host => host.name === item.name)))
-    .map(item => ({ id: item.id, name: item.name, rule: item.rule, note: item.note, skills: item.skills }))
-
-  const current = draft || { id: '', name: '未命名技能组', rule: view.rule || '2d6', mvuPath: '', skills: [] }
-  const meta = fdRuleMeta(current.rule || view.rule)
-  const net = fdSkillNet(current.skills)
-  const recommended = meta.recommendedNet
-  const delta = net - recommended
-
-  const updateDraft = patchDraft => setDraft({ ...current, ...patchDraft(current) })
-  const updateSkill = (idx, patchSkill) => updateDraft(src => ({
-    skills: src.skills.map((skill, i) => (i === idx ? { ...skill, ...patchSkill } : skill))
-  }))
-
-  const commitGroup = (list, id) => {
-    actions.persistGroups('skillGroups', list).then(() => {
-      if (hasGame && id) actions.setBinding({ skillGroupId: id })
+  const switchRule = nextRule => {
+    if (actions && typeof actions.setRule === 'function') actions.setRule(nextRule)
+    fdSaveProfileNote(ui, gameId, { rule: nextRule, customNote: noteDraft }).then(res => {
+      if (res && res.ok && res.data && res.data.characterProfile && actions && typeof actions.setProfile === 'function') {
+        actions.setProfile(fdNormalizeCharacterProfile(res.data.characterProfile), null)
+      }
     })
   }
 
-  const loadTemplate = () => {
-    const template = templateOptions.find(item => item.id === templateId) || templateOptions[0] || FD_SKILL_TEMPLATES[0]
-    const group = fdNormalizeSkillGroup(fdSkillGroupFromTemplate(template))
-    const list = [...groups.filter(item => item.name !== group.name), group]
-    setWorkingId(group.id)
-    actions.persistGroups('skillGroups', list)
-    if (hasGame) actions.setBinding({ skillGroupId: group.id })
-    actions.setRule(group.rule)
-    if (notify) notify(`已载入样板「${template.name}」并存为独立技能组`)
+  const refresh = () => {
+    if (refreshing) return
+    setRefreshing(true)
+    fdRefreshProfile(ui, gameId)
+      .then(res => {
+        if (res && res.ok && res.characterProfile) {
+          if (actions && typeof actions.setProfile === 'function') {
+            actions.setProfile(res.characterProfile, res.contextSources)
+          }
+          if (notify) notify('✨ 已根据角色卡 / 世界书 / MVU / 正文更新角色能力画像')
+        } else if (notify) {
+          notify((res && res.error) || '宿主暂未返回画像：进入对话完成一轮回复后会自动建立')
+        }
+      })
+      .catch(() => { if (notify) notify('提取失败：请确认决策模型已配置') })
+      .finally(() => setRefreshing(false))
   }
 
-  const saveCurrent = () => {
-    if (!current.skills.length) {
-      if (notify) notify('技能清单为空，请先添加技能')
-      return
-    }
-    const target = workingId || fdUid('skg')
-    const group = fdNormalizeSkillGroup({ ...current, id: target, name: current.name.trim() || '未命名技能组' })
-    const list = groups.some(item => item.id === target)
-      ? groups.map(item => (item.id === target ? group : item))
-      : [...groups, group]
-    setWorkingId(target)
-    commitGroup(list, target)
+  const saveNote = () => {
+    if (savingNote) return
+    setSavingNote(true)
+    fdSaveProfileNote(ui, gameId, { customNote: noteDraft })
+      .then(res => {
+        if (actions && typeof actions.setProfile === 'function') {
+          actions.setProfile({ ...profile, customNote: noteDraft }, null)
+        }
+        if (notify) notify(fdToastResult(res, '备注已保存，下次检定会一并参考'))
+      })
+      .catch(() => { if (notify) notify('备注已保存在本地') })
+      .finally(() => setSavingNote(false))
   }
 
-  const saveAsNew = () => {
-    const group = fdNormalizeSkillGroup({
-      ...current,
-      id: fdUid('skg'),
-      name: (current.name || '技能组') + ' · 副本'
-    })
-    setWorkingId(group.id)
-    actions.persistGroups('skillGroups', [...groups, group])
-    if (notify) notify('已另存为新技能组')
-  }
-
-  const removeGroup = () => {
-    if (!workingId) return
-    setWorkingId('')
-    actions.persistGroups('skillGroups', groups.filter(item => item.id !== workingId))
-    if (notify) notify('技能组已删除')
-  }
+  const hasProfile = Boolean(traits.length)
+  const nameText = profile.characterName || context.cardName || context.playerName || '主角'
 
   return h(Fragment, null,
+    /* ---------------- 1. 检定骰制 ---------------- */
     h(FdSection, {
       title: '🎲 检定骰制',
       note: meta.hint,
       help: [
-        '本节只决定「骰点如何换算成结果档位」，不会改动你已有的技能名与加值。四档结果统一为：大成功 / 成功 / 代价成功 / 失败 / 大失败。',
-        '2d6 叙事渐进（默认）：两枚六面相加，再加技能加值与修正得到合计。合计 ≥10 → 成功；7~9 → 代价成功（事情办成了但附带代价）；≤6 → 失败。难度会整体平移分界线（成功线 10+平移、代价线 7+平移，平移量 = 难度目标值 − 7）。另外双 6 或合计 ≥12 直接判大成功，双 1 直接判大失败。曲线居中、失败温和，适合长线文字 RP。',
-        'd10 轻量阶梯：单骰 1~10，合计（骰点 + 加值 + 修正）≥ 目标值 → 成功；差 1~2 点 → 代价成功；掷出满值且逼近目标、或合计超出目标约四分之一面数 → 大成功；掷出天然 1 且未达标 → 大失败。档位少、节奏快，适合轻量日常与快节奏互动。',
-        'd20 经典跑团：单骰 1~20，合计 ≥ 目标值 → 成功，差 1~2 点 → 代价成功；天然 20 必大成功、天然 1 必大失败（各 5%），与桌面 DC 判定思维一致，适合规则化跑团与战斗。',
-        'd100 百分阈值：目标是百分制——目标值 = 难度目标 + 技能加值 + 修正×5（结果夹在 5~99），出点 ≤ 目标 → 成功；比目标多出 10 点以内 → 代价成功；出点 ≤5 大成功、≥96 大失败。注意 d100 的加值尺度是个位到两位数（推荐净加值 +10 量级），把 d20 的 +4 直接搬过来会几乎无感。',
-        '切换骰制后建议顺手点一次「恢复推荐默认」，否则原来的净加值可能远超（或远低于）新骰制的推荐预算。'
+        '这里只决定「骰点如何换算成结果档位」，不涉及任何能力数值——所有加减值都由 AI 自动评定，你不需要手填任何表格。',
+        '2d6 叙事渐进（默认）：两枚六面相加再加 AI 评定的加减值。合计 ≥10 成功、7~9 代价成功、≤6 失败；双 6 或合计 ≥12 大成功，双 1 大失败。曲线居中、失败温和，适合长线文字 RP。',
+        'd10 轻量阶梯：单骰 1~10，档位少、节奏快，适合轻量日常与快节奏互动。',
+        'd20 经典跑团：单骰 1~20，天然 20 必大成功、天然 1 必大失败，与桌面 DC 判定思维一致，适合规则化跑团与战斗。',
+        'd100 百分阈值：百分制阈值判定，出点 ≤ 目标即成功，适合硬核拟真与技能树。',
+        '切换骰制时，AI 评定的能力档位（−2 ~ +3）会自动按比例折算成对应骰制的检定加减值（例如 d20 的 +4 量级、d100 的 +10 量级），完全无需手改任何数值。'
       ].join('\n')
     },
       h('div', { className: 'fd-chip-group' },
-        FD_RULES.map(rule => h(FdChip, {
-          key: rule.id,
-          active: (current.rule || view.rule) === rule.id,
-          onClick: () => {
-            updateDraft(() => ({ rule: rule.id }))
-            actions.setRule(rule.id)
-          }
-        }, rule.label)))),
+        FD_RULES.map(item => h(FdChip, {
+          key: item.id,
+          active: rule === item.id,
+          onClick: () => switchRule(item.id)
+        }, item.label))),
+      h('div', { className: 'fd-hint' }, '切换即同步宿主与后台画像，能力加减值由 AI 自动折算')),
 
+    /* ---------------- 2. AI 动态角色能力画像 ---------------- */
     h(FdSection, {
-      title: '📚 世界观样板（12 套）',
-      note: '载入后成为独立共享组，可继续微调',
+      title: '🤖 AI 动态角色能力画像',
+      note: hasProfile ? `已识别 ${traits.length} 条能力` : '尚未建档',
       help: [
-        '下拉框里是 12 套题材成品：每套自带骰制偏好、6 条常用技能和一套设计意图加值（如 d20 系列的净加值约 +4、d100 系列约 +50），另有宿主下发的扩展样板会排在前面。',
-        '点「载入样板到本局并存组」做三件事：① 把该样板复制成一个独立技能组写进你的共享组库（复制品，与样板本身脱钩，随便改不会污染其他组）；② 立即绑定为本局当前技能组并同步骰制；③ 同名的旧副本会被这次载入顶替，不同名的组一律不覆盖、不删除。',
-        '载入之后就是普通技能组：技能可以随意增、删、改名、改加值、改明骰/暗骰，也可以再「另存为新组」派生出变体。样板只是起点，不是模版锁。',
-        '若下拉框为空或想改宿主提供的样板，请检查宿主侧技能组样板接口；面板内的 12 套始终可用。'
+        '本页没有任何需要你填写的数字表格：主角在每项行动上的能力加减值，全部由决策模型在「发送前检定」时实时评定。',
+        '评定依据是四类上下文：① 角色卡 / 玩家人设；② 当前启用的世界书条目；③ MVU 实时变量（属性、状态、装备等）；④ 近期正文记忆。模型据此判断这次行动属于主角的强项、普通还是短板，并给出 −2 ~ +3 的能力档位。',
+        '下方画像由后台在每轮结算时自动演进：受伤、突破、装备更替、关系变化都会让特长与短板随之增减，无需手动维护。',
+        '「从本局设定与正文重新提取」会立刻让 AI 重新通读一遍上下文并重建画像，适合刚导入角色卡、刚改过世界书、或剧情发生重大转折后手动刷新一次。',
+        '画像只是给 AI 的参考快照，即使尚未建档，每轮发前检定依然会实时读取人设与 MVU 自动定加值——所以这里空着也完全不影响游玩。'
       ].join('\n')
     },
-    h('div', { className: 'fd-inline-fields' },
-      h(FdSelect, {
-        value: templateId,
-        onChange: setTemplateId,
-        options: templateOptions.map(item => ({ value: item.id, label: `${item.name} · ${item.skills.length} 技能 · ${item.rule}` }))
-      }),
-      h('div', { style: { flex: '0 0 auto' } },
-        h(FdBtn, { primary: true, onClick: loadTemplate }, '载入样板到本局并存组')))),
+      h('div', { className: 'fd-profile-bar' },
+        h(FdBtn, {
+          small: true,
+          primary: true,
+          disabled: !hasGame || refreshing,
+          onClick: refresh
+        }, refreshing ? '提取中…' : '✨ 从本局设定与正文重新提取'),
+        hasProfile && profile.updatedTurn
+          ? h(FdBadge, { tone: 'off' }, `更新于第 ${profile.updatedTurn} 轮`)
+          : null,
+        !hasGame ? h('span', { className: 'fd-hint' }, '进入对话后可用') : null),
+      h('div', { className: 'fd-profile-note' },
+        '数值修正全由 AI 自动完成，无需手动配置！每次发送行动时，决策模型会自动结合【角色卡/玩家人设 + 启用世界书 + 当前 MVU 变量 + 近期正文】实时评定主角在该行动上的能力加减值；每轮后台结算时还会随受伤、突破或装备变化自动演进下方画像。'),
+      hasProfile
+        ? h(Fragment, null,
+          h('div', { className: 'fd-profile-head' },
+            h('span', { className: 'fd-profile-name' }, nameText),
+            profile.archetype ? h('span', { className: 'fd-profile-arch' }, profile.archetype) : null),
+          h('div', { className: 'fd-profile-grid' },
+            traits.map(item => h(ProfileTraitCard, { key: item.id || item.label, trait: item }))))
+        : h('div', { className: 'fd-hint' },
+          '进入对话完成首轮回复后后台将自动建立角色能力画像，也可点击右上角按钮立即让 AI 提取；即使尚未建档，每轮发前检定仍会实时读取人设与 MVU 自动定加值。')),
 
+    /* ---------------- 3. 四维上下文源 ---------------- */
     h(FdSection, {
-      title: '🗂 共享技能组',
-      note: hasGame ? '切换后立即绑定本局' : '未进入对话：仅维护共享库',
+      title: '📡 自动接入的四维上下文源',
+      note: 'AI 评定能力的全部依据',
       help: [
-        '「共享技能组库」是跨对话共用的：这里出现的每个组都存在本地库里，任何对话都能挑同一个组来用，编辑后所有引用它的对话同步生效。',
-        '「当前对话绑定」只是指向其中一个组的指针（binding.skillGroupId）：切换下拉项立即改绑，但不会复制、不会影响组库内容。未进入对话时只能维护组库，切换不会产生绑定。',
-        '「保存本局修改到当前组」＝就地覆盖（覆盖对象是下拉选中的那个共享组，其他对话也会看到新数值，属于全局修改）。',
-        '「另存为新组」＝派生副本，名字自动加「 · 副本」，原组一字不动——想为某个对话单独调参就用这个，避免污染共享库。',
-        '「删除组」会把该组从共享库移除；若正被本局或其他对话绑定，绑定会变成空指向，回到本页重新选一个组即可。'
+        '这四格是决策模型评定能力加减值时实际读取的上下文，全部自动接入，无需任何手动配置。',
+        '角色卡 / 人设：读取当前对话绑定的角色卡与你的玩家人设，决定主角的身份、背景与基本能力倾向。',
+        '激活世界书：只统计当前处于启用状态的条目（关键词命中后才注入），它们提供世界观规则、势力设定等硬约束。',
+        'MVU 实时变量：读取魔法变量更新（MVU）里的属性、状态、装备等指标，是「受伤 / 突破 / 换装备」后能力随之变化的直接来源。',
+        '近期正文记忆：取最近若干轮正文作为短期记忆，保证判定与刚刚发生的情节一致，不会前后矛盾。',
+        '若某一格显示未接入，通常是因为尚未进入对话、该对话没有角色卡，或世界书 / MVU 变量尚未产生数据，不影响基础判定。'
       ].join('\n')
     },
-    h('div', { className: 'fd-inline-fields' },
-      h(FdSelect, {
-        value: workingId,
-        onChange: next => { setWorkingId(next); if (hasGame && next) actions.setBinding({ skillGroupId: next }) },
-        options: groups.map(item => ({ value: item.id, label: `${item.name}（${item.skills.length} 技能）` })),
-        placeholder: groups.length ? '选择技能组…' : '暂无技能组'
-      })),
-    h('div', { className: 'fd-btn-row' },
-      h(FdBtn, { small: true, primary: true, onClick: saveCurrent }, '保存本局修改到当前组'),
-      h(FdBtn, { small: true, onClick: saveAsNew }, '另存为新组'),
-      h(FdBtn, { small: true, disabled: !workingId, onClick: removeGroup, danger: true }, '删除组')),
-    h(FdField, {
-      label: '组名（保存时生效）',
-      help: '组名只在你点「保存本局修改到当前组」或「另存为新组」时写回；输入过程中仅改草稿，误输入不会污染已经存在的共用组。名字留空时会落成「未命名技能组」。同名不会自动合并——库允许重名，靠下拉里的技能数量区分，建议带题材后缀（如「克苏鲁调查组 · 团A」）。'
-    },
-      h(FdText, { value: nameDraft, onChange: value => { setNameDraft(value); updateDraft(() => ({ name: value })) }, placeholder: '例如：克苏鲁调查组' }))),
-
-    h(FdSection, {
-      title: '⚖️ 加值预算',
-      note: `${meta.label} 建议范围 ${meta.budget}`,
-      help: [
-        '「净加值」＝清单里所有技能加值的代数和（含负数）。它不直接决定成败，而是整体抬高或压低这个角色在该骰制下的成功率。',
-        '每套骰制有推荐净加值（2d6 推荐 +1、d10 推荐 +2、d20 推荐 +4、d100 推荐 +10）与允许区间（见右上角）；净加值落在推荐值附近最好玩，明显超出会让检定变成走过场，明显偏低会让角色处处碰壁。卡片里的「超出/低于」只是提示，不会强制封顶。',
-        '负加值就是弱项，是刻意保留的：写一个 −1 的「潜行」等于把这个角色的天花板压低，同时把省下来的预算额度让给别的技能——所以想强化主技能时，先给一两个技能填负数是最省预算的做法。',
-        '「🎲 随机分配加值」：在骰制允许区间内给每条技能掷一个随机加值（打乱强弱分布），适合快速起草，不满意可反复点。',
-        '「↺ 恢复推荐默认」：按清单顺序做递减权重分配（第一条最高、越往后越低），总和正好落在推荐净加值上——这是最稳的起手方案，改完骰制或增删技能后建议点一次。',
-        '两个按钮都只改当前草稿，必须再点「保存本局修改到当前组」才会写入共享库。'
-      ].join('\n')
-    },
-    h('div', { className: 'fd-card-grid' },
-      h('div', { className: 'fd-card' },
-        h('span', { className: 'fd-card-title' }, '当前净加值'),
-        h('span', { className: 'fd-stat-num' }, (net >= 0 ? '+' : '') + net),
-        h('span', { className: 'fd-card-sub' }, `推荐 ${recommended >= 0 ? '+' : ''}${recommended} · ${delta === 0 ? '正好在预算内' : (delta > 0 ? `超出 ${delta}` : `低于 ${Math.abs(delta)}`)}`)),
-      h('div', { className: 'fd-card' },
-        h('span', { className: 'fd-card-title' }, '技能数量'),
-        h('span', { className: 'fd-stat-num' }, String(current.skills.length)),
-        h('span', { className: 'fd-card-sub' }, `暗骰技能 ${current.skills.filter(skill => skill.hidden).length} 个`))),
-    h('div', { className: 'fd-btn-row' },
-      h(FdBtn, {
-        small: true,
-        onClick: () => updateDraft(src => ({ skills: fdDistributeBonuses(src.skills, meta, 'random') }))
-      }, '🎲 随机分配加值'),
-      h(FdBtn, {
-        small: true,
-        onClick: () => updateDraft(src => ({ skills: fdDistributeBonuses(src.skills, meta, 'reset') }))
-      }, '↺ 恢复推荐默认'))),
-
-    h(FdSection, {
-      title: '🧾 技能清单',
-      note: `净加值 ${net >= 0 ? '+' : ''}${net}`,
-      help: [
-        '每一行是一个技能：左边填名字（写清动作语义最容易被模型判对，如「听风辨位」优于「感知2」），中间 −／数字／＋ 直接改加值，右侧胶囊切换明骰与暗骰，最右删除该技能。',
-        '「🎴 暗骰 / 👁 明骰」是这个技能的默认可见性：标记为暗骰后，凡是用它做的检定（观察、察觉、侦查、识破谎言、微表情洞察这类），对受控角色一律隐藏具体点数与加值，正文只输出角色主观能感知到的表象，防止玩家用元视角反推出 NPC 的数值、藏了什么或是否在撒谎；结算胶囊里仍可点击偷看真实点数。明骰则照常把点数写进正文。',
-        '加值输入框的软上下限跟着当前骰制走（例如 d100 可填 1~100 量级），但硬上限是 −20 ~ +60，防止误输入把成功率拉爆。',
-        '「＋ 添加技能」插入一条空白技能（加值 0、明骰）；清单为空时整个检定流程不会触发，记得至少留一条。'
-      ].join('\n'),
-      actions: [h(FdBtn, {
-        key: 'add',
-        small: true,
-        primary: true,
-        onClick: () => updateDraft(src => ({ skills: [...src.skills, { id: fdUid('sk'), name: '新技能', bonus: 0, hidden: false }] }))
-      }, '＋ 添加技能')]
-    },
-    current.skills.length
-      ? h('div', { className: 'fd-list' }, current.skills.map((skill, idx) => h('div', { key: skill.id || idx, className: 'fd-entry' },
-        h('div', { className: 'fd-entry-row' },
-          h('div', { style: { flex: '1 1 130px' } }, h(FdText, {
-            value: skill.name,
-            placeholder: '技能名称',
-            onChange: value => updateSkill(idx, { name: value })
-          })),
-          h(FdBtn, { small: true, onClick: () => updateSkill(idx, { bonus: fdNumber(skill.bonus, 0) - 1 }) }, '−'),
-          h(FdNum, {
-            value: skill.bonus,
-            min: meta.budgetMin - 10,
-            max: meta.budgetMax + 20,
-            ariaLabel: '加值',
-            onChange: value => updateSkill(idx, { bonus: fdClamp(value, -20, 60) })
-          }),
-          h(FdBtn, { small: true, onClick: () => updateSkill(idx, { bonus: fdNumber(skill.bonus, 0) + 1 }) }, '＋'),
-          h(FdChip, {
-            active: skill.hidden,
-            title: '感知类技能自动暗骰',
-            onClick: () => updateSkill(idx, { hidden: !skill.hidden })
-          }, skill.hidden ? '🎴 暗骰' : '👁 明骰'),
-          h(FdBtn, {
-            small: true,
-            danger: true,
-            onClick: () => updateDraft(src => ({ skills: src.skills.filter((_, i) => i !== idx) }))
-          }, '删除')))))
-      : h(FdEmpty, null, '清单为空：可载入样板或手动添加技能')),
-
-    h(FdSection, {
-      title: '🔗 MVU 变量联动',
-      note: '可选：把技能加值与角色变量绑定',
-      help: [
-        '这里填角色卡「变量」（MVU / stat_data）里的字段，作用是把剧情数值折算成本次检定的附加修正，而不是把加值写死。',
-        '三种写法：① 直接写字段名，如 `敏捷`、`潜行`——会在 stat_data 里所有数字字段中做「字段名相同或包含该词」的模糊匹配；② 写斜杠或点路径，如 `场景.位置`、`/主角/意志`——按层级精确定位；③ 多条并列，用逗号/分号分隔，如 `敏捷,潜行`——逐条折算后求和（最多取前 6 条）。',
-        '单条折算规则：数值 ≥25 时修正 = round((值−50)/15)；9~24 时修正 = floor((值−10)/2)；更小的数值直接取整数部分；每条修正夹在 −3 ~ +4。多条合计后再整体夹在 −5 ~ +5，所以变量爆表也不会把成功率拉满。',
-        '留空＝不联动，回落到设置里的全局「修正公式」；两者都空则不加任何变量修正。没有 MVU 变量系统的人物卡保持留空即可，检定完全不受影响。',
-        '只读不写：本面板不会反向修改角色卡的 stat_data，要改数值请在角色卡或 MVU 面板里操作。改完路径必须点右侧「保存路径」（等价于保存当前组）才写入共享库。'
-      ].join('\n')
-    },
-      h('div', { className: 'fd-inline-fields' },
-        h(FdText, {
-          value: current.mvuPath || '',
-          placeholder: '变量路径（如 敏捷,潜行 或 /主角/意志）',
-          onChange: value => updateDraft(() => ({ mvuPath: value }))
+      h('div', { className: 'fd-ctx-grid' },
+        h(ContextSourceCell, {
+          title: '角色卡 / 人设',
+          on: Boolean(context.hasCard),
+          value: context.hasCard ? (context.cardName || '已接入角色卡') : '待进局',
+          sub: context.playerName ? `玩家：${context.playerName}` : '未检测到玩家名'
         }),
-        h('div', { style: { flex: '0 0 auto' } }, h(FdBtn, { small: true, onClick: saveCurrent }, '保存路径')))))
-}
+        h(ContextSourceCell, {
+          title: '激活世界书',
+          on: fdNumber(context.loreCount, 0) > 0,
+          value: fdNumber(context.loreCount, 0) > 0 ? `${context.loreCount} 条规则` : '暂无启用条目',
+          sub: fdNumber(context.loreCount, 0) > 0 ? '关键词命中后注入判定' : '启用世界书后自动接入'
+        }),
+        h(ContextSourceCell, {
+          title: 'MVU 实时变量',
+          on: fdNumber(context.mvuKeyCount, 0) > 0,
+          value: fdNumber(context.mvuKeyCount, 0) > 0 ? `自动识别 ${context.mvuKeyCount} 项指标` : '暂无变量',
+          sub: fdNumber(context.mvuKeyCount, 0) > 0 ? '受伤/突破/装备变化会实时反映' : 'MVU 产生数据后自动接入'
+        },
+          highlights.length
+            ? h('div', { className: 'fd-mvu-preview' },
+              highlights.slice(0, 6).map((item, idx) => h('span', {
+                key: (item && item.key) || idx,
+                className: 'fd-mvu-pill'
+              }, `${(item && item.key) || ''}${item && item.value !== '' ? '：' + item.value : ''}`)))
+            : null),
+        h(ContextSourceCell, {
+          title: '近期正文记忆',
+          on: fdNumber(context.historyTurns, 0) > 0,
+          value: fdNumber(context.historyTurns, 0) > 0 ? `最近 ${context.historyTurns} 轮` : '暂无正文',
+          sub: context.backgroundModelReady ? '后台结算模型已就绪' : '后台结算模型待配置'
+        }))),
 
-/* 便捷导出：避免 FragBtnSave 之外再次定义 */
+    /* ---------------- 4. 可选备注（默认折叠） ---------------- */
+    h(FdCollapse, {
+      title: '补充角色背景备注（可选，默认无需填写）',
+      sub: '仅补卡面未写明的设定',
+      right: h(FdHelp, {
+        title: '补充角色背景备注',
+        text: [
+          '这一栏完全可选：只有当角色卡与世界书里没写、但你又希望 AI 在判定时参考的设定，才需要填一句。',
+          '例如「主角左眼失明但听觉极敏锐」「右手旧伤，长时间挥剑会脱力」——这类细节写进备注后，AI 在评定相关行动的能力加减值时会一并参考。',
+          '备注只保存一句话，不涉及任何数字表格；留空即表示完全依赖角色卡 / 世界书 / MVU / 正文自动推演。',
+          '点「保存备注」后会同步宿主（宿主未实现该接口时保存在本地浏览器），下次检定立即生效。'
+        ].join('\n')
+      })
+    },
+      h('div', { className: 'fd-field' },
+        h(FdText, {
+          value: noteDraft,
+          placeholder: '例如：主角左眼失明但听觉极敏锐',
+          maxLength: 120,
+          onChange: setNoteDraft
+        })),
+      h('div', { className: 'fd-btn-row' },
+        h(FdBtn, { small: true, primary: true, disabled: savingNote, onClick: saveNote }, savingNote ? '保存中…' : '保存备注'),
+        h(FdBtn, { small: true, onClick: () => setNoteDraft('') }, '清空'))))
+}
 
 /* ===== src/client/tab-events.js ===== */
 /* ------------------------------------------------------------------ *
@@ -3595,7 +3903,6 @@ function SettingsTab(props) {
   const settings = view.settings || FD_DEFAULT_SETTINGS
   const [draft, setDraft] = useState(settings)
   const [themeInput, setThemeInput] = useState('')
-  const [exportSkills, setExportSkills] = useState([])
   const [exportEvents, setExportEvents] = useState([])
   const [importText, setImportText] = useState('')
   const [preview, setPreview] = useState(null)
@@ -3621,10 +3928,6 @@ function SettingsTab(props) {
   }
 
   useEffect(() => {
-    setExportSkills(skillGroups.map(item => item.id))
-  }, [skillGroups.length])
-
-  useEffect(() => {
     setExportEvents(eventGroups.map(item => item.id))
   }, [eventGroups.length])
 
@@ -3634,19 +3937,20 @@ function SettingsTab(props) {
     actions.persistSettings(draft)
   }
 
+  /* 角色能力已改为 AI 随卡/正文自动生成：导出只打包全局设置 + 勾选的事件组 */
   const buildExport = () => ({
     version: 2,
     kind: 'dsh-tavern-fate-dice/config',
     exportedAt: new Date().toISOString(),
     settings: { ...draft },
-    skillGroups: skillGroups.filter(item => exportSkills.includes(item.id)),
+    skillGroups: [],
     eventGroups: eventGroups.filter(item => exportEvents.includes(item.id))
   })
 
   const doExport = () => {
     const payload = buildExport()
     const ok = fdDownloadJson(`fate-dice-config-${Date.now()}.json`, payload)
-    if (notify) notify(ok ? `已导出 ${payload.skillGroups.length} 个技能组 / ${payload.eventGroups.length} 个事件组` : '浏览器不允许自动下载，请改用复制 JSON')
+    if (notify) notify(ok ? `已导出全局设置 + ${payload.eventGroups.length} 个事件组` : '浏览器不允许自动下载，请改用复制 JSON')
   }
 
   const downloadSample = () => {
@@ -3752,7 +4056,7 @@ function SettingsTab(props) {
             help: [
               '开启后，察觉、侦查、识破谎言、微表情洞察这类感知型技能检定会自动走「暗骰」：正文只写角色主观能感知到的表象（「你总觉得他的笑有点用力」），不写骰点与成败结论，避免玩家读到「侦查 4 失败」就直接判断屋里没人。',
               '想看真实点数时点楼层里的结算胶囊即可偷看，属于「事后复核」而非「实时剧透」。',
-              '关闭后这些检定照常明骰，成功/失败结论与点数都会出现在正文。单个技能是否暗骰还可以在「技能检定 › 技能清单」里用 🎴/👁 逐个覆盖——那里的设置为准。'
+              '关闭后这些检定照常明骰，成功/失败结论与点数都会出现在正文。单条能力的明骰/暗骰由 AI 在生成角色能力画像时自动标注（带「暗骰」标记），无需手动逐个勾选。'
             ].join('\n')
           },
           h(FdSwitch, { on: draft.autoHidden, label: '感知自动暗骰', onChange: next => patchDraft({ autoHidden: next }) }))),
@@ -3905,42 +4209,28 @@ function SettingsTab(props) {
 
     h(FdSection, {
       title: '📤 导出配置',
-      note: '勾选要打包的共享库',
+      note: '全局设置 + 勾选的事件组',
       help: [
-        '导出的是一份自包含 JSON（version 2 / kind 为 dsh-tavern-fate-dice/config）：包含当前草稿里的全部全局参数、勾选的技能组、勾选的事件组，附导出时间戳，方便备份、跨设备迁移或分享给朋友。',
-        '默认两组都全选；点胶囊取消勾选即可只打包其中一个题材。组里的一切（骰制、加值、暗骰标记、MVU 路径、轨道模式、条目条件）都会原样带出，不截断。',
-        '「导出 JSON 文件」走浏览器下载，文件名带时间戳，不会覆盖旧备份；若浏览器拦截自动下载，可用「下载示例模板」拿到结构说明，或从导入框的 JSON 文本反向复制。',
-        '「下载示例模板」给的是最小可用样例（一堆空组结构），用来对照字段含义，不是你的真实数据。',
-        '导出的是快照：导出后再改本地组，旧文件不会跟着变。'
+        '导出的是一份自包含 JSON（version 2 / kind 为 dsh-tavern-fate-dice/config）：包含当前草稿里的全部全局参数与勾选的随机事件组，附导出时间戳，方便备份、跨设备迁移或分享给朋友。',
+        '角色能力已改为 AI 依据角色卡 / 世界书 / MVU / 正文自动生成，不再需要手动配置技能组，因此导出包默认只含「全局设置 + 勾选的事件组」；技能组字段仍保留为空数组，方便旧版本读取时不报错。',
+        '事件组里的一切（轨道模式、条目条件、权重、区间写法）都会原样带出，不截断。',
+        '「导出 JSON 文件」走浏览器下载，文件名带时间戳，不会覆盖旧备份；若浏览器拦截自动下载，可用「下载示例模板」拿到结构说明。',
+        '导出的是快照：导出后再改本地设置或事件组，旧文件不会跟着变。'
       ].join('\n')
     },
-      h('div', { className: 'fd-card-grid' },
-        h('div', { className: 'fd-card' },
-          h('span', { className: 'fd-card-title' }, `技能组（${exportSkills.length}/${skillGroups.length}）`),
-          skillGroups.length
-            ? h('div', { className: 'fd-chip-group' },
-              skillGroups.map(group => h(FdChip, {
-                key: group.id,
-                active: exportSkills.includes(group.id),
-                onClick: () => setExportSkills(prev => fdToggleIn(prev, group.id))
-              }, group.name)))
-            : h('div', { className: 'fd-hint' }, '暂无技能组'),
-          h('div', { className: 'fd-btn-row' },
-            h(FdBtn, { small: true, onClick: () => setExportSkills(skillGroups.map(item => item.id)) }, '全选'),
-            h(FdBtn, { small: true, onClick: () => setExportSkills([]) }, '清空'))),
-        h('div', { className: 'fd-card' },
-          h('span', { className: 'fd-card-title' }, `事件组（${exportEvents.length}/${eventGroups.length}）`),
-          eventGroups.length
-            ? h('div', { className: 'fd-chip-group' },
-              eventGroups.map(group => h(FdChip, {
-                key: group.id,
-                active: exportEvents.includes(group.id),
-                onClick: () => setExportEvents(prev => fdToggleIn(prev, group.id))
-              }, group.name)))
-            : h('div', { className: 'fd-hint' }, '暂无事件组'),
-          h('div', { className: 'fd-btn-row' },
-            h(FdBtn, { small: true, onClick: () => setExportEvents(eventGroups.map(item => item.id)) }, '全选'),
-            h(FdBtn, { small: true, onClick: () => setExportEvents([]) }, '清空')))),
+      h('div', { className: 'fd-card' },
+        h('span', { className: 'fd-card-title' }, `事件组（${exportEvents.length}/${eventGroups.length}）`),
+        eventGroups.length
+          ? h('div', { className: 'fd-chip-group' },
+            eventGroups.map(group => h(FdChip, {
+              key: group.id,
+              active: exportEvents.includes(group.id),
+              onClick: () => setExportEvents(prev => fdToggleIn(prev, group.id))
+            }, group.name)))
+          : h('div', { className: 'fd-hint' }, '暂无事件组'),
+        h('div', { className: 'fd-btn-row' },
+          h(FdBtn, { small: true, onClick: () => setExportEvents(eventGroups.map(item => item.id)) }, '全选'),
+          h(FdBtn, { small: true, onClick: () => setExportEvents([]) }, '清空'))),
       h('div', { className: 'fd-btn-row' },
         h(FdBtn, { primary: true, onClick: doExport }, '导出 JSON 文件'),
         h(FdBtn, { onClick: downloadSample }, '下载示例模板'))),
@@ -3953,7 +4243,8 @@ function SettingsTab(props) {
         '自动识别两种格式：① 本插件原生 v2 配置（kind 为 dsh-tavern-fate-dice/config）；② 原版 AutoRandomInput 的 v1 / v2 配置文件——字段名、轨道结构、技能表、区间/权重写法都会自动转换成本插件的技能组与事件组，缺失的字段填默认值，无法映射的字段会在预览里以 warning 列出（不会静默丢弃）。',
         '必须先「预览识别结果」再导入：预览会显示识别到的格式、将导入的技能组/事件组数量、数据来源（宿主识别或本地解析）以及每个组的名字与规模，确认无误再点「确认为新组导入」。',
         '导入一律新建组：即使与已有组同名，也绝不会覆盖、不会合并原数据——名字会自动补「 · 导入」后缀（重名时再加序号区分），旧数据零风险。想拿导入数据替换某组，请手动改选或删掉旧组。',
-        '识别失败时这块会显示具体错误（JSON 语法错、找不到可识别的组、版本不支持等），改好文本或换文件再预览即可。'
+        '识别失败时这块会显示具体错误（JSON 语法错、找不到可识别的组、版本不支持等），改好文本或换文件再预览即可。',
+        '含技能组的旧 JSON 仍可正常导入：技能组会作为兼容数据保留下来（不再参与 AI 判定，角色能力已由 AI 依据角色卡/世界书/MVU/正文自动生成），不会报错也不会丢字段。'
       ].join('\n')
     },
       h('div', { className: 'fd-btn-row' },

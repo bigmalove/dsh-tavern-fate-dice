@@ -30,6 +30,7 @@ import {
 import { buildDamperJudgeQuestions, resolveCheckFromDamperContext } from '../lib/damper-bridge.js'
 import { heuristicAssessWithSkills, judgeActionDifficulty } from '../lib/difficulty-judge.js'
 import { applyImportConfig, buildNativeExportBundle, previewImportConfig } from '../lib/config-transfer.js'
+import { collectCharacterMaterial, refreshProfileWithBackgroundLlm, tierToRuleBonus } from '../lib/auto-profiler.js'
 import { buildTurnInjection } from '../lib/prompt-builder.js'
 import { apply as applyFateDicePlugin, inject as fateDiceInject, name as fateDiceName } from '../lib/index.js'
 
@@ -407,7 +408,8 @@ test('宿主全链路集成：无 gameSettings/无发前手投、阻尼器单趟
     },
     async getDamperTurnContext({ gameId, turn }) {
       const qs = await damperQuestionProvider.questions({ gameId, turn, protocol: 'gemini' })
-      const skillChoice = Object.keys(qs.find(q => q.id === 'fd_skill')?.criteria || {})[0] || 'general'
+      const domainQ = qs.find(q => q.id === 'fd_domain' || q.id === 'fd_skill')
+      const domainChoice = Object.keys(domainQ?.criteria || {})[0] || 'general_stealth'
       return {
         active: true,
         turn,
@@ -418,7 +420,9 @@ test('宿主全链路集成：无 gameSettings/无发前手投、阻尼器单趟
         answers: {
           fd_needs_check: { type: 'noul', probability: 0.92 },
           fd_difficulty: { type: 'choice', choice: 'moderate' },
-          fd_skill: { type: 'choice', choice: skillChoice }
+          fd_capability: { type: 'score', score: 3 },
+          fd_domain: { type: 'choice', choice: domainChoice },
+          fd_skill: { type: 'choice', choice: domainChoice }
         }
       }
     },
@@ -471,13 +475,29 @@ test('宿主全链路集成：无 gameSettings/无发前手投、阻尼器单趟
   assert.equal(injectedRetry, injected)
   assert.equal(damperShifts.length, 1)
 
-  // 模拟后台结算模型调用 fate_dice_arc_report 工具更新剧情线，随后正式落盘结算
-  assert.equal(settlementTools.length, 1)
-  await settlementTools[0].execute({
+  // 模拟后台结算模型同时调用 fate_dice_arc_report 与 fate_dice_profile_sync 更新剧情线与 AI 动态角色能力画像
+  assert.equal(settlementTools.length, 2)
+  const arcTool = settlementTools.find(t => t.name === 'fate_dice_arc_report')
+  const profileTool = settlementTools.find(t => t.name === 'fate_dice_profile_sync')
+  assert.ok(arcTool && profileTool)
+  await arcTool.execute({
     gameId: 'g-main',
     turn: 2,
     arguments: {
       updates: [{ op: 'update', arcId: plotAdd.plotlines[0].id, summary: '在暗格中发现了染血令牌' }]
+    }
+  })
+  await profileTool.execute({
+    gameId: 'g-main',
+    turn: 2,
+    arguments: {
+      characterName: '林岚',
+      archetype: '青云内门剑修（轻身专精，右肩轻伤）',
+      traits: [
+        { name: '踏雪身法', tier: 2, source: '角色卡', reason: '内门轻功大成' },
+        { name: '神识微察', tier: 1, hidden: true, source: '世界书', reason: '筑基期神识外放' },
+        { name: '右肩剑伤', tier: -1, source: 'MVU', reason: '气血受损牵动发力' }
+      ]
     }
   })
   await settledHooks[0]({ gameId: 'g-main', turn: 2, textVersion: 'ver-2a' })
@@ -490,12 +510,91 @@ test('宿主全链路集成：无 gameSettings/无发前手投、阻尼器单趟
   const wbAfter = await handlers.get('fate-dice:workbench')({ gameId: 'g-main' })
   assert.equal(wbAfter.summary.total, 1)
   assert.match(wbAfter.plotlines[0].progress, /染血令牌/)
+  assert.equal(wbAfter.characterProfile.characterName, '林岚')
+  assert.equal(wbAfter.characterProfile.traits.find(t => t.name === '踏雪身法').bonus, 2)
+
+  // 切换为 d100 骰制时，AI 评定的能力档位自动等比换算（tier 2 -> +20），无需玩家改任何数字
+  const rescaled = await handlers.get('fate-dice:save-profile-note')({ gameId: 'g-main', rule: 'd100' })
+  assert.equal(rescaled.ok, true)
+  assert.equal(rescaled.characterProfile.traits.find(t => t.name === '踏雪身法').bonus, 20)
+})
+
+test('auto-profiler：从角色卡、世界书、MVU 与近期正文自动提取四源材料并用后台 LLM 生成角色能力画像', async () => {
+  assert.equal(tierToRuleBonus(2, '2d6'), 2)
+  assert.equal(tierToRuleBonus(2, 'd20'), 4)
+  assert.equal(tierToRuleBonus(2, 'd100'), 20)
+  assert.equal(tierToRuleBonus(-2, 'd100'), -20)
+
+  const mockTavern = {
+    async getPlayerName() { return '苏夜' },
+    async getCard() {
+      return { name: '赛博委托人', description: '夜之城高层情报中间人。', personality: '冷酷多疑' }
+    },
+    async getCharacterDesigns() {
+      return {
+        characters: [
+          { name: '苏夜', identity: '前荒坂反情报黑客，左臂义体过载受损', personality: '沉着冷静', sections: [] }
+        ]
+      }
+    },
+    async getCardContext() {
+      return {
+        lore: [
+          { title: '深网协议', content: '黑客接入军用冰墙需神经义体支撑，过载会引发反噬。' }
+        ]
+      }
+    },
+    async getTurn() {
+      return {
+        turn: 3,
+        text: '苏夜拔出滚烫的数据探针，左臂电弧闪烁。',
+        variables: { stat_data: { 神经负荷: 82, 信用点: 1500, 隐蔽度: 65 } }
+      }
+    },
+    async getHistory() {
+      return [{ turn: 3, input: '接入终端下载密钥', text: '苏夜突破了第一层防火墙，但义体温度急剧攀升。' }]
+    },
+    async backgroundModel() {
+      return { provider: 'mock-provider', model: 'mock-model' }
+    }
+  }
+
+  const mat = await collectCharacterMaterial({ tavern: mockTavern, gameId: 'g-cyber', turn: 4 })
+  assert.equal(mat.contextSources.playerName, '苏夜')
+  assert.equal(mat.contextSources.hasCard, true)
+  assert.equal(mat.contextSources.loreCount, 1)
+  assert.equal(mat.contextSources.mvuKeyCount, 3)
+  assert.match(mat.promptDigest, /深网协议/)
+  assert.match(mat.promptDigest, /神经负荷/)
+
+  const refreshed = await refreshProfileWithBackgroundLlm({
+    tavern: mockTavern,
+    gameId: 'g-cyber',
+    turn: 4,
+    rule: 'd20',
+    llm: {
+      async *stream() {
+        yield {
+          type: 'text-delta',
+          text: '```json\n{"characterName":"苏夜","archetype":"前反情报黑客（神经义体高负荷）","traits":[{"name":"冰墙骇入","tier":2,"source":"角色卡","reason":"反情报老手"},{"name":"威胁嗅探","tier":1,"hidden":true,"source":"世界书","reason":"熟悉军用追踪"},{"name":"左臂义体过载","tier":-2,"source":"MVU","reason":"神经负荷高达82"}]}\n```'
+        }
+      }
+    }
+  })
+  assert.equal(refreshed.ok, true)
+  assert.equal(refreshed.characterProfile.characterName, '苏夜')
+  assert.equal(refreshed.characterProfile.traits.length, 3)
+  assert.equal(refreshed.characterProfile.traits[0].bonus, 4, 'd20 下 tier +2 应自动换算为 +4')
+  assert.equal(refreshed.characterProfile.traits[2].bonus, -4, 'd20 下 tier -2 应自动换算为 -4')
 })
 
 test('浏览器端 client.js：注册插件区面板 registerPanel，无独立行动输入框与骰盘按钮', async () => {
   const clientCode = await readFile(new URL('../client.js', import.meta.url), 'utf8')
   assert.equal(clientCode.includes('registerComposerAction'), false, '不应再向发送栏注册骰盘按钮')
   assert.equal(clientCode.includes('DicePadOverlay'), false, '不应再保留发前手投弹窗')
+  assert.equal(clientCode.includes('随机分配加值'), false, '不应再让玩家手动分配技能加值预算')
+  assert.ok(clientCode.includes('fd-wb-scroll') && clientCode.includes('overflow-y: auto'), '工作台必须具备独立纵向滚动容器以支持顺滑下滑')
+  assert.ok(clientCode.includes('AI 动态角色能力画像'), '角色能力页必须采用 AI 动态能力画像视图')
 
   let loadedModule = null
   const fakeReact = {
