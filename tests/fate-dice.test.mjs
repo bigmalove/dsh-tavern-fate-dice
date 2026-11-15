@@ -262,19 +262,16 @@ test('浏览器 client.js 装载与官方 UI 槽位注册', async () => {
   assert.equal(descriptor.id, 'dsh-tavern-fate-dice')
   const exported = descriptor.factory(mod => mod === 'react' ? ReactStub : {})
   assert.equal(exported.name, 'dsh-tavern-fate-dice')
+  assert.deepEqual(Array.from(exported.inject), ['tavernUi'])
   assert.equal(typeof exported.apply, 'function')
 
   const registered = []
   exported.apply({
-    inject(_deps, cb) {
-      cb({
-        tavernUi: {
-          registerComposerSlot(item) { registered.push(['slot', item.id]); return () => {} },
-          registerComposerAction(item) { registered.push(['action', item.id]); return () => {} },
-          registerTurnView(item) { registered.push(['turn', item.id]); return () => {} },
-          registerStatusSection(item) { registered.push(['status', item.id]); return () => {} }
-        }
-      })
+    tavernUi: {
+      registerComposerSlot(item) { registered.push(['slot', item.id]); return () => {} },
+      registerComposerAction(item) { registered.push(['action', item.id]); return () => {} },
+      registerTurnView(item) { registered.push(['turn', item.id]); return () => {} },
+      registerStatusSection(item) { registered.push(['status', item.id]); return () => {} }
     }
   })
   assert.deepEqual(registered, [

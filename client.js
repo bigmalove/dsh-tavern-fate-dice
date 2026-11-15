@@ -721,68 +721,66 @@ window.__ModuleLoader__.load({
     }
 
     function apply(ctx) {
+      const ui = ctx.tavernUi
+      if (!ui) return
       ensureStyleInjected()
-      ctx.inject?.(['tavernUi'], owner => {
-        const ui = owner.tavernUi
-        if (!ui) return
 
-        // 1. 输入栏上方动效与反馈停靠区（平时无事件时返回 null，零占位）
-        try {
-          const offSlot = ui.registerComposerSlot({
-            id: 'fate-dice-live',
-            modes: ['play'],
-            render: ({ sessionId }) => h(ComposerLiveDock, { ui, sessionId })
-          })
-          owner.effect?.(() => offSlot, 'fate-dice: composer slot')
-        } catch {}
+      // 1. 输入栏上方动效与反馈停靠区（平时无事件时返回 null，零占位）
+      try {
+        const offSlot = ui.registerComposerSlot({
+          id: 'fate-dice-live',
+          modes: ['play'],
+          render: ({ sessionId }) => h(ComposerLiveDock, { ui, sessionId })
+        })
+        ctx.effect?.(() => offSlot, 'fate-dice: composer slot')
+      } catch {}
 
-        // 2. 输入栏上方快捷操作按钮（打开移动端预投 / 自由骰盘抽屉）
-        try {
-          const offAction = ui.registerComposerAction({
-            id: 'fate-dice-pad',
-            label: '🎲 骰盘',
-            when: () => true,
-            run: ({ gameId }) => {
-              ui.openOverlay({
-                gameId,
-                dismissible: true,
-                render: ({ close }) => h(DicePadOverlay, { ui, gameId, onClose: close })
-              })
-            }
-          })
-          owner.effect?.(() => offAction, 'fate-dice: composer action')
-        } catch {}
+      // 2. 输入栏上方快捷操作按钮（打开移动端预投 / 自由骰盘抽屉）
+      try {
+        const offAction = ui.registerComposerAction({
+          id: 'fate-dice-pad',
+          label: '🎲 骰盘',
+          when: () => true,
+          run: ({ gameId }) => {
+            ui.openOverlay({
+              gameId,
+              dismissible: true,
+              render: ({ close }) => h(DicePadOverlay, { ui, gameId, onClose: close })
+            })
+          }
+        })
+        ctx.effect?.(() => offAction, 'fate-dice: composer action')
+      } catch {}
 
-        // 3. 每轮正文上方极简检定折叠条（无检定记录时不包装，保持零样式冲突）
-        try {
-          const offTurn = ui.registerTurnView({
-            id: 'fate-dice-turn',
-            label: '含检定胶囊',
-            render: ({ gameId, turn, settled, greeting, children }) => {
-              if (!settled || greeting || !turn) return null
-              return h(Fragment, null,
-                h(TurnRollCapsule, { ui, gameId, turn }),
-                children
-              )
-            }
-          })
-          owner.effect?.(() => offTurn, 'fate-dice: turn view')
-        } catch {}
+      // 3. 每轮正文上方极简检定折叠条（无检定记录时不包装，保持零样式冲突）
+      try {
+        const offTurn = ui.registerTurnView({
+          id: 'fate-dice-turn',
+          label: '含检定胶囊',
+          render: ({ gameId, turn, settled, greeting, children }) => {
+            if (!settled || greeting || !turn) return null
+            return h(Fragment, null,
+              h(TurnRollCapsule, { ui, gameId, turn }),
+              children
+            )
+          }
+        })
+        ctx.effect?.(() => offTurn, 'fate-dice: turn view')
+      } catch {}
 
-        // 4. 酒馆状态页统计分节
-        try {
-          const offStatus = ui.registerStatusSection({
-            id: 'fate-dice-status',
-            title: '命运之骰检定',
-            render: ({ gameId }) => h(StatusDiceSection, { ui, gameId })
-          })
-          owner.effect?.(() => offStatus, 'fate-dice: status section')
-        } catch {}
-      })
+      // 4. 酒馆状态页统计分节
+      try {
+        const offStatus = ui.registerStatusSection({
+          id: 'fate-dice-status',
+          title: '命运之骰检定',
+          render: ({ gameId }) => h(StatusDiceSection, { ui, gameId })
+        })
+        ctx.effect?.(() => offStatus, 'fate-dice: status section')
+      } catch {}
     }
 
     exports.name = 'dsh-tavern-fate-dice'
-    exports.inject = ['slots']
+    exports.inject = ['tavernUi']
     exports.apply = apply
     exports.__test = { DieGlyph, formatRollSummary, LiveRollBanner, TurnRollCapsule, DicePadOverlay }
     return module.exports

@@ -31,7 +31,7 @@ test('没有运行时 npm 依赖：dependencies 必须为空，入口文件齐�
 test('浏览器侧按 dsh.client 契约声明且 client.js 与源码保持同步', async () => {
   const pkg = JSON.parse(await read('package.json'))
   assert.equal(pkg.dsh?.client?.platform, 'web')
-  assert.ok(Array.isArray(pkg.dsh?.client?.inject) && pkg.dsh.client.inject.length > 0)
+  assert.ok(pkg.dsh?.client?.inject?.includes('dsh-tavern-plugin'), 'dsh.client.inject 必须声明 dsh-tavern-plugin')
 
   const check = await buildFateDiceClient({ check: true })
   assert.equal(check.changed, false, '修改 src/client/main.js 后必须执行 node build.mjs 重新生成 client.js')
