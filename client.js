@@ -1427,8 +1427,9 @@ function FdSection(props) {
   return h('section', { className: 'fd-section' },
     title || actions || withHelp
       ? h('div', { className: 'fd-section-head' },
-        h('span', { className: 'fd-section-title' }, title),
-        withHelp ? h(FdHelpToggle, { title, open, onToggle: value => setOpen(Boolean(value)) }) : null,
+        h('span', { className: 'fd-label-row' },
+          h('span', { className: 'fd-section-title' }, title),
+          withHelp ? h(FdHelpToggle, { title, open, onToggle: value => setOpen(Boolean(value)) }) : null),
         note ? h('span', { className: 'fd-section-note' }, note) : null,
         actions ? h('div', { className: 'fd-btn-row' }, actions) : null)
       : null,

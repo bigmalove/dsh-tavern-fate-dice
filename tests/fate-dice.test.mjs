@@ -242,7 +242,10 @@ test('宿主全链路集成（方案 A 纯粹版）：阻尼器单趟合并与�
   const states = new Map()
   const damperShifts = []
 
-  applyFateDicePlugin({
+  const baseCtx = {
+    inject(deps, cb) {
+      if (Array.isArray(deps) && deps.includes('llm')) cb({ llm: null })
+    },
     tavern: {
       capabilities: { decisionJudge: 1, narrativeDamper: 1 },
       gameSettings() { gameSettingsCalled = true },
@@ -292,7 +295,17 @@ test('宿主全链路集成（方案 A 纯粹版）：阻尼器单趟合并与�
         return { applied: true, ruling: { rulingTier: 'conflicted_half_step', deltaBudget: 'micro_step' } }
       }
     }
+  }
+  // 模拟真实 Cordis Context Proxy：未在 inject 声明的服务属性读取即抛错
+  const strictCordisCtx = new Proxy(baseCtx, {
+    get(target, prop, receiver) {
+      if (typeof prop === 'string' && !['tavern', 'inject', 'effect', 'plugin', 'then'].includes(prop)) {
+        throw new Error(`cannot get property "${prop}" without inject`)
+      }
+      return Reflect.get(target, prop, receiver)
+    }
   })
+  applyFateDicePlugin(strictCordisCtx)
 
   assert.equal(gameSettingsCalled, false)
   assert.equal(handlers.has('fate-dice:event-group-op'), false, '随机事件组接口应已彻底移除')
