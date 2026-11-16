@@ -1119,12 +1119,13 @@ test('楼层顶栏胶囊（与叙事阻尼器胶囊并排）：正在生成期�
 
   await handlers.get('fate-dice:save-global-settings')({ settings: { rule: 'd10' } })
 
-  // 触发第 5 轮发前检定（尚未调用 onTurnSettled，模拟「第 4 楼 · 正在生成」流式期间）
-  await turnSections[0].text({ gameId: 'g-head-pill', turn: 5, input: '学习魔法' })
+  // 预置旧版遗留 turn=5 历史空记录，并模拟 regenBody 重新生成时 turnSection 收到递增的 DSH nativeTurn=15、而页面与结算使用 storyTurn=5
+  turnDataMap.set('g-head-pill:5', { turn: 5, textVersion: 'old', data: { roll: null, judged: { shouldRoll: false, needProbability: 0.05 } } })
+  await turnSections[0].text({ gameId: 'g-head-pill', turn: 15, input: '学习魔法' })
 
-  // 即使前端在流式首帧只拿到了 floor=4（streaming:true）甚至未传 gameId，也能通过活跃会话与 pending 立即读回本轮真骰结果
-  const liveRead = await handlers.get('fate-dice:read-turn')({ gameId: '', turn: 4, streaming: true })
-  assert.ok(liveRead?.roll, '正在生成期间必须能立即读回本轮真骰结果')
+  // 即使前端按 storyTurn=5（streaming:true）且未传 gameId 读取，也必须穿透旧缓存立即读回 nativeTurn=15 的本轮实时真骰结果
+  const liveRead = await handlers.get('fate-dice:read-turn')({ gameId: '', turn: 5, streaming: true })
+  assert.ok(liveRead?.roll, '正在生成期间即使 nativeTurn(15) !== storyTurn(5) 也必须立即读回本轮真骰结果')
   assert.equal(liveRead.turn, 5)
   assert.equal(liveRead.streaming, true)
   assert.equal(liveRead.fate.points, 2)

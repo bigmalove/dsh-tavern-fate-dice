@@ -777,6 +777,15 @@ function fdMountImperativeFloorHeaders(ui) {
   }
 
   const offGameSub = fdSubscribeActiveGameId(bindGameWatches)
+  const onTavernWindowSession = ev => {
+    const sid = ev && ev.detail && ev.detail.sessionId
+    if (sid) fdNoteActiveGameId(String(sid))
+  }
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('dsh-tavern-session-changed', onTavernWindowSession)
+    window.addEventListener('dsh-tavern-story-mutated', onTavernWindowSession)
+    window.addEventListener('dsh-tavern-message-rendered', onTavernWindowSession)
+  }
   if (fdGetActiveGameId()) {
     bindGameWatches(fdGetActiveGameId())
   } else {
@@ -800,11 +809,25 @@ function fdMountImperativeFloorHeaders(ui) {
     headSlot.textContent = ''
     panelSlot.textContent = ''
 
-    const hasContent = Boolean(
+    const awaitingLiveRoll = Boolean(entry.streaming && (!record || record.streaming !== true))
+    const hasContent = awaitingLiveRoll || Boolean(
       record && (record.roll || record.setupRequiredReason || (record.judged && record.judged.shouldRoll === false))
     )
     if (!hasContent) {
       clearMountedKey(entry)
+      return
+    }
+
+    if (awaitingLiveRoll) {
+      const pendingBtn = fdEl(doc, 'button', 'fd-floor-pill')
+      pendingBtn.type = 'button'
+      pendingBtn.setAttribute('data-tone', 'skipped')
+      pendingBtn.title = '命运之骰正在读取本轮情境并投掷真骰…'
+      const dot = fdEl(doc, 'span', 'fd-floor-dot')
+      dot.setAttribute('aria-hidden', 'true')
+      pendingBtn.appendChild(dot)
+      pendingBtn.appendChild(fdEl(doc, 'span', '', '🎲 真骰定难中…'))
+      headSlot.appendChild(pendingBtn)
       return
     }
 
@@ -1034,11 +1057,13 @@ function fdMountImperativeFloorHeaders(ui) {
     }).then(res => {
       if (disposed || entry.disposed || entry.reqSeq !== reqSeq) return
       const data = res && res.ok ? res.data : null
+      if (data && data.gameId) fdNoteActiveGameId(String(data.gameId))
       entry.record = data && typeof data === 'object' ? data : null
       renderEntry(entry)
-      if (entry.streaming && !entry.record && (entry.retryCount || 0) < 8) {
+      const awaitingLive = Boolean(entry.streaming && (!entry.record || entry.record.streaming !== true))
+      if (awaitingLive && (entry.retryCount || 0) < 40) {
         entry.retryCount = (entry.retryCount || 0) + 1
-        entry.retryTimer = setTimeout(() => loadEntry(entry), 450)
+        entry.retryTimer = setTimeout(() => loadEntry(entry), 500)
       }
     })
   }
@@ -1148,6 +1173,11 @@ function fdMountImperativeFloorHeaders(ui) {
     observer.disconnect()
     offGameSub()
     stopWatches()
+    if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+      window.removeEventListener('dsh-tavern-session-changed', onTavernWindowSession)
+      window.removeEventListener('dsh-tavern-story-mutated', onTavernWindowSession)
+      window.removeEventListener('dsh-tavern-message-rendered', onTavernWindowSession)
+    }
     if (rafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId)
     entries.forEach(entry => {
       entry.disposed = true

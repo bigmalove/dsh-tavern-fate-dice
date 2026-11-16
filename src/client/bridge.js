@@ -10,13 +10,22 @@ const fdGameIdListeners = new Set()
 
 function fdDetectUrlGameId() {
   return fdSafe(() => {
-    if (typeof window === 'undefined' || !window.location) return ''
-    const search = String(window.location.search || '')
-    const qMatch = /[?&](?:sessionId|gameId)=([^&#]+)/.exec(search)
-    if (qMatch && qMatch[1]) return decodeURIComponent(qMatch[1])
-    const pathname = String(window.location.pathname || '')
-    const pMatch = /\/(?:sessions?|chats?|play|c)\/([a-zA-Z0-9_.:-]{6,})/.exec(pathname)
-    return pMatch && pMatch[1] ? decodeURIComponent(pMatch[1]) : ''
+    if (typeof window !== 'undefined' && window.location) {
+      const search = String(window.location.search || '')
+      const qMatch = /[?&](?:sessionId|gameId)=([^&#]+)/.exec(search)
+      if (qMatch && qMatch[1]) return decodeURIComponent(qMatch[1])
+      const pathname = String(window.location.pathname || '')
+      const pMatch = /\/(?:sessions?|chats?|play|c)\/([a-zA-Z0-9_.:-]{6,})/.exec(pathname)
+      if (pMatch && pMatch[1]) return decodeURIComponent(pMatch[1])
+    }
+    if (typeof document !== 'undefined' && typeof document.querySelector === 'function') {
+      const el = document.querySelector('[data-dsh-tavern-card-app-session], [data-session]')
+      if (el && typeof el.getAttribute === 'function') {
+        const sid = el.getAttribute('data-dsh-tavern-card-app-session') || el.getAttribute('data-session') || ''
+        if (sid) return sid.trim()
+      }
+    }
+    return ''
   }, '')
 }
 
