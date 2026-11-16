@@ -1,46 +1,40 @@
 // ============================================================================
-// demo/app.js — 命运之骰 8 大高性能投掷动画交互工坊主控逻辑
-// 涵盖三大视图：1) 主舞台沉浸工坊  2) 酒馆聊天流实景内嵌预览  3) 八大风格同屏齐投对比矩阵
+// demo/app.js — 命运之骰 · 次世代 WebGL2 HDR 3D 投掷动效工坊主控逻辑
+// 涵盖三大视图：
+//   1. 🎭 主舞台沉浸工坊（支持按住聚能旋涡 + 任意方向划动甩投 + 弹簧推镜慢动作）
+//   2. 🏮 酒馆聊天内嵌预览（楼层顶栏折叠胶囊重投舞台 + 发送栏上方 80px 微舞台）
+//   3. 🚀 六大 HDR 主题同屏齐投（6 路独立 WebGL2 管线同步起跳与自动 0% GPU 休眠对比）
 // ============================================================================
 
 import { ProceduralDiceAudio } from './audio.js'
-import { DiceStageEngine } from './engine.js'
-import { STYLES as STYLES_A } from './styles-a.js'
-import { STYLES as STYLES_B } from './styles-b.js'
-import { STYLES as STYLES_C } from './styles-c.js'
-import { STYLES as STYLES_D } from './styles-d.js'
-
-const ALL_STYLES = [...STYLES_A, ...STYLES_B, ...STYLES_C, ...STYLES_D]
+import { CinematicDiceStage, NEXTGEN_THEMES } from './physics-choreo.js'
 
 const DICE_PRESETS = [
-  { id: '2d6', label: '2d6 叙事渐进', tag: '酒馆默认', desc: '双六面骰 + 能力修正' },
-  { id: 'd20', label: '1d20 经典跑团', tag: 'D&D / 博德', desc: '二十面正多面体检定' },
-  { id: 'd100', label: '1d100 百分双骰', tag: 'CoC 诡秘', desc: '十位(00-90) + 个位(0-9)偏方面体同投' },
-  { id: 'd10', label: '1d10 轻量阶梯', tag: '酒馆内置', desc: '单颗十面五角偏方面体' },
+  { id: 'd20', label: '1d20 圣晶检定', tag: '跑团旗舰', desc: '二十面正多面体 + 皇冠 20 点雕文' },
+  { id: '2d6', label: '2d6 叙事渐进', tag: '酒馆默认', desc: '双六面骰同投互撞 + 支持切换传统圆点' },
+  { id: 'd100', label: '1d100 百分双骰', tag: 'CoC 诡秘', desc: '十位(00-90) + 个位(0-9)双五角偏方面体' },
+  { id: 'd10', label: '1d10 技能阶梯', tag: '轻快检定', desc: '单颗十面五角偏方面体' },
   { id: '4df', label: '4dF 命运四骰', tag: 'FATE 核心', desc: '4 颗正负空白符号骰 (+ / − / ◯)' },
-  { id: 'poly6', label: '全多面体全家福', tag: 'D4~D20', desc: 'D4+D6+D8+D10+D12+D20 六颗齐投' },
-  { id: 'stress12', label: '12 颗混编齐投', tag: '多体碰撞', desc: '检验多骰空中互撞弹开与帧率稳定性' },
-  { id: 'stress24', label: '24 颗极限压测', tag: '性能狂飙', desc: '满屏刚体碰撞 + 512 粒子池零 GC 压测' }
+  { id: 'poly6', label: '全多面体合击', tag: 'D4~D20', desc: 'D4+D6+D8+D10+D12+D20 六颗同台齐投' },
+  { id: 'stress12', label: '12 颗星雨齐投', tag: '多体碰撞', desc: '高密度空中互撞弹开与火星飞溅' },
+  { id: 'stress24', label: '24 颗极限压测', tag: 'HDR 狂飙', desc: '24 颗倒角多面体 + 900 粒子 + 4级辉光压测' }
 ]
 
 const TIER_META = {
-  random: { label: '🎲 真随机裁定', color: '#9aa5b8' },
-  critical: { label: '🌟 大成功', color: '#f5b942' },
-  success: { label: '✅ 成功', color: '#38c988' },
-  costly: { label: '⚠️ 代价成功', color: '#f09336' },
-  failure: { label: '❌ 失败', color: '#e85d56' },
+  random: { label: '🎲 真随机裁定', color: '#a6b2c8' },
+  critical: { label: '🌟 大成功', color: '#ffca4b' },
+  success: { label: '✅ 成功', color: '#39df94' },
+  costly: { label: '⚠️ 代价成功', color: '#ff9838' },
+  failure: { label: '❌ 失败', color: '#f25c54' },
   fumble: { label: '💀 大失败', color: '#d946ef' }
 }
 
-const CHECK_NAMES = ['潜行暗杀', '奥术破译', '话术交涉', '绝壁攀援', '古神直视', '孤身破阵', '机关拆解']
+const CHECK_NAMES = ['潜行暗杀', '星盘破译', '交涉话术', '绝壁飞渡', '古神直视', '孤身破阵', '禁咒吟唱']
 
 function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
-/**
- * 根据所选骰制与强制结果档位，生成契合点数的骰面数组与真实五档语义
- */
 function buildRollSpec(presetId, forcedTier, mode) {
   const checkName = CHECK_NAMES[randInt(0, CHECK_NAMES.length - 1)]
   let tier = forcedTier === 'random' ? null : forcedTier
@@ -64,7 +58,7 @@ function buildRollSpec(presetId, forcedTier, mode) {
       else tier = 'failure'
     }
     diceSpecs.push({ meshKey: 'd6', sides: 6, targetValue: a }, { meshKey: 'd6', sides: 6, targetValue: b })
-    summary = `[${a}+${b}] = ${total} (DC 8)`
+    summary = `[${a} + ${b}] = ${total} (DC 8)`
   } else if (presetId === 'd20') {
     let v = randInt(1, 20)
     if (tier === 'critical') v = 20
@@ -83,7 +77,6 @@ function buildRollSpec(presetId, forcedTier, mode) {
     diceSpecs.push({ meshKey: 'd20', sides: 20, targetValue: v })
     summary = `1d20 = ${v} (DC 15)`
   } else if (presetId === 'd100') {
-    // CoC 百分阈值：点数越小越强（1~5 大成功，96~100 大失败）
     let pct = randInt(1, 100)
     if (tier === 'critical') pct = randInt(1, 5)
     else if (tier === 'fumble') pct = randInt(96, 100)
@@ -142,9 +135,7 @@ function buildRollSpec(presetId, forcedTier, mode) {
     const sym = vals.map(v => (v > 0 ? '+' : v < 0 ? '−' : '◯')).join(' ')
     summary = `4dF [${sym}] = ${total >= 0 ? '+' + total : total}`
   } else if (presetId === 'poly6') {
-    const set = [
-      ['d4', 4], ['d6', 6], ['d8', 8], ['d10', 10], ['d12', 12], ['d20', 20]
-    ]
+    const set = [['d4', 4], ['d6', 6], ['d8', 8], ['d10', 10], ['d12', 12], ['d20', 20]]
     const rolled = []
     for (const [mk, maxV] of set) {
       const v = tier === 'critical' ? maxV : tier === 'fumble' ? 1 : randInt(1, maxV)
@@ -166,205 +157,232 @@ function buildRollSpec(presetId, forcedTier, mode) {
       diceSpecs.push({ meshKey: mk, sides: mv, targetValue: v })
     }
     if (!tier) tier = 'critical'
-    summary = `${count} 颗多面体齐投总计 = ${total}`
+    summary = `${count} 颗多面体星雨总计 = ${total}`
   }
 
-  return {
-    diceSpecs,
-    tier,
-    mode,
-    total,
-    checkName,
-    summary
-  }
+  return { diceSpecs, tier, mode, total, checkName, summary }
 }
 
 export function bootDemoApp() {
   const audio = new ProceduralDiceAudio()
 
   let currentView = 'arena' // 'arena' | 'tavern' | 'matrix'
-  let activeStyleIdx = 0
-  let activePreset = 'd20'
-  let forcedTier = 'random'
-  let rollMode = 'normal' // 'normal' | 'fate' | 'push' | 'hidden'
+  let activeThemeIdx = 0
+  let activePreset = 'poly6'
+  let forcedTier = 'critical'
+  let rollMode = 'normal'
   let quality = 'ultra'
   let usePips = false
-  let tavernLightTheme = false
+  let cinematicCam = true
+  let tavernLight = false
   let fatePoints = 2
+  let lastRollSpec = null
 
-  // 1. 挂载主舞台引擎
-  const heroCanvas = document.getElementById('hero-canvas')
   const telemetryEl = document.getElementById('telemetry-pill')
   const outcomeBannerEl = document.getElementById('outcome-banner')
   const revealHintEl = document.getElementById('reveal-hint')
 
-  let lastRollSpec = null
+  const makeCurrentSpec = () => {
+    const spec = buildRollSpec(activePreset, forcedTier, rollMode)
+    lastRollSpec = spec
+    revealHintEl.hidden = true
+    outcomeBannerEl.dataset.tier = 'rolling'
+    outcomeBannerEl.innerHTML = `<span class="ob-check">🎲 正在裁定 · ${spec.checkName}检定…</span>`
+    return spec
+  }
 
-  const heroEngine = new DiceStageEngine(heroCanvas, {
-    audio,
-    onTelemetry(stat) {
-      if (currentView !== 'arena') return
-      if (stat.sleeping) {
-        telemetryEl.innerHTML = `<span class="dot idle"></span><span>IDLE · 0% GPU 休眠省电</span><span class="sep">|</span><span>末帧 ${stat.avgMs.toFixed(2)}ms</span>`
-      } else {
-        telemetryEl.innerHTML = `<span class="dot live"></span><span><b>${stat.fps}</b> FPS</span><span class="sep">|</span><span>CPU <b>${stat.avgMs.toFixed(2)}</b>ms</span><span class="sep">|</span><span>粒子 <b>${stat.particles}</b></span><span class="sep">|</span><span>骰数 <b>${stat.diceCount}</b></span>`
+  // 1. 初始化主舞台 WebGL2 HDR 引擎
+  const heroStage = new CinematicDiceStage(
+    document.getElementById('hero-gl-canvas'),
+    document.getElementById('hero-hud-canvas'),
+    {
+      audio,
+      interactive: true,
+      buildSpecOnDragRelease: makeCurrentSpec,
+      onTelemetry(stat) {
+        if (currentView !== 'arena') return
+        if (stat.sleeping) {
+          telemetryEl.innerHTML = `<span class="dot idle"></span><span>IDLE · 0% GPU 静默休眠</span><span class="sep">|</span><span>末帧 ${stat.avgMs.toFixed(2)}ms</span>`
+        } else {
+          telemetryEl.innerHTML = `<span class="dot live"></span><span>WebGL2 HDR · <b>${stat.fps}</b> FPS</span><span class="sep">|</span><span>CPU <b>${stat.avgMs.toFixed(2)}</b>ms</span><span class="sep">|</span><span>粒子 <b>${stat.particles}</b></span><span class="sep">|</span><span>骰数 <b>${stat.diceCount}</b></span>`
+        }
+      },
+      onRollSettled(st) {
+        updateHeroBanner(st)
       }
-    },
-    onRollSettled(state) {
-      updateHeroBanner(state)
     }
-  })
+  )
 
-  // 2. 酒馆内嵌预览双引擎（输入栏微舞台横幅 + 楼层展开重投舞台）
-  const tavernBannerCanvas = document.getElementById('tavern-banner-canvas')
-  const tavernCapsuleCanvas = document.getElementById('tavern-capsule-canvas')
-  const tavernBannerEngine = new DiceStageEngine(tavernBannerCanvas, { audio })
-  const tavernCapsuleEngine = new DiceStageEngine(tavernCapsuleCanvas, {
-    audio,
-    onRollSettled(st) {
-      updateTavernCapsuleText(st)
-    }
-  })
+  // 2. 酒馆内嵌预览双引擎（懒启动，切到酒馆标签才初始化 WebGL 上下文，节省显存）
+  let tavernCapsuleStage = null
+  let tavernBannerStage = null
 
-  // 3. 八大风格同屏矩阵引擎（懒初始化，切换到矩阵视图才创建并运行）
-  const matrixEngines = []
+  function ensureTavernStages() {
+    if (tavernCapsuleStage) return
+    tavernCapsuleStage = new CinematicDiceStage(
+      document.getElementById('tavern-capsule-gl'),
+      document.getElementById('tavern-capsule-hud'),
+      {
+        audio,
+        compact: false,
+        interactive: true,
+        buildSpecOnDragRelease: makeCurrentSpec,
+        onRollSettled(st) {
+          updateTavernCapsuleText(st)
+        }
+      }
+    )
+    tavernBannerStage = new CinematicDiceStage(
+      document.getElementById('tavern-banner-gl'),
+      null,
+      { audio: null, compact: true, interactive: false }
+    )
+    tavernCapsuleStage.setTheme(NEXTGEN_THEMES[activeThemeIdx])
+    tavernBannerStage.setTheme(NEXTGEN_THEMES[activeThemeIdx])
+    tavernCapsuleStage.setQuality(quality)
+    tavernBannerStage.setQuality(quality)
+    tavernCapsuleStage.setUsePipsForD6(usePips)
+    tavernBannerStage.setUsePipsForD6(usePips)
+  }
+
+  // 3. 六大 HDR 主题同屏齐投矩阵（懒启动）
+  const matrixStages = []
   const matrixGridEl = document.getElementById('matrix-grid')
 
-  function ensureMatrixEngines() {
-    if (matrixEngines.length > 0) return
-    ALL_STYLES.forEach((st, idx) => {
+  function ensureMatrixStages() {
+    if (matrixStages.length > 0) return
+    NEXTGEN_THEMES.forEach((th, idx) => {
       const cell = document.createElement('div')
       cell.className = 'matrix-cell'
       cell.innerHTML = `
-        <canvas class="matrix-canvas"></canvas>
+        <canvas class="matrix-gl"></canvas>
+        <canvas class="matrix-hud"></canvas>
         <div class="matrix-head">
-          <span class="matrix-title">${idx + 1}. ${st.name}</span>
-          <span class="matrix-badge" style="border-color:${st.accent}66;color:${st.accent}">${st.badge}</span>
+          <span class="matrix-title">${idx + 1}. ${th.name}</span>
+          <span class="matrix-badge" style="border-color:${th.accent}77;color:${th.accent}">${th.badge}</span>
         </div>
-        <div class="matrix-stat" id="mstat-${st.id}">就绪</div>
+        <div class="matrix-stat">初始化…</div>
       `
-      const cv = cell.querySelector('canvas')
       matrixGridEl.appendChild(cell)
       const statNode = cell.querySelector('.matrix-stat')
-      const eng = new DiceStageEngine(cv, {
-        audio: idx === 0 ? audio : null, // 仅首格发声避免 8 倍音量叠加
-        onTelemetry(info) {
-          statNode.textContent = info.sleeping
-            ? `💤 IDLE 0% GPU (${info.avgMs.toFixed(2)}ms)`
-            : `${info.fps} FPS · ${info.avgMs.toFixed(2)}ms`
-          statNode.classList.toggle('is-sleeping', info.sleeping)
+      const stg = new CinematicDiceStage(
+        cell.querySelector('.matrix-gl'),
+        cell.querySelector('.matrix-hud'),
+        {
+          audio: idx === 0 ? audio : null,
+          compact: true,
+          interactive: true,
+          buildSpecOnDragRelease: () => buildRollSpec(activePreset, forcedTier, rollMode),
+          onTelemetry(info) {
+            statNode.textContent = info.sleeping
+              ? `💤 IDLE 0% GPU (${info.avgMs.toFixed(2)}ms)`
+              : `${info.fps} FPS · ${info.avgMs.toFixed(2)}ms`
+            statNode.classList.toggle('is-sleeping', info.sleeping)
+          }
         }
-      })
-      eng.setStyle(st)
-      cell.addEventListener('click', () => {
-        if (eng.state.mode === 'hidden' && !eng.state.revealed && eng.state.settled) {
-          eng.revealHidden()
-        } else {
-          const spec = buildRollSpec(activePreset, forcedTier, rollMode)
-          eng.throwDice(spec)
-        }
-      })
-      matrixEngines.push(eng)
+      )
+      stg.setTheme(th)
+      stg.setQuality(quality)
+      stg.setUsePipsForD6(usePips)
+      matrixStages.push(stg)
     })
   }
 
-  function updateHeroBanner(state) {
+  function updateHeroBanner(stage) {
     if (!lastRollSpec) return
-    const isHidden = state.mode === 'hidden' && !state.revealed
+    const isHidden = stage.mode === 'hidden' && !stage.revealed
     revealHintEl.hidden = !isHidden
     if (isHidden) {
       outcomeBannerEl.dataset.tier = 'hidden'
       outcomeBannerEl.innerHTML = `
-        <span class="ob-check">👁️ ${lastRollSpec.checkName} · 暗骰已落定</span>
-        <span class="ob-pill">点击舞台任意处揭晓真身</span>
+        <span class="ob-check">👁️ ${lastRollSpec.checkName} · 诡秘暗骰已落定</span>
+        <span class="ob-chip">点击舞台撕裂封印揭晓</span>
       `
       return
     }
-    const meta = TIER_META[state.tier] || TIER_META.success
-    const modeChip = state.mode === 'fate'
+    const meta = TIER_META[stage.tier] || TIER_META.success
+    const modeChip = stage.mode === 'fate'
       ? '<span class="ob-chip fate">✦ 逆命重投</span>'
-      : state.mode === 'push'
+      : stage.mode === 'push'
         ? '<span class="ob-chip push">🔥 孤注一掷</span>'
-        : '<span class="ob-chip">⛓ 阻尼联动</span>'
-    outcomeBannerEl.dataset.tier = state.tier
+        : '<span class="ob-chip">⛓ 阻尼配额已同步</span>'
+    outcomeBannerEl.dataset.tier = stage.tier
     outcomeBannerEl.innerHTML = `
       <span class="ob-check">${lastRollSpec.checkName}检定 · <b>${lastRollSpec.summary}</b></span>
-      <span class="ob-tier" style="color:${meta.color}">${meta.label}</span>
+      <span class="ob-tier" style="color:${meta.color};font-weight:800">${meta.label}</span>
       ${modeChip}
     `
   }
 
-  function triggerRoll() {
-    const spec = buildRollSpec(activePreset, forcedTier, rollMode)
-    lastRollSpec = spec
-    revealHintEl.hidden = true
-
-    if (currentView === 'arena') {
-      outcomeBannerEl.dataset.tier = 'rolling'
-      outcomeBannerEl.innerHTML = `<span class="ob-check">🎲 正在投掷 · ${spec.checkName}检定…</span>`
-      heroEngine.throwDice(spec)
-    } else if (currentView === 'tavern') {
-      tavernBannerEngine.setStyle(ALL_STYLES[activeStyleIdx])
-      tavernCapsuleEngine.setStyle(ALL_STYLES[activeStyleIdx])
-      tavernBannerEngine.throwDice(spec)
-      tavernCapsuleEngine.throwDice(spec)
-      document.getElementById('tv-banner-title').textContent = `${spec.checkName}检定 · 投掷裁定中…`
-      document.getElementById('tv-banner-sub').textContent = `风格：${ALL_STYLES[activeStyleIdx].name} · 规则：${activePreset.toUpperCase()}`
-    } else if (currentView === 'matrix') {
-      ensureMatrixEngines()
-      for (const eng of matrixEngines) {
-        eng.resize()
-        eng.throwDice(spec)
-      }
-    }
-  }
-
-  function updateTavernCapsuleText(state) {
-    const spec = lastRollSpec || { checkName: '潜行暗杀', summary: '1d20 = 18' }
-    const meta = TIER_META[state.tier] || TIER_META.success
+  function updateTavernCapsuleText(stage) {
+    const spec = lastRollSpec || { checkName: '潜行暗杀', summary: '1d20 = 20' }
+    const meta = TIER_META[stage.tier] || TIER_META.success
     document.getElementById('tv-cap-summary').innerHTML =
-      `🎲 ${spec.checkName}检定 · <b>${spec.summary}</b> · <span style="color:${meta.color};font-weight:700">${meta.label}</span>`
+      `🎲 ${spec.checkName}检定 · <b>${spec.summary}</b> · <span style="color:${meta.color};font-weight:800">${meta.label}</span>`
     document.getElementById('tv-banner-title').innerHTML =
       `${spec.checkName}检定 · ${spec.summary} · <span style="color:${meta.color}">${meta.label}</span>`
     document.getElementById('tv-fate-pts').textContent = `✦ 命运点 ${fatePoints}/3`
   }
 
-  // 渲染左侧/底部 8 大风格选择卡片
-  const styleListEl = document.getElementById('style-cards')
-  ALL_STYLES.forEach((st, idx) => {
+  function triggerRoll() {
+    const spec = makeCurrentSpec()
+    if (currentView === 'arena') {
+      heroStage.throwDice(spec)
+    } else if (currentView === 'tavern') {
+      ensureTavernStages()
+      tavernCapsuleStage.setTheme(NEXTGEN_THEMES[activeThemeIdx])
+      tavernBannerStage.setTheme(NEXTGEN_THEMES[activeThemeIdx])
+      tavernCapsuleStage.throwDice(spec)
+      tavernBannerStage.throwDice(spec)
+      document.getElementById('tv-banner-title').textContent = `${spec.checkName}检定 · 3D 实时裁定中…`
+      document.getElementById('tv-banner-sub').textContent = `当前风格：${NEXTGEN_THEMES[activeThemeIdx].name} · 规则：${activePreset.toUpperCase()}`
+    } else if (currentView === 'matrix') {
+      ensureMatrixStages()
+      for (const stg of matrixStages) {
+        stg.resize()
+        stg.throwDice(spec)
+      }
+    }
+  }
+
+  // 构建左侧 6 大次世代 HDR 主题卡片
+  const styleCardsEl = document.getElementById('style-cards')
+  NEXTGEN_THEMES.forEach((th, idx) => {
     const btn = document.createElement('button')
     btn.type = 'button'
-    btn.className = 'style-card' + (idx === activeStyleIdx ? ' is-active' : '')
-    btn.style.setProperty('--card-accent', st.accent)
+    btn.className = 'style-card' + (idx === activeThemeIdx ? ' is-active' : '')
+    btn.style.setProperty('--card-accent', th.accent)
     btn.innerHTML = `
-      <div class="sc-swatch" style="background:${st.bgPreview}">
+      <div class="sc-swatch" style="background:${th.swatch}">
         <span class="sc-num">${idx + 1}</span>
-        <span class="sc-badge">${st.badge}</span>
+        <span class="sc-badge">${th.badge}</span>
       </div>
       <div class="sc-body">
-        <div class="sc-title">${st.name}</div>
-        <div class="sc-desc">${st.desc}</div>
+        <div class="sc-title">${th.name}</div>
+        <div class="sc-desc">${th.desc}</div>
       </div>
     `
-    btn.addEventListener('click', () => selectStyle(idx, true))
-    styleListEl.appendChild(btn)
+    btn.addEventListener('click', () => selectTheme(idx, true))
+    styleCardsEl.appendChild(btn)
   })
 
-  function selectStyle(idx, autoRoll = true) {
-    activeStyleIdx = (idx + ALL_STYLES.length) % ALL_STYLES.length
-    const st = ALL_STYLES[activeStyleIdx]
+  function selectTheme(idx, autoRoll = true) {
+    activeThemeIdx = (idx + NEXTGEN_THEMES.length) % NEXTGEN_THEMES.length
+    const th = NEXTGEN_THEMES[activeThemeIdx]
     document.querySelectorAll('.style-card').forEach((el, i) => {
-      el.classList.toggle('is-active', i === activeStyleIdx)
+      el.classList.toggle('is-active', i === activeThemeIdx)
     })
-    document.getElementById('active-style-title').textContent = `${st.name} · ${st.subtitle}`
-    document.getElementById('active-style-desc').textContent = st.desc
-    heroEngine.setStyle(st)
-    tavernBannerEngine.setStyle(st)
-    tavernCapsuleEngine.setStyle(st)
+    document.getElementById('active-style-title').textContent = `${th.name} · ${th.subtitle}`
+    document.getElementById('active-style-desc').textContent = th.desc
+    heroStage.setTheme(th)
+    if (tavernCapsuleStage) {
+      tavernCapsuleStage.setTheme(th)
+      tavernBannerStage.setTheme(th)
+    }
     if (autoRoll) triggerRoll()
   }
 
-  // 渲染骰制预设按钮
+  // 骰制按钮
   const presetBarEl = document.getElementById('preset-buttons')
   DICE_PRESETS.forEach(p => {
     const b = document.createElement('button')
@@ -381,7 +399,7 @@ export function bootDemoApp() {
     presetBarEl.appendChild(b)
   })
 
-  // 渲染强制裁定档位按钮
+  // 五档结果演出按钮
   const tierBarEl = document.getElementById('tier-buttons')
   Object.entries(TIER_META).forEach(([key, meta]) => {
     const b = document.createElement('button')
@@ -397,15 +415,16 @@ export function bootDemoApp() {
     tierBarEl.appendChild(b)
   })
 
-  // 投掷模式切换（普通 / 逆命重投 / 孤注一掷 / 暗骰）
+  // 酒馆博弈模式联动
   document.querySelectorAll('[data-mode]').forEach(btn => {
     btn.addEventListener('click', () => {
       rollMode = btn.dataset.mode
       document.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('is-active', x.dataset.mode === rollMode))
-      // 智能联动推荐风格（用户仍可随时切别的风格）
-      if (rollMode === 'push' && currentView === 'arena') selectStyle(2, false) // magma
-      else if (rollMode === 'fate' && currentView === 'arena') selectStyle(4, false) // prism
-      else if (rollMode === 'hidden' && currentView === 'arena') selectStyle(6, false) // eldritch
+      if (currentView === 'arena') {
+        if (rollMode === 'fate') selectTheme(1, false)       // 时停棱镜
+        else if (rollMode === 'push') selectTheme(2, false)  // 焚天熔炉
+        else if (rollMode === 'hidden') selectTheme(5, false)// 虚空星噬
+      }
       triggerRoll()
     })
   })
@@ -419,72 +438,63 @@ export function bootDemoApp() {
       document.getElementById('view-tavern').hidden = currentView !== 'tavern'
       document.getElementById('view-matrix').hidden = currentView !== 'matrix'
 
-      if (currentView !== 'arena') heroEngine.stop()
-      if (currentView !== 'tavern') {
-        tavernBannerEngine.stop()
-        tavernCapsuleEngine.stop()
+      if (currentView !== 'arena') heroStage.stop()
+      if (currentView !== 'tavern' && tavernCapsuleStage) {
+        tavernCapsuleStage.stop()
+        tavernBannerStage.stop()
       }
-      if (currentView !== 'matrix') {
-        matrixEngines.forEach(e => e.stop())
-      }
+      if (currentView !== 'matrix') matrixStages.forEach(s => s.stop())
 
       requestAnimationFrame(() => {
         if (currentView === 'arena') {
-          heroEngine.resize()
+          heroStage.resize()
           triggerRoll()
         } else if (currentView === 'tavern') {
-          tavernBannerEngine.resize()
-          tavernCapsuleEngine.resize()
+          ensureTavernStages()
+          tavernCapsuleStage.resize()
+          tavernBannerStage.resize()
           triggerRoll()
         } else if (currentView === 'matrix') {
-          ensureMatrixEngines()
-          matrixEngines.forEach(e => e.resize())
+          ensureMatrixStages()
+          matrixStages.forEach(s => s.resize())
           triggerRoll()
         }
       })
     })
   })
 
-  // 主投掷按钮 & 舞台点击交互
   document.getElementById('btn-roll-now').addEventListener('click', () => triggerRoll())
-  heroCanvas.addEventListener('click', () => {
-    if (heroEngine.state.mode === 'hidden' && !heroEngine.state.revealed && heroEngine.state.settled) {
-      heroEngine.revealHidden()
-      updateHeroBanner(heroEngine.state)
-    } else {
-      triggerRoll()
-    }
-  })
 
-  // 酒馆实景预览内的「✦ 逆命重投」与「🔥 孤注一掷」交互
+  // 酒馆预览内嵌「✦ 逆命重投」与「🔥 孤注一掷」实景交互
   document.getElementById('btn-tv-fate').addEventListener('click', () => {
-    if (fatePoints > 0) fatePoints--
-    else fatePoints = 3
+    ensureTavernStages()
+    fatePoints = fatePoints > 0 ? fatePoints - 1 : 3
     rollMode = 'fate'
-    selectStyle(4, false) // prism 星骸水晶子弹时间
+    selectTheme(1, false)
     const spec = buildRollSpec(activePreset, 'critical', 'fate')
     lastRollSpec = spec
-    tavernBannerEngine.throwDice(spec)
-    tavernCapsuleEngine.throwDice(spec)
+    tavernCapsuleStage.throwDice(spec)
+    tavernBannerStage.throwDice(spec)
   })
 
   document.getElementById('btn-tv-push').addEventListener('click', () => {
+    ensureTavernStages()
     rollMode = 'push'
-    selectStyle(2, false) // magma 炼狱熔岩锻造
+    selectTheme(2, false)
     const outcome = Math.random() < 0.55 ? 'costly' : 'fumble'
     const spec = buildRollSpec(activePreset, outcome, 'push')
     lastRollSpec = spec
-    tavernBannerEngine.throwDice(spec)
-    tavernCapsuleEngine.throwDice(spec)
+    tavernCapsuleStage.throwDice(spec)
+    tavernBannerStage.throwDice(spec)
   })
 
   document.getElementById('btn-tv-theme').addEventListener('click', e => {
-    tavernLightTheme = !tavernLightTheme
-    document.getElementById('tavern-mock-shell').classList.toggle('is-light', tavernLightTheme)
-    e.currentTarget.textContent = tavernLightTheme ? '🌙 切换深色酒馆' : '☀️ 切换暖白浅色酒馆'
+    tavernLight = !tavernLight
+    document.getElementById('tavern-mock-shell').classList.toggle('is-light', tavernLight)
+    e.currentTarget.textContent = tavernLight ? '🌙 切换深色酒馆' : '☀️ 切换暖白浅色酒馆'
   })
 
-  // 顶栏工具开关：音效 / D6圆点 / 画质档位
+  // 顶栏工具开关
   document.getElementById('btn-toggle-audio').addEventListener('click', e => {
     const next = !audio.enabled
     audio.setEnabled(next)
@@ -492,14 +502,23 @@ export function bootDemoApp() {
     e.currentTarget.textContent = next ? '🔊 音效：开' : '🔇 音效：关'
   })
 
+  document.getElementById('btn-toggle-cam').addEventListener('click', e => {
+    cinematicCam = !cinematicCam
+    heroStage.setCinematicCam(cinematicCam)
+    e.currentTarget.classList.toggle('is-active', cinematicCam)
+    e.currentTarget.textContent = cinematicCam ? '🎥 电影运镜：开' : '🎥 电影运镜：固定'
+  })
+
   document.getElementById('btn-toggle-pips').addEventListener('click', e => {
     usePips = !usePips
-    heroEngine.setUsePipsForD6(usePips)
-    tavernBannerEngine.setUsePipsForD6(usePips)
-    tavernCapsuleEngine.setUsePipsForD6(usePips)
-    matrixEngines.forEach(m => m.setUsePipsForD6(usePips))
+    heroStage.setUsePipsForD6(usePips)
+    if (tavernCapsuleStage) {
+      tavernCapsuleStage.setUsePipsForD6(usePips)
+      tavernBannerStage.setUsePipsForD6(usePips)
+    }
+    matrixStages.forEach(m => m.setUsePipsForD6(usePips))
     e.currentTarget.classList.toggle('is-active', usePips)
-    e.currentTarget.textContent = usePips ? '⚀ D6：传统圆点' : '6 D6：现代数字'
+    e.currentTarget.textContent = usePips ? '⚀ D6：传统圆点' : '6 D6：鎏金数字'
     if (activePreset !== '2d6') {
       activePreset = '2d6'
       presetBarEl.querySelectorAll('.chip-btn').forEach(x => x.classList.toggle('is-active', x.dataset.preset === '2d6'))
@@ -509,38 +528,38 @@ export function bootDemoApp() {
 
   document.getElementById('select-quality').addEventListener('change', e => {
     quality = e.target.value
-    heroEngine.setQuality(quality)
-    tavernBannerEngine.setQuality(quality)
-    tavernCapsuleEngine.setQuality(quality)
-    matrixEngines.forEach(m => m.setQuality(quality))
+    heroStage.setQuality(quality)
+    if (tavernCapsuleStage) {
+      tavernCapsuleStage.setQuality(quality)
+      tavernBannerStage.setQuality(quality)
+    }
+    matrixStages.forEach(m => m.setQuality(quality))
   })
 
-  // 自适应尺寸观察器
   const ro = new ResizeObserver(() => {
-    if (currentView === 'arena') heroEngine.resize()
-    else if (currentView === 'tavern') {
-      tavernBannerEngine.resize()
-      tavernCapsuleEngine.resize()
+    if (currentView === 'arena') heroStage.resize()
+    else if (currentView === 'tavern' && tavernCapsuleStage) {
+      tavernCapsuleStage.resize()
+      tavernBannerStage.resize()
     } else if (currentView === 'matrix') {
-      matrixEngines.forEach(e => e.resize())
+      matrixStages.forEach(m => m.resize())
     }
   })
-  ro.observe(heroCanvas)
+  ro.observe(document.getElementById('hero-gl-canvas'))
   ro.observe(matrixGridEl)
 
-  // 快捷键支持：Space 重投，数字键 1-8 秒切八大风格
   window.addEventListener('keydown', e => {
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return
+    if (e.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return
     if (e.code === 'Space') {
       e.preventDefault()
       triggerRoll()
-    } else if (e.key >= '1' && e.key <= '8') {
-      selectStyle(Number(e.key) - 1, true)
+    } else if (e.key >= '1' && e.key <= '6') {
+      selectTheme(Number(e.key) - 1, true)
     }
   })
 
-  // 初始启动黄金秘法星盘首投！
-  selectStyle(0, true)
+  // 开场自动演示「星穹秘法 · 全多面体大成功合击」！
+  selectTheme(0, true)
 }
 
 bootDemoApp()
