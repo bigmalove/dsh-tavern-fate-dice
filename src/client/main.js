@@ -92,4 +92,4 @@ exports.name = FD_PLUGIN_ID
 exports.inject = ['tavernUi']
 exports.apply = apply
 exports.WorkbenchPanel = WorkbenchPanel
-exports.__test = { DieGlyph, formatRollSummary, LiveRollBanner, ComposerLiveDock, TurnRollCapsule, StoryFloorDiceItem, fdExtractFloorTurn, fdMountImperativeFloorHeaders, fdNoteActiveGameId, fdGetActiveGameId, WorkbenchPanel, DecisionModelGuideBanner, FdHelp, SettingsTab }
+exports.__test = { DieGlyph, formatRollSummary, LiveRollBanner, ComposerLiveDock, ComposerDicePopover, fdResolveFloorToneAndLabel, fdComputePopoverStyle, TurnRollCapsule, StoryFloorDiceItem, fdExtractFloorTurn, fdMountImperativeFloorHeaders, fdNoteActiveGameId, fdGetActiveGameId, WorkbenchPanel, DecisionModelGuideBanner, FdHelp, SettingsTab }

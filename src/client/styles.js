@@ -844,6 +844,76 @@ const CSS_TEXT = `
   padding-top: 2px;
 }
 
+/* ---------- 输入栏左下角悬浮骰子胶囊与弹出裁定小窗 ---------- */
+.fd-composer-dock-wrap {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fd-floor-pill.fd-composer-pill {
+  height: auto;
+  min-height: 24px;
+  padding: 3px 9px;
+  font-size: 12px;
+  line-height: 1.4;
+  max-width: min(100%, 340px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  backdrop-filter: blur(6px);
+}
+.fd-floor-pill.fd-composer-pill[data-tone="idle"] {
+  --fd-pill-color: var(--dsh-tavern-accent, #b9824a);
+  border-color: transparent;
+  background: transparent;
+  color: var(--dsw-alias-label-primary, inherit);
+}
+.fd-floor-pill.fd-composer-pill[data-tone="idle"]:hover,
+.fd-floor-pill.fd-composer-pill[data-tone="idle"][data-expanded="true"] {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.1));
+  border-color: var(--dsw-alias-border-l2, rgba(128, 128, 142, 0.22));
+}
+.fd-floor-pill.fd-composer-pill:not([data-tone="idle"]) {
+  background: linear-gradient(color-mix(in srgb, var(--fd-pill-color) 11%, transparent) 0 0) color-mix(in srgb, var(--dsw-alias-bg-base, Canvas) 88%, transparent);
+}
+.fd-floor-pill.fd-composer-pill:not([data-tone="idle"]):hover,
+.fd-floor-pill.fd-composer-pill:not([data-tone="idle"])[data-expanded="true"] {
+  background: linear-gradient(color-mix(in srgb, var(--fd-pill-color) 20%, transparent) 0 0) color-mix(in srgb, var(--dsw-alias-bg-base, Canvas) 92%, transparent);
+}
+.fd-floor-panel.fd-composer-popover {
+  position: fixed;
+  z-index: 9500;
+  margin: 0;
+  border-radius: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: linear-gradient(color-mix(in srgb, var(--fd-pill-color) 6%, var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base, #fff))) 0 0) Canvas;
+  box-shadow: 0 12px 32px rgba(20, 20, 32, 0.18), 0 2px 8px rgba(20, 20, 32, 0.08);
+  animation: fd-rise 0.16s ease-out;
+}
+.fd-popover-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.62;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.fd-popover-close:hover {
+  opacity: 1;
+  background: rgba(128, 128, 142, 0.14);
+}
+
 /* ---------- 命运点醒目英雄卡与规则三宫格 ---------- */
 .fd-fate-hero {
   display: flex;
@@ -1019,6 +1089,6 @@ const CSS_TEXT = `
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fd-die-svg.is-rolling, .fd-die-svg.is-settled, .fd-live-card { animation: none !important; }
+  .fd-die-svg.is-rolling, .fd-die-svg.is-settled, .fd-live-card, .fd-composer-popover { animation: none !important; }
 }
 `

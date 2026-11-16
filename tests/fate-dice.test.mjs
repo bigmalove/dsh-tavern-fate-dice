@@ -1587,3 +1587,237 @@ test('回归验证：切换会话 + 跳号第 5 楼（turn=18）流式期间不�
 
   unmountHeaders()
 })
+
+test('输入栏悬浮骰子胶囊与弹出裁定小窗：latest 读取、胶囊文案、与楼层一致的裁定详情与重投闭环', async () => {
+  const turnSections = []
+  const settledHooks = []
+  const handlers = new Map()
+  const gameDataMap = new Map()
+  const turnDataMap = new Map()
+
+  applyFateDicePlugin({
+    tavern: {
+      capabilities: { decisionJudge: 1, narrativeDamper: 1 },
+      damperTurnQuestions() { return () => {} },
+      turnSection(def) { turnSections.push(def); return () => {} },
+      settlementSection() { return () => {} },
+      settlementTool() { return () => {} },
+      onTurnSettled(fn) { settledHooks.push(fn); return () => {} },
+      handle(name, fn) { handlers.set(name, fn) },
+      async savePluginData() {},
+      async readPluginData() { return null },
+      async saveGameData({ gameId, data }) { gameDataMap.set(gameId, structuredClone(data)) },
+      async readGameData({ gameId }) { return structuredClone(gameDataMap.get(gameId) || null) },
+      async saveTurnData({ gameId, turn, textVersion, data }) {
+        turnDataMap.set(`${gameId}:${turn}`, { turn, textVersion, data: structuredClone(data) })
+        return { turn, textVersion }
+      },
+      async readTurnData({ gameId, turn }) { return structuredClone(turnDataMap.get(`${gameId}:${turn}`) || null) },
+      async getTurnState() { return { turn: 5, settled: true, generating: false, greeting: false } },
+      async getTurn() { return { turn: 5, text: '演武场木桩旁尘土飞扬。', variables: {} } },
+      async publishState() {},
+      async getDamperTurnContext({ turn }) {
+        return {
+          active: true,
+          turn,
+          explicitSceneShift: false,
+          ruling: { rulingTier: 'resist_pushback', deltaBudget: 'frozen', leverageScore: 1.5 },
+          answers: {
+            fd_needs_check: { type: 'noul', probability: 0.74 },
+            fd_difficulty: { type: 'choice', choice: 'easy' },
+            fd_capability: { type: 'score', score: 0 },
+            fd_domain: { type: 'choice', choice: 'general_physical' }
+          }
+        }
+      },
+      async applyDamperDiceShift() {
+        return { applied: true, ruling: { rulingTier: 'resist_pushback', deltaBudget: 'frozen' } }
+      }
+    }
+  })
+
+  // 1) 无记录时 latest 读取返回初始元信息，而不带 latest 的 turn:0 仍返回 null
+  const withoutLatest = await handlers.get('fate-dice:read-turn')({ gameId: 'g-dock', turn: 0 })
+  assert.equal(withoutLatest, null)
+  const emptyLatest = await handlers.get('fate-dice:read-turn')({ gameId: 'g-dock', turn: 0, latest: true })
+  assert.equal(emptyLatest.turn, 0)
+  assert.equal(emptyLatest.roll, null)
+  assert.equal(emptyLatest.rule, '2d6')
+  assert.equal(emptyLatest.fate.points, 2)
+
+  // 2) 完成第 5 楼检定并落盘后，latest 读取自动命中最末楼层 turn=5
+  await handlers.get('fate-dice:save-global-settings')({ settings: { alwaysRoll: true } })
+  await turnSections[0].text({ gameId: 'g-dock', turn: 5, input: '我全力向演武场木桩挥出重拳' })
+  await settledHooks[0]({ gameId: 'g-dock', turn: 5, textVersion: 'v5-1' })
+
+  const latestRecord = await handlers.get('fate-dice:read-turn')({ gameId: 'g-dock', turn: 0, latest: true })
+  assert.equal(latestRecord.turn, 5)
+  assert.ok(latestRecord.roll)
+  assert.equal(latestRecord.fate.points, 2)
+
+  // 3) 校验浏览器端悬浮胶囊渲染、Portal 弹窗与按钮回调
+  const clientCode = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+  let loadedModule = null
+  let stateIndex = 0
+  let stateSlots = []
+  const effects = []
+  const portaled = []
+
+  const fakeDoc = {
+    head: { appendChild() {} },
+    body: { tagName: 'BODY' },
+    getElementById: () => null,
+    createElement: () => ({ id: '', textContent: '' }),
+    querySelectorAll: () => []
+  }
+  const fakeReact = {
+    Fragment: Symbol('Fragment'),
+    createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+    useState: init => {
+      const idx = stateIndex++
+      if (!(idx in stateSlots)) stateSlots[idx] = typeof init === 'function' ? init() : init
+      const set = val => {
+        stateSlots[idx] = typeof val === 'function' ? val(stateSlots[idx]) : val
+      }
+      return [stateSlots[idx], set]
+    },
+    useEffect: fn => { effects.push(fn) },
+    useMemo: fn => fn(),
+    useRef: val => ({ current: val })
+  }
+  const fakeReactDOM = {
+    createPortal: (node, target) => {
+      portaled.push({ node, target })
+      return { portal: true, node, target }
+    }
+  }
+  const sandbox = {
+    window: {
+      innerWidth: 1280,
+      innerHeight: 800,
+      __ModuleLoader__: { load(def) { loadedModule = def } },
+      localStorage: { getItem: () => null, setItem: () => {} }
+    },
+    document: fakeDoc,
+    MutationObserver: class { observe() {}; disconnect() {} },
+    setTimeout,
+    clearTimeout,
+    console
+  }
+  vm.runInNewContext(clientCode, sandbox, { filename: 'client.js' })
+  const exported = loadedModule.factory(mod => {
+    if (mod === 'react') return fakeReact
+    if (mod === 'react-dom') return fakeReactDOM
+    throw new Error('unexpected require: ' + mod)
+  })
+
+  const expandVnode = node => {
+    if (!node || typeof node !== 'object') return node
+    if (Array.isArray(node)) return node.map(expandVnode)
+    if (node.portal) return { portal: true, node: expandVnode(node.node) }
+    if (typeof node.type === 'function') return expandVnode(node.type({ ...(node.props || {}), children: node.children }))
+    return { type: String(node.type), props: node.props, children: (node.children || []).map(expandVnode) }
+  }
+  const findNodes = (tree, pred, acc = []) => {
+    if (!tree || typeof tree !== 'object') return acc
+    if (Array.isArray(tree)) {
+      tree.forEach(item => findNodes(item, pred, acc))
+      return acc
+    }
+    if (pred(tree)) acc.push(tree)
+    if (tree.node) findNodes(tree.node, pred, acc)
+    if (Array.isArray(tree.children)) findNodes(tree.children, pred, acc)
+    return acc
+  }
+
+  const fakeUi = {
+    callHost: (name, args) => handlers.get(name)(args),
+    watchState: () => () => {}
+  }
+
+  // 初次渲染：空状态悬浮胶囊展示「🎲 命运之骰」
+  stateIndex = 0
+  const initialTree = expandVnode(exported.__test.ComposerLiveDock({ ui: fakeUi, sessionId: 'g-dock' }))
+  const initialPill = findNodes(initialTree, n => n.type === 'button' && String(n.props?.className || '').includes('fd-composer-pill'))[0]
+  assert.ok(initialPill, 'ComposerLiveDock 必须渲染悬浮骰子胶囊按钮')
+  assert.match(JSON.stringify(initialPill), /命运之骰/)
+
+  // 运行 useEffect 拉取 latest 记录后重渲染
+  while (effects.length) {
+    const fn = effects.shift()
+    fn()
+  }
+  await new Promise(r => setTimeout(r, 20))
+
+  stateIndex = 0
+  const loadedTree = expandVnode(exported.__test.ComposerLiveDock({ ui: fakeUi, sessionId: 'g-dock' }))
+  const loadedPill = findNodes(loadedTree, n => n.type === 'button' && String(n.props?.className || '').includes('fd-composer-pill'))[0]
+  assert.ok(loadedPill)
+  assert.match(JSON.stringify(loadedPill), /体魄/, '载入第5楼记录后悬浮胶囊应显示当前楼层检定摘要')
+
+  // 点击悬浮胶囊 → 展开并经 ReactDOM.createPortal 挂载到 document.body
+  loadedPill.props.onClick({ stopPropagation() {} })
+  stateIndex = 0
+  portaled.length = 0
+  const openTree = expandVnode(exported.__test.ComposerLiveDock({ ui: fakeUi, sessionId: 'g-dock' }))
+  assert.equal(portaled.length, 1, '弹出小窗必须通过 ReactDOM.createPortal 挂载到 document.body')
+  assert.equal(portaled[0].target, fakeDoc.body)
+  const popoverStr = JSON.stringify(openTree)
+  assert.match(popoverStr, /命运之骰裁定/)
+  assert.match(popoverStr, /骰面算式/)
+  assert.match(popoverStr, /能力修正/)
+  assert.match(popoverStr, /叙事阻尼器/)
+  assert.match(popoverStr, /难度理由/)
+  assert.match(popoverStr, /✦ 命运点 2\/3/)
+
+  // 构造失败检定记录传入 ComposerDicePopover 验证重投按钮与孤注一掷按钮及关闭按钮
+  let rerollMode = ''
+  let closed = false
+  const failRecord = {
+    turn: 5,
+    rule: '2d6',
+    fate: { points: 2, max: 3, failCount: 0 },
+    rerollState: { allowed: true, canFate: true, canPush: true, fatePoints: 2, fateMax: 3 },
+    roll: {
+      rule: '2d6',
+      check: '通用 · 体魄',
+      dice: [3, 1],
+      total: 4,
+      target: 6,
+      skillBonus: 0,
+      modifier: 0,
+      tier: 'failure',
+      tierLabel: '失败',
+      difficultyLabel: '容易',
+      reason: '叙事阻尼器合并裁定：触发概率 74%',
+      damper: { applied: true, quotaLabel: '配额:frozen', quota: 'resist_pushback / frozen', reason: '叙事阻尼器合并裁定：触发概率 74%' }
+    }
+  }
+  const popTree = expandVnode(exported.__test.ComposerDicePopover({
+    record: failRecord,
+    peeked: true,
+    rerolling: false,
+    rerollHint: '',
+    isStreaming: false,
+    popoverStyle: exported.__test.fdComputePopoverStyle({ left: 12, top: 680, bottom: 706 }),
+    onReroll: mode => { rerollMode = mode },
+    onClose: () => { closed = true }
+  }))
+  const popStr = JSON.stringify(popTree)
+  assert.match(popStr, /命运之骰裁定 · 通用 · 体魄检定（失败）/)
+  assert.match(popStr, /✦ 逆命重投 \(-1 点 · 余 2\/3\)/)
+  assert.match(popStr, /🔥 孤注一掷（省点硬搏）/)
+  assert.match(popStr, /直接点「重新生成正文」将强制复用原骰点/)
+
+  const popBtns = findNodes(popTree, n => n.type === 'button')
+  const fateBtn = popBtns.find(b => JSON.stringify(b).includes('逆命重投'))
+  const pushBtn = popBtns.find(b => JSON.stringify(b).includes('孤注一掷'))
+  const closeBtn = popBtns.find(b => b.props?.className === 'fd-popover-close')
+  assert.ok(fateBtn && pushBtn && closeBtn)
+  fateBtn.props.onClick()
+  assert.equal(rerollMode, 'fate')
+  pushBtn.props.onClick()
+  assert.equal(rerollMode, 'push')
+  closeBtn.props.onClick({ stopPropagation() {} })
+  assert.equal(closed, true)
+})

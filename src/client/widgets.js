@@ -245,26 +245,321 @@ function LiveRollBanner(props) {
     h('div', { className: 'fd-live-sub' }, subText))))
 }
 
-/* 输入栏上方停靠：只消费真骰揭晓状态通道，同时实时同步当前活跃会话 ID 给楼层顶栏 */
+function fdLatestDomFloorInfo() {
+  return fdSafe(() => {
+    if (typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') {
+      return { turn: 0, streaming: false }
+    }
+    const articles = document.querySelectorAll('article.dsh-tavern-story-floor')
+    for (let i = articles.length - 1; i >= 0; i -= 1) {
+      const article = articles[i]
+      if (!article || (typeof article.hasAttribute === 'function' && (article.hasAttribute('data-greeting') || article.hasAttribute('data-story-held')))) {
+        continue
+      }
+      const turn = fdExtractFloorTurn(article)
+      const streaming = Boolean(article.classList && typeof article.classList.contains === 'function' && article.classList.contains('dsh-tavern-story-streaming'))
+      if (turn > 0 || streaming) return { turn, streaming }
+    }
+    return { turn: 0, streaming: false }
+  }, { turn: 0, streaming: false })
+}
+
+function fdComputePopoverStyle(rect) {
+  const vw = (typeof window !== 'undefined' && Number(window.innerWidth) > 0) ? Number(window.innerWidth) : 1024
+  const vh = (typeof window !== 'undefined' && Number(window.innerHeight) > 0) ? Number(window.innerHeight) : 768
+  const pad = 12
+  const maxWidth = Math.min(760, Math.max(240, vw - pad * 2))
+  if (!rect) {
+    return {
+      position: 'fixed',
+      left: pad + 'px',
+      bottom: '96px',
+      width: maxWidth + 'px',
+      maxHeight: Math.max(180, vh - pad * 2) + 'px'
+    }
+  }
+  const left = Math.max(pad, Math.min(Number(rect.left) || pad, vw - maxWidth - pad))
+  const spaceAbove = (Number(rect.top) || 0) - pad - 8
+  const spaceBelow = vh - (Number(rect.bottom) || 0) - pad - 8
+  if (spaceAbove >= 200 || spaceAbove >= spaceBelow) {
+    return {
+      position: 'fixed',
+      left: Math.round(left) + 'px',
+      bottom: Math.round(Math.max(pad, vh - (Number(rect.top) || 0) + 8)) + 'px',
+      width: Math.round(maxWidth) + 'px',
+      maxHeight: Math.round(Math.max(160, spaceAbove)) + 'px'
+    }
+  }
+  return {
+    position: 'fixed',
+    left: Math.round(left) + 'px',
+    top: Math.round(Math.max(pad, (Number(rect.bottom) || 0) + 8)) + 'px',
+    width: Math.round(maxWidth) + 'px',
+    maxHeight: Math.round(Math.max(160, spaceBelow)) + 'px'
+  }
+}
+
+function fdResolveFloorToneAndLabel(record, peeked, awaitingLiveRoll) {
+  if (awaitingLiveRoll) {
+    return {
+      tone: 'skipped',
+      pillText: '🎲 真骰定难中…',
+      tooltip: '命运之骰正在读取本轮情境并投掷真骰…',
+      covered: false
+    }
+  }
+  const roll = record && record.roll ? record.roll : null
+  const judged = record && record.judged ? record.judged : null
+  const setupReason = (record && record.setupRequiredReason) || ''
+  const fate = fdNormalizeFate(record && record.fate)
+  const covered = Boolean(roll && roll.hidden && !peeked)
+
+  if (roll) {
+    const tone = covered ? 'hidden' : fdTierOf(roll.tier)
+    if (covered) {
+      return {
+        tone,
+        covered: true,
+        pillText: `暗骰 · ${roll.check || '感知'} · 点按偷看`,
+        tooltip: '感知/洞察暗骰（点击揭晓并展开详情）'
+      }
+    }
+    const suffix = roll.rerollMeta && roll.rerollMeta.mode === 'push'
+      ? ' · 🔥孤注'
+      : (roll.rerollMeta && roll.rerollMeta.mode === 'fate'
+        ? ' · ✦逆命'
+        : (roll.reusedOnRegenerate ? ' · 🔒锁骰' : ''))
+    return {
+      tone,
+      covered: false,
+      pillText: `🎲 ${roll.check || '检定'} ${fdFormatCompactDice(roll)} · ${roll.tierLabel || ''}${suffix}`,
+      tooltip: `${roll.rule || '2d6'} ${roll.check || '检定'}（难度：${roll.difficultyLabel || '普通'}）· ✦ 命运点 ${fate.points}/${fate.max}（点击打开裁定小窗）`
+    }
+  }
+  if (setupReason) {
+    return {
+      tone: 'skipped',
+      covered: false,
+      pillText: '🎲 待配决策模型',
+      tooltip: '尚未配置决策模型 API Key（点击查看指引）'
+    }
+  }
+  if (judged && judged.shouldRoll === false) {
+    const prob = Number(judged.needProbability)
+    const probPart = judged.damperSync && judged.damperSync.skipped === 'scene-shift'
+      ? '场景放行'
+      : (Number.isFinite(prob) ? `免检定 ${Math.round(prob * 100)}%` : '免检定')
+    return {
+      tone: 'skipped',
+      covered: false,
+      pillText: `🎲 ${probPart}`,
+      tooltip: `${judged.reason || '本轮行动无显著不确定性，免于投骰'}（点击展开详情）`
+    }
+  }
+  return {
+    tone: 'idle',
+    covered: false,
+    pillText: '🎲 命运之骰',
+    tooltip: `打开命运之骰裁定小窗（✦ 命运点 ${fate.points}/${fate.max}）`
+  }
+}
+
+function ComposerDicePopover(props) {
+  const { record, peeked, rerolling, rerollHint, isStreaming, popoverStyle, popoverRef, onReroll, onClose } = props || {}
+  const roll = record && record.roll ? record.roll : null
+  const judged = record && record.judged ? record.judged : null
+  const setupReason = (record && record.setupRequiredReason) || ''
+  const fate = fdNormalizeFate(record && record.fate)
+  const covered = Boolean(roll && roll.hidden && !peeked)
+  const tone = roll
+    ? (covered ? 'hidden' : fdTierOf(roll.tier))
+    : ((setupReason || (judged && judged.shouldRoll === false)) ? 'skipped' : 'idle')
+
+  const rerollState = record && record.rerollState && typeof record.rerollState === 'object'
+    ? record.rerollState
+    : { allowed: false, reason: '本轮骰点已锁定' }
+
+  const breakdown = (roll && roll.modifierBreakdown) || {}
+  const skillBonus = roll ? fdNumber(breakdown.skillBonus ?? roll.skillBonus, 0) : 0
+  const damper = roll ? (roll.damper || roll.damperSync || null) : null
+  const quota = damper ? (damper.quota || damper.quotaSync || '') : ''
+
+  const titleText = roll
+    ? `命运之骰裁定 · ${roll.check || '行动'}检定（${covered ? '暗骰已揭晓' : (roll.tierLabel || '判定')}）`
+    : (setupReason
+      ? '命运之骰 · 待配置决策模型'
+      : (judged && judged.shouldRoll === false
+        ? '命运之骰 · 本轮免检定'
+        : '命运之骰 · 本局尚未检定'))
+
+  return h('section', {
+    ref: popoverRef,
+    className: 'fd-root fd-floor-panel fd-composer-popover',
+    'data-tone': tone,
+    role: 'dialog',
+    'aria-label': '命运之骰本轮裁定详情',
+    style: popoverStyle || undefined
+  },
+  h('div', { className: 'fd-floor-panel-head' },
+    h('strong', { className: 'fd-floor-panel-title' }, titleText),
+    h('div', { className: 'fd-floor-panel-tags' },
+      roll ? h('span', { className: 'fd-floor-tag' }, String(roll.rule || '2d6')) : null,
+      !roll && record && record.rule ? h('span', { className: 'fd-floor-tag' }, String(record.rule)) : null,
+      roll && roll.difficultyLabel ? h('span', { className: 'fd-floor-tag' }, `难度：${roll.difficultyLabel}`) : null,
+      roll && roll.damper ? h('span', { className: 'fd-floor-tag' }, `⛓ ${roll.damper.quotaLabel || '阻尼联动'}`) : null,
+      h('span', { className: 'fd-floor-tag' }, `✦ 命运点 ${fate.points}/${fate.max}`),
+      h('button', {
+        type: 'button',
+        className: 'fd-popover-close',
+        'aria-label': '关闭裁定窗口',
+        title: '关闭',
+        onClick: e => {
+          if (e && typeof e.stopPropagation === 'function') e.stopPropagation()
+          if (typeof onClose === 'function') onClose()
+        }
+      }, '×'))),
+  roll
+    ? h(Fragment, null,
+      h('dl', { className: 'fd-turn-details' },
+        h('dt', { className: 'fd-turn-dt' }, '骰面算式'),
+        h('dd', { className: 'fd-turn-dd' },
+          `${roll.rule || '2d6'} 原骰 [${(roll.dice || []).join(', ')}] = ${roll.total}（目标${roll.rule === 'd100' ? ' ≤ ' : ' ≥ '}${roll.target === undefined ? '—' : roll.target}）`),
+        h('dt', { className: 'fd-turn-dt' }, '能力修正'),
+        h('dd', { className: 'fd-turn-dd' },
+          `${roll.check || '检定'} ${skillBonus >= 0 ? '+' : ''}${skillBonus}${roll.modifier ? `（环境/基调修正 ${roll.modifier > 0 ? '+' : ''}${roll.modifier}）` : ''}`),
+        damper
+          ? h(Fragment, null,
+            h('dt', { className: 'fd-turn-dt' }, '叙事阻尼器'),
+            h('dd', { className: 'fd-turn-dd' },
+              `${damper.applied === false ? '未联动' : '双向联动'}${quota ? ` · 配额 ${quota}` : ''}${damper.reason ? ` · ${damper.reason}` : ''}`))
+          : null,
+        h('dt', { className: 'fd-turn-dt' }, '难度理由'),
+        h('dd', { className: 'fd-turn-dd' }, `${roll.difficultyLabel || '判定'} · ${roll.reason || 'AI 综合评定'}`)),
+      h('div', { className: 'fd-floor-panel-actions' },
+        isStreaming
+          ? h('span', { className: 'fd-hint' }, '⏳ 正文正在按上述真骰结果生成；生成完成后可在此执行逆命重投或孤注一掷')
+          : rerollState.allowed
+            ? h(Fragment, null,
+              rerollState.canFate
+                ? h(FdBtn, {
+                  small: true,
+                  primary: true,
+                  disabled: Boolean(rerolling),
+                  title: '消耗 1 点命运点，无恶化惩罚重掷本轮真骰（每轮限 1 次）',
+                  onClick: () => { if (typeof onReroll === 'function') onReroll('fate') }
+                }, rerolling ? '重投中…' : `✦ 逆命重投 (-1 点 · 余 ${fdNumber(rerollState.fatePoints, fate.points)}/${fdNumber(rerollState.fateMax, fate.max)})`)
+                : null,
+              h(FdBtn, {
+                small: true,
+                danger: true,
+                disabled: Boolean(rerolling),
+                title: '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
+                onClick: () => { if (typeof onReroll === 'function') onReroll('push') }
+              }, rerolling ? '搏命中…' : (rerollState.canFate ? '🔥 孤注一掷（省点硬搏）' : '🔥 孤注一掷（败则大失败 · 成亦带伤）')),
+              h('span', { className: 'fd-hint' }, rerollHint || '直接点「重新生成正文」将强制复用原骰点'))
+            : h('span', { className: 'fd-hint' }, rerollHint || `🔒 ${rerollState.reason || '本轮骰点已锁定'}`)))
+    : h('div', { className: 'fd-hint' },
+      setupReason
+        ? '请前往酒馆「设置 › 叙事阻尼器」填写决策模型与 API Key，配好后即可自动定难并投掷真骰。'
+        : (judged && judged.shouldRoll === false
+          ? (judged.reason || '本轮行动无显著不确定性，免于投骰。')
+          : '发送一条行动消息触发检定后，可在此直接查看骰面详情并执行逆命重投或孤注一掷。'))
+  )
+}
+
+/* 输入栏上方停靠：揭晓动效条 + 左下角骰子悬浮胶囊（点开弹出与楼层一致的裁定小窗） */
 function ComposerLiveDock(props) {
   const { ui, sessionId, gameId } = props || {}
   const [liveEvent, setLiveEvent] = useState(null)
+  const [record, setRecord] = useState(null)
+  const [open, setOpen] = useState(false)
+  const [peeked, setPeeked] = useState(false)
+  const [rerolling, setRerolling] = useState(false)
+  const [rerollHint, setRerollHint] = useState('')
+  const [popoverStyle, setPopoverStyle] = useState(null)
   const lastIdRef = useRef('')
+  const pillRef = useRef(null)
+  const popoverRef = useRef(null)
+  const reqSeqRef = useRef(0)
+  const retryTimerRef = useRef(0)
+  const retryCountRef = useRef(0)
+  const replyStreamingRef = useRef(false)
+  const lastRecordTurnRef = useRef(0)
   const stateKey = sessionId || gameId || null
   const keys = stateKey && gameId && gameId !== stateKey ? [stateKey, gameId] : (stateKey ? [stateKey] : [])
+  const keysKey = keys.join('|')
 
   useEffect(() => {
     if (stateKey) fdNoteActiveGameId(String(stateKey))
   }, [stateKey])
 
   useEffect(() => {
-    if (!keys.length) return undefined
+    if (!keys.length) {
+      setLiveEvent(null)
+      setRecord(null)
+      setOpen(false)
+      lastRecordTurnRef.current = 0
+      return undefined
+    }
+    let alive = true
     setLiveEvent(null)
-    const accept = data => {
+    setRecord(null)
+    setOpen(false)
+    setPeeked(false)
+    setRerollHint('')
+    lastRecordTurnRef.current = 0
+    retryCountRef.current = 0
+
+    const syncTurnReset = nextTurn => {
+      const n = fdNumber(nextTurn, 0)
+      if (n > 0 && n !== lastRecordTurnRef.current) {
+        lastRecordTurnRef.current = n
+        setPeeked(false)
+        setRerollHint('')
+      }
+    }
+
+    const loadLatest = () => {
+      if (!alive) return
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current)
+        retryTimerRef.current = 0
+      }
+      const seq = reqSeqRef.current + 1
+      reqSeqRef.current = seq
+      const dom = fdLatestDomFloorInfo()
+      const streamingHint = Boolean(dom.streaming || replyStreamingRef.current)
+      fdCall(ui, FD_RPC.readTurn, {
+        gameId: stateKey,
+        turn: dom.turn,
+        latest: true,
+        streaming: streamingHint
+      }).then(res => {
+        if (!alive || reqSeqRef.current !== seq) return
+        const data = res && res.ok && res.data && typeof res.data === 'object' ? res.data : null
+        if (data) {
+          syncTurnReset(data.turn)
+          setRecord(data)
+        }
+        const hasPayload = Boolean(data && (data.roll || data.setupRequiredReason || (data.judged && data.judged.shouldRoll === false)))
+        const stillStreaming = Boolean(streamingHint || (data && data.streaming))
+        if (stillStreaming && !hasPayload && retryCountRef.current < 40) {
+          retryCountRef.current += 1
+          retryTimerRef.current = setTimeout(loadLatest, 500)
+        }
+      })
+    }
+
+    const acceptLive = data => {
+      if (!alive) return
       if (!data) {
         setLiveEvent(null)
         return
       }
+      syncTurnReset(data.turn)
+      setRecord(prev => fdRecordFromLiveEvent(stateKey, data.turn, data, prev) || prev)
+      retryCountRef.current = 0
+      loadLatest()
       /* 关闭动画时不再展示骰面卡，但未配置决策模型的引导提示仍需露面 */
       if (data.animation === 'none' && data.kind !== 'setup-required' && data.kind !== 'skipped') {
         setLiveEvent(null)
@@ -275,15 +570,204 @@ function ComposerLiveDock(props) {
       lastIdRef.current = id
       setLiveEvent({ ...data, id })
     }
-    const offs = keys.map(key => fdWatch(ui, key, 'live-roll', accept))
-    return () => {
-      offs.forEach(off => off())
-    }
-  }, [keys.join('|')])
 
-  if (!liveEvent) return null
-  return h('div', { className: 'fd-root', style: { padding: '0 2px 4px' } },
-    h(LiveRollBanner, { event: liveEvent, onDismiss: () => setLiveEvent(null) }))
+    const refresh = () => {
+      retryCountRef.current = 0
+      loadLatest()
+    }
+
+    loadLatest()
+    const offs = []
+    keys.forEach(key => {
+      offs.push(fdWatch(ui, key, 'live-roll', acceptLive))
+      offs.push(fdWatch(ui, key, 'turn-check', refresh))
+      offs.push(fdWatch(ui, key, 'workbench-sync', refresh))
+      if (ui && typeof ui.watchTurnState === 'function') {
+        try {
+          const offTurn = ui.watchTurnState(key, refresh)
+          if (typeof offTurn === 'function') offs.push(offTurn)
+        } catch {}
+      }
+      if (ui && typeof ui.watchReply === 'function') {
+        try {
+          const offReply = ui.watchReply(key, reply => {
+            const nextStreaming = Boolean(reply && (reply.streaming || reply.busy))
+            const changed = nextStreaming !== replyStreamingRef.current
+            replyStreamingRef.current = nextStreaming
+            if (changed || (reply && reply.turn > 0)) refresh()
+          })
+          if (typeof offReply === 'function') offs.push(offReply)
+        } catch {}
+      }
+    })
+
+    const onWindowStoryEvent = ev => {
+      const sid = ev && ev.detail && ev.detail.sessionId
+      if (sid && String(sid).trim() !== String(stateKey)) return
+      refresh()
+    }
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('dsh-tavern-session-changed', onWindowStoryEvent)
+      window.addEventListener('dsh-tavern-story-mutated', onWindowStoryEvent)
+      window.addEventListener('dsh-tavern-message-rendered', onWindowStoryEvent)
+    }
+
+    return () => {
+      alive = false
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current)
+        retryTimerRef.current = 0
+      }
+      offs.forEach(off => off())
+      if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+        window.removeEventListener('dsh-tavern-session-changed', onWindowStoryEvent)
+        window.removeEventListener('dsh-tavern-story-mutated', onWindowStoryEvent)
+        window.removeEventListener('dsh-tavern-message-rendered', onWindowStoryEvent)
+      }
+    }
+  }, [keysKey])
+
+  useEffect(() => {
+    if (!open) return undefined
+    const updatePosition = () => {
+      const rect = pillRef.current && typeof pillRef.current.getBoundingClientRect === 'function'
+        ? pillRef.current.getBoundingClientRect()
+        : null
+      setPopoverStyle(fdComputePopoverStyle(rect))
+    }
+    updatePosition()
+
+    const onKeyDown = e => {
+      if (e && e.key === 'Escape') setOpen(false)
+    }
+    const onPointerDown = e => {
+      const target = e && e.target
+      if (!target) return
+      if (pillRef.current && typeof pillRef.current.contains === 'function' && pillRef.current.contains(target)) return
+      if (popoverRef.current && typeof popoverRef.current.contains === 'function' && popoverRef.current.contains(target)) return
+      setOpen(false)
+    }
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('resize', updatePosition)
+      window.addEventListener('scroll', updatePosition, true)
+    }
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('keydown', onKeyDown)
+      document.addEventListener('pointerdown', onPointerDown)
+    }
+    return () => {
+      if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+        window.removeEventListener('resize', updatePosition)
+        window.removeEventListener('scroll', updatePosition, true)
+      }
+      if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+        document.removeEventListener('keydown', onKeyDown)
+        document.removeEventListener('pointerdown', onPointerDown)
+      }
+    }
+  }, [open])
+
+  if (!stateKey) return null
+
+  const dom = fdLatestDomFloorInfo()
+  const hasPayload = Boolean(record && (record.roll || record.setupRequiredReason || (record.judged && record.judged.shouldRoll === false)))
+  const isStreaming = Boolean((record && record.streaming) || dom.streaming || replyStreamingRef.current)
+  const awaitingLiveRoll = Boolean(isStreaming && !hasPayload && (record && record.streaming))
+  const effectiveTurn = fdNumber((record && record.turn) || dom.turn, 0)
+  const pillMeta = fdResolveFloorToneAndLabel(record, peeked, awaitingLiveRoll)
+
+  const handleReroll = mode => {
+    if (rerolling || !effectiveTurn) return
+    setRerolling(true)
+    setRerollHint('')
+    fdCall(ui, FD_RPC.rerollTurn, { gameId: stateKey, turn: effectiveTurn, mode: mode || 'auto' })
+      .then(res => {
+        const data = res && res.ok ? res.data : null
+        const nextRoll = data && data.ok !== false && data.roll ? data.roll : null
+        if (nextRoll) {
+          setRecord(prev => ({
+            ...(prev || {}),
+            turn: effectiveTurn,
+            roll: nextRoll,
+            fate: data.fate || (prev && prev.fate),
+            rerollState: data.rerollState || { allowed: false, reason: '本轮已重投锁定（每轮限 1 次）' }
+          }))
+          setRerollHint(data.mode === 'push'
+            ? '🔥 已孤注一掷并同步配额！现在点下方「重新生成正文」即可按新结果与代价改写剧情'
+            : '✦ 已消耗 1 点命运点逆命重投！现在点下方「重新生成正文」即可按新点数改写剧情')
+        } else {
+          if (data && data.rerollState) {
+            setRecord(prev => ({ ...(prev || {}), fate: data.fate || (prev && prev.fate), rerollState: data.rerollState }))
+          }
+          setRerollHint((data && data.error) || (res && res.error) || '当前条件不允许重投')
+        }
+      })
+      .catch(() => setRerollHint('手动重投失败'))
+      .finally(() => setRerolling(false))
+  }
+
+  const togglePopup = e => {
+    if (e && typeof e.stopPropagation === 'function') e.stopPropagation()
+    if (pillMeta.covered && !peeked) {
+      setPeeked(true)
+      setOpen(true)
+      return
+    }
+    const nextOpen = !open
+    setOpen(nextOpen)
+    if (nextOpen) {
+      const latestDom = fdLatestDomFloorInfo()
+      fdCall(ui, FD_RPC.readTurn, {
+        gameId: stateKey,
+        turn: latestDom.turn,
+        latest: true,
+        streaming: Boolean(latestDom.streaming || replyStreamingRef.current)
+      }).then(res => {
+        const data = res && res.ok && res.data && typeof res.data === 'object' ? res.data : null
+        if (data) setRecord(data)
+      })
+    }
+  }
+
+  const popoverNode = open
+    ? h(ComposerDicePopover, {
+      record,
+      peeked,
+      rerolling,
+      rerollHint,
+      isStreaming,
+      popoverStyle,
+      popoverRef,
+      onReroll: handleReroll,
+      onClose: () => setOpen(false)
+    })
+    : null
+
+  const portaledPopover = popoverNode && ReactDOM && typeof ReactDOM.createPortal === 'function' && typeof document !== 'undefined' && document.body
+    ? ReactDOM.createPortal(popoverNode, document.body)
+    : popoverNode
+
+  return h(Fragment, null,
+    liveEvent
+      ? h('div', { className: 'fd-root', style: { padding: '0 2px 4px' } },
+        h(LiveRollBanner, { event: liveEvent, onDismiss: () => setLiveEvent(null) }))
+      : null,
+    h('div', { className: 'fd-composer-dock-wrap' },
+      h('button', {
+        ref: pillRef,
+        type: 'button',
+        className: 'fd-floor-pill fd-composer-pill',
+        'data-tone': pillMeta.tone,
+        'data-expanded': open ? 'true' : undefined,
+        'aria-expanded': open ? 'true' : 'false',
+        'aria-haspopup': 'dialog',
+        title: pillMeta.tooltip,
+        onClick: togglePopup
+      },
+      h('span', { className: 'fd-floor-dot', 'aria-hidden': 'true' }),
+      h('span', null, pillMeta.pillText))),
+    portaledPopover
+  )
 }
 
 function fdBuildTurnDetails(record, peeked) {
