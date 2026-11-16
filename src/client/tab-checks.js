@@ -153,7 +153,11 @@ function ChecksTab(props) {
         on: Boolean(view.autoCheck),
         label: '自动行动检定',
         onChange: next => (actions && actions.setAutoCheck ? actions.setAutoCheck(next) : undefined)
-      }))),
+      }),
+      h('div', { className: 'fd-hint' },
+        settings.alwaysRoll
+          ? '已开启「每轮必检定」：每次发送行动都会投骰'
+          : '想每轮都看到骰子？到「检定设置 › 每轮必检定」打开开关'))),
 
     /* ---------------- 2. 检定骰制 ---------------- */
     h(FdSection, {

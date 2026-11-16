@@ -52,6 +52,7 @@ const FD_ANIMATION_OPTIONS = [
 
 const FD_DEFAULT_SETTINGS = {
   sensitivity: 'normal',
+  alwaysRoll: false,
   toneBias: 'balanced',
   autoHidden: true,
   damperLinkage: true,

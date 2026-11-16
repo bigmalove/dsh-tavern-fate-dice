@@ -93,6 +93,7 @@ function fdNormalizeSettings(raw) {
   if (FD_SENSITIVITY_OPTIONS.some(o => o.value === src.sensitivity)) settings.sensitivity = src.sensitivity
   if (FD_TONE_OPTIONS.some(o => o.value === src.toneBias)) settings.toneBias = src.toneBias
   if (FD_ANIMATION_OPTIONS.some(o => o.value === src.animation)) settings.animation = src.animation
+  if (typeof src.alwaysRoll === 'boolean') settings.alwaysRoll = src.alwaysRoll
   if (typeof src.autoHidden === 'boolean') settings.autoHidden = src.autoHidden
   else if (typeof src.allowHidden === 'boolean') settings.autoHidden = src.allowHidden
   if (typeof src.damperLinkage === 'boolean') settings.damperLinkage = src.damperLinkage

@@ -374,6 +374,24 @@ const CSS_TEXT = `
 .fd-die-svg.is-rolling { animation: fd-tumble 0.72s cubic-bezier(0.22, 1.28, 0.36, 1) forwards; }
 .fd-die-svg.is-settled[data-tier="critical"] { animation: fd-pop 0.36s ease-out; }
 .fd-live-body { flex: 1 1 140px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fd-skip-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  background: var(--fd-fill);
+  border: 1px dashed var(--fd-line);
+  color: var(--dsh-ink, inherit);
+  font-size: 11.5px;
+  opacity: 0.82;
+  cursor: pointer;
+  user-select: none;
+  animation: fd-rise 0.2s ease-out;
+}
+.fd-skip-icon { flex: 0 0 auto; opacity: 0.75; filter: grayscale(1); }
+.fd-skip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-skip-check { flex: 0 0 auto; opacity: 0.6; }
 .fd-live-title {
   display: flex; align-items: center; gap: 6px;
   font-size: 12.5px; font-weight: 650;

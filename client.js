@@ -71,6 +71,7 @@ const FD_ANIMATION_OPTIONS = [
 
 const FD_DEFAULT_SETTINGS = {
   sensitivity: 'normal',
+  alwaysRoll: false,
   toneBias: 'balanced',
   autoHidden: true,
   damperLinkage: true,
@@ -469,6 +470,24 @@ const CSS_TEXT = `
 .fd-die-svg.is-rolling { animation: fd-tumble 0.72s cubic-bezier(0.22, 1.28, 0.36, 1) forwards; }
 .fd-die-svg.is-settled[data-tier="critical"] { animation: fd-pop 0.36s ease-out; }
 .fd-live-body { flex: 1 1 140px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fd-skip-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  background: var(--fd-fill);
+  border: 1px dashed var(--fd-line);
+  color: var(--dsh-ink, inherit);
+  font-size: 11.5px;
+  opacity: 0.82;
+  cursor: pointer;
+  user-select: none;
+  animation: fd-rise 0.2s ease-out;
+}
+.fd-skip-icon { flex: 0 0 auto; opacity: 0.75; filter: grayscale(1); }
+.fd-skip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-skip-check { flex: 0 0 auto; opacity: 0.6; }
 .fd-live-title {
   display: flex; align-items: center; gap: 6px;
   font-size: 12.5px; font-weight: 650;
@@ -929,6 +948,7 @@ function fdNormalizeSettings(raw) {
   if (FD_SENSITIVITY_OPTIONS.some(o => o.value === src.sensitivity)) settings.sensitivity = src.sensitivity
   if (FD_TONE_OPTIONS.some(o => o.value === src.toneBias)) settings.toneBias = src.toneBias
   if (FD_ANIMATION_OPTIONS.some(o => o.value === src.animation)) settings.animation = src.animation
+  if (typeof src.alwaysRoll === 'boolean') settings.alwaysRoll = src.alwaysRoll
   if (typeof src.autoHidden === 'boolean') settings.autoHidden = src.autoHidden
   else if (typeof src.allowHidden === 'boolean') settings.autoHidden = src.allowHidden
   if (typeof src.damperLinkage === 'boolean') settings.damperLinkage = src.damperLinkage
@@ -1543,6 +1563,7 @@ function LiveRollBanner(props) {
 
   const animation = event && event.animation ? event.animation : 'bounce'
   const isSetup = Boolean(event && event.kind === 'setup-required')
+  const isSkipped = Boolean(event && event.kind === 'skipped')
   const isFree = Boolean(event && event.kind === 'free')
   const roll = isFree ? null : (event && event.roll) || null
   const freeResult = isFree ? (event && event.result) || null : null
@@ -1557,6 +1578,14 @@ function LiveRollBanner(props) {
       const closer = setTimeout(() => {
         if (typeof onDismiss === 'function') onDismiss()
       }, 5000)
+      return () => clearTimeout(closer)
+    }
+    /* 本轮无需检定：只留一行浅提示，6 秒后自动收起，不播骰子动画 */
+    if (isSkipped) {
+      setRolling(false)
+      const closer = setTimeout(() => {
+        if (typeof onDismiss === 'function') onDismiss()
+      }, 6000)
       return () => clearTimeout(closer)
     }
     const reduced = fdSafe(() => typeof window !== 'undefined' && Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches), false)
@@ -1603,6 +1632,22 @@ function LiveRollBanner(props) {
       h('span', { className: 'fd-guide-banner-title' }, '命运之骰尚未配置决策模型')),
     h('div', { className: 'fd-guide-banner-step' },
       '请前往酒馆「设置 › 叙事阻尼器」填写决策模型与 API Key（轻触收起）')))
+  }
+
+  if (isSkipped) {
+    return h('div', { className: 'fd-root', style: { padding: '2px 0' } },
+      h('div', {
+        className: 'fd-skip-note',
+        role: 'status',
+        'aria-live': 'polite',
+        title: event.reason ? String(event.reason) : '本轮未被判定为需要检定',
+        onClick: () => {
+          if (typeof onDismiss === 'function') onDismiss()
+        }
+      },
+      h('span', { className: 'fd-skip-icon', 'aria-hidden': 'true' }, '🎲'),
+      h('span', { className: 'fd-skip-text' }, event.message || '本轮无需检定'),
+      event.check ? h('span', { className: 'fd-skip-check' }, `· ${event.check}`) : null))
   }
 
   if (!roll && !freeResult) return null
@@ -1679,7 +1724,7 @@ function ComposerLiveDock(props) {
         return
       }
       /* 关闭动画时不再展示骰面卡，但未配置决策模型的引导提示仍需露面 */
-      if (data.animation === 'none' && data.kind !== 'setup-required') {
+      if (data.animation === 'none' && data.kind !== 'setup-required' && data.kind !== 'skipped') {
         setLiveEvent(null)
         return
       }
@@ -2274,7 +2319,11 @@ function ChecksTab(props) {
         on: Boolean(view.autoCheck),
         label: '自动行动检定',
         onChange: next => (actions && actions.setAutoCheck ? actions.setAutoCheck(next) : undefined)
-      }))),
+      }),
+      h('div', { className: 'fd-hint' },
+        settings.alwaysRoll
+          ? '已开启「每轮必检定」：每次发送行动都会投骰'
+          : '想每轮都看到骰子？到「检定设置 › 每轮必检定」打开开关'))),
 
     /* ---------------- 2. 检定骰制 ---------------- */
     h(FdSection, {
@@ -2426,7 +2475,7 @@ function ChecksTab(props) {
 
 /* ===== src/client/tab-settings.js ===== */
 /* ------------------------------------------------------------------ *
- * tab-settings.js —— 页签 2「检定设置」：干净清爽的 6 项检定参数
+ * tab-settings.js —— 页签 2「检定设置」：干净清爽的 7 项检定参数
  * 每一项均带 ? 就地展开详细说明；底部单一「保存设置」主按钮。
  * ------------------------------------------------------------------ */
 
@@ -2437,7 +2486,7 @@ function SettingsTab(props) {
 
   useEffect(() => {
     setDraft(settings)
-  }, [settings.sensitivity, settings.toneBias, settings.autoHidden, settings.damperLinkage, settings.allowHeuristicFallback, settings.animation])
+  }, [settings.sensitivity, settings.alwaysRoll, settings.toneBias, settings.autoHidden, settings.damperLinkage, settings.allowHeuristicFallback, settings.animation])
 
   const patchDraft = patch => setDraft({ ...draft, ...patch })
 
@@ -2466,6 +2515,18 @@ function SettingsTab(props) {
         ].join('\n')
       },
       h(FdSelect, { value: draft.sensitivity, options: FD_SENSITIVITY_OPTIONS, onChange: value => patchDraft({ sensitivity: value }) })),
+
+      h(FdRow, {
+        plain: true,
+        title: '每轮必检定',
+        sub: '默认关闭：AI 判为日常动作时不掷骰',
+        help: [
+          '开启后，只要你在聊天框发送行动，本轮就一定投一次真骰，不再受「触发概率」门槛限制——适合想看骰子驱动每一段剧情的玩法。',
+          '关闭（默认）时按「触发灵敏度」的门槛判定：模型认为这次行动没有真实不确定性（纯寒暄、内省、必定成功的日常动作）就跳过投骰，正文照常生成，只在输入框上方留一行「本轮无需检定」的浅提示。',
+          '两种情况即使开启本开关也不会投骰：① 本轮被判定为场景切换过渡；② 叙事阻尼器判定为越权结果宣告且没有动作尝试。'
+        ].join('\n')
+      },
+      h(FdSwitch, { on: Boolean(draft.alwaysRoll), label: '每轮必检定', onChange: next => patchDraft({ alwaysRoll: next }) })),
 
       h(FdField, {
         label: '叙事基调修正',

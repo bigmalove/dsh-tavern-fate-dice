@@ -496,3 +496,66 @@ test('collectCharacterMaterial：以 tavern.方法() 形式调用，保留调用
   assert.match(mat.promptDigest, /深网协议/)
   assert.match(mat.promptDigest, /苏夜突破第一层防火墙/)
 })
+
+test('低不确定性回合：默认不掷骰但必须给出「本轮无需检定」可见反馈；开启每轮必检定后强制投骰', async () => {
+  const turnSections = []
+  const handlers = new Map()
+  const states = new Map()
+  const gameDataMap = new Map()
+  let pluginData = null
+
+  applyFateDicePlugin({
+    inject(deps, cb) { if (Array.isArray(deps) && deps.includes('llm')) cb({ llm: null }) },
+    tavern: {
+      capabilities: { decisionJudge: 1, narrativeDamper: 1 },
+      turnSection(def) { turnSections.push(def); return () => {} },
+      damperTurnQuestions() { return () => {} },
+      onTurnSettled() { return () => {} },
+      handle(name, fn) { handlers.set(name, fn) },
+      async savePluginData({ data }) { pluginData = structuredClone(data) },
+      async readPluginData() { return pluginData ? structuredClone(pluginData) : null },
+      async saveGameData({ gameId, data }) { gameDataMap.set(gameId, structuredClone(data)) },
+      async readGameData({ gameId }) { return structuredClone(gameDataMap.get(gameId) || null) },
+      async getTurn() { return { turn: 1, text: '她抬手替你斟了一杯温热的茶。', variables: {} } },
+      async publishState({ gameId, name, data }) { states.set(`${gameId}:${name}`, data) },
+      async decisionJudgeStatus() {
+        return { available: true, provider: 'gemini', model: 'gemini-decision-1', capabilities: { noul: true, choice: true, score: true } }
+      },
+      async getDamperTurnContext({ gameId, turn }) {
+        return {
+          active: true,
+          turn,
+          explicitSceneShift: false,
+          stateSnapshot: { kind: 'plain', data: { intimacy_trust: 60 } },
+          ruling: { rulingTier: 'allow', deltaBudget: 'micro_step', leverageScore: 1.0 },
+          answers: {
+            fd_needs_check: { type: 'noul', probability: 0.31 },
+            fd_difficulty: { type: 'choice', choice: 'trivial' },
+            fd_capability: { type: 'score', score: 2 },
+            fd_domain: { type: 'choice', choice: 'general_social' }
+          }
+        }
+      }
+    }
+  })
+
+  // 1) 默认设置：阻尼器判定 31% 低于 normal 阈值 55% → 不掷骰，但必须给出可见的跳过说明
+  const injected = await turnSections[0].text({ gameId: 'g-calm', turn: 2, input: '我端起茶杯抿了一口，随口问她今天宫里有什么闲话' })
+  assert.equal(injected, '', '不掷骰时不注入任何检定约束')
+  const skipState = states.get('g-calm:live-roll')
+  assert.ok(skipState, 'live-roll 状态必须被占用，不能静默置空')
+  assert.equal(skipState.kind, 'skipped')
+  assert.equal(skipState.needProbability, 0.31)
+  assert.equal(skipState.threshold, 0.55)
+  assert.match(skipState.message, /本轮无需检定/)
+  assert.match(skipState.message, /触发概率 31%/)
+
+  // 2) 打开「每轮必检定」后同样输入必须真投骰
+  await handlers.get('fate-dice:save-global-settings')({ settings: { alwaysRoll: true } })
+  const injected2 = await turnSections[0].text({ gameId: 'g-calm', turn: 3, input: '我端起茶杯抿了一口，随口问她今天宫里有什么闲话' })
+  assert.match(injected2, /本轮客观检定已由系统真骰裁定/)
+  const forced = states.get('g-calm:live-roll')
+  assert.equal(forced.kind, 'check')
+  assert.ok(forced.roll && typeof forced.roll.total === 'number')
+  assert.match(String(forced.roll.reason || ''), /每轮必检定/)
+})

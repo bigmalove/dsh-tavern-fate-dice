@@ -70,6 +70,7 @@ function LiveRollBanner(props) {
 
   const animation = event && event.animation ? event.animation : 'bounce'
   const isSetup = Boolean(event && event.kind === 'setup-required')
+  const isSkipped = Boolean(event && event.kind === 'skipped')
   const isFree = Boolean(event && event.kind === 'free')
   const roll = isFree ? null : (event && event.roll) || null
   const freeResult = isFree ? (event && event.result) || null : null
@@ -84,6 +85,14 @@ function LiveRollBanner(props) {
       const closer = setTimeout(() => {
         if (typeof onDismiss === 'function') onDismiss()
       }, 5000)
+      return () => clearTimeout(closer)
+    }
+    /* 本轮无需检定：只留一行浅提示，6 秒后自动收起，不播骰子动画 */
+    if (isSkipped) {
+      setRolling(false)
+      const closer = setTimeout(() => {
+        if (typeof onDismiss === 'function') onDismiss()
+      }, 6000)
       return () => clearTimeout(closer)
     }
     const reduced = fdSafe(() => typeof window !== 'undefined' && Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches), false)
@@ -130,6 +139,22 @@ function LiveRollBanner(props) {
       h('span', { className: 'fd-guide-banner-title' }, '命运之骰尚未配置决策模型')),
     h('div', { className: 'fd-guide-banner-step' },
       '请前往酒馆「设置 › 叙事阻尼器」填写决策模型与 API Key（轻触收起）')))
+  }
+
+  if (isSkipped) {
+    return h('div', { className: 'fd-root', style: { padding: '2px 0' } },
+      h('div', {
+        className: 'fd-skip-note',
+        role: 'status',
+        'aria-live': 'polite',
+        title: event.reason ? String(event.reason) : '本轮未被判定为需要检定',
+        onClick: () => {
+          if (typeof onDismiss === 'function') onDismiss()
+        }
+      },
+      h('span', { className: 'fd-skip-icon', 'aria-hidden': 'true' }, '🎲'),
+      h('span', { className: 'fd-skip-text' }, event.message || '本轮无需检定'),
+      event.check ? h('span', { className: 'fd-skip-check' }, `· ${event.check}`) : null))
   }
 
   if (!roll && !freeResult) return null
@@ -206,7 +231,7 @@ function ComposerLiveDock(props) {
         return
       }
       /* 关闭动画时不再展示骰面卡，但未配置决策模型的引导提示仍需露面 */
-      if (data.animation === 'none' && data.kind !== 'setup-required') {
+      if (data.animation === 'none' && data.kind !== 'setup-required' && data.kind !== 'skipped') {
         setLiveEvent(null)
         return
       }

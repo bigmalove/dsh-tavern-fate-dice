@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------ *
- * tab-settings.js —— 页签 2「检定设置」：干净清爽的 6 项检定参数
+ * tab-settings.js —— 页签 2「检定设置」：干净清爽的 7 项检定参数
  * 每一项均带 ? 就地展开详细说明；底部单一「保存设置」主按钮。
  * ------------------------------------------------------------------ */
 
@@ -10,7 +10,7 @@ function SettingsTab(props) {
 
   useEffect(() => {
     setDraft(settings)
-  }, [settings.sensitivity, settings.toneBias, settings.autoHidden, settings.damperLinkage, settings.allowHeuristicFallback, settings.animation])
+  }, [settings.sensitivity, settings.alwaysRoll, settings.toneBias, settings.autoHidden, settings.damperLinkage, settings.allowHeuristicFallback, settings.animation])
 
   const patchDraft = patch => setDraft({ ...draft, ...patch })
 
@@ -39,6 +39,18 @@ function SettingsTab(props) {
         ].join('\n')
       },
       h(FdSelect, { value: draft.sensitivity, options: FD_SENSITIVITY_OPTIONS, onChange: value => patchDraft({ sensitivity: value }) })),
+
+      h(FdRow, {
+        plain: true,
+        title: '每轮必检定',
+        sub: '默认关闭：AI 判为日常动作时不掷骰',
+        help: [
+          '开启后，只要你在聊天框发送行动，本轮就一定投一次真骰，不再受「触发概率」门槛限制——适合想看骰子驱动每一段剧情的玩法。',
+          '关闭（默认）时按「触发灵敏度」的门槛判定：模型认为这次行动没有真实不确定性（纯寒暄、内省、必定成功的日常动作）就跳过投骰，正文照常生成，只在输入框上方留一行「本轮无需检定」的浅提示。',
+          '两种情况即使开启本开关也不会投骰：① 本轮被判定为场景切换过渡；② 叙事阻尼器判定为越权结果宣告且没有动作尝试。'
+        ].join('\n')
+      },
+      h(FdSwitch, { on: Boolean(draft.alwaysRoll), label: '每轮必检定', onChange: next => patchDraft({ alwaysRoll: next }) })),
 
       h(FdField, {
         label: '叙事基调修正',
