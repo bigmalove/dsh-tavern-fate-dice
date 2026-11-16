@@ -245,7 +245,7 @@ function LiveRollBanner(props) {
     h('div', { className: 'fd-live-sub' }, subText))))
 }
 
-/* 输入栏上方停靠：只消费真骰揭晓状态通道 */
+/* 输入栏上方停靠：只消费真骰揭晓状态通道，同时实时同步当前活跃会话 ID 给楼层顶栏 */
 function ComposerLiveDock(props) {
   const { ui, sessionId, gameId } = props || {}
   const [liveEvent, setLiveEvent] = useState(null)
@@ -254,7 +254,12 @@ function ComposerLiveDock(props) {
   const keys = stateKey && gameId && gameId !== stateKey ? [stateKey, gameId] : (stateKey ? [stateKey] : [])
 
   useEffect(() => {
+    if (stateKey) fdNoteActiveGameId(String(stateKey))
+  }, [stateKey])
+
+  useEffect(() => {
     if (!keys.length) return undefined
+    setLiveEvent(null)
     const accept = data => {
       if (!data) {
         setLiveEvent(null)
@@ -730,6 +735,8 @@ function fdExtractFloorTurn(article) {
     const rkTurn = fdNumber(rkMatch[1], 0)
     if (rkTurn > 0) return rkTurn
   }
+  const chatTurn = fdNumber(article.getAttribute('data-chat-turn'), 0)
+  if (chatTurn > 0) return chatTurn
   return fdNumber(article.getAttribute('data-floor'), 0)
 }
 
@@ -740,6 +747,30 @@ function fdEl(doc, tag, className, text) {
   return el
 }
 
+function fdRecordFromLiveEvent(gameId, fallbackTurn, data, prevRecord) {
+  if (!data || typeof data !== 'object') return null
+  const kind = String(data.kind || '')
+  if (kind !== 'check' && kind !== 'skipped' && kind !== 'setup-required') return null
+  return {
+    gameId: gameId || (prevRecord && prevRecord.gameId) || '',
+    turn: fdNumber(data.turn, fallbackTurn) || fallbackTurn || 0,
+    streaming: true,
+    textVersion: null,
+    roll: kind === 'check' && data.roll ? data.roll : null,
+    setupRequiredReason: kind === 'setup-required' ? String(data.reason || 'SETUP_REQUIRED') : null,
+    judged: kind === 'skipped'
+      ? {
+        shouldRoll: false,
+        check: String(data.check || ''),
+        needProbability: Number.isFinite(Number(data.needProbability)) ? Number(data.needProbability) : null,
+        reason: String(data.reason || '')
+      }
+      : ((prevRecord && prevRecord.judged) || null),
+    fate: (prevRecord && prevRecord.fate) || null,
+    rerollState: (prevRecord && prevRecord.rerollState) || null
+  }
+}
+
 /* 纯原生 DOM 楼层顶栏挂载：不依赖宿主未暴露的 react-dom/client，任何浏览器页面加载即刻生效 */
 function fdMountImperativeFloorHeaders(ui) {
   if (typeof document === 'undefined' || !document.body || typeof MutationObserver !== 'function') return fdNoop
@@ -748,6 +779,7 @@ function fdMountImperativeFloorHeaders(ui) {
   let rafId = 0
   let disposed = false
   let watchedGameId = ''
+  let latestLiveEvent = null
   let stopWatches = fdNoop
 
   const refreshAll = () => {
@@ -758,18 +790,43 @@ function fdMountImperativeFloorHeaders(ui) {
     })
   }
 
+  const applyLiveEventToStreamingEntries = (gameId, data) => {
+    if (disposed || !data || typeof data !== 'object') return
+    entries.forEach(entry => {
+      if (!entry.streaming) return
+      const optimistic = fdRecordFromLiveEvent(gameId, entry.turn, data, entry.record)
+      if (!optimistic) return
+      entry.record = optimistic
+      entry.gotLiveStreamRecord = true
+      renderEntry(entry)
+    })
+  }
+
   const bindGameWatches = nextId => {
     const id = String(nextId || '').trim()
     if (!id || id === watchedGameId || disposed) return
     stopWatches()
     watchedGameId = id
+    latestLiveEvent = null
     const off1 = fdWatch(ui, id, 'turn-check', refreshAll)
-    const off2 = fdWatch(ui, id, 'live-roll', refreshAll)
+    const off2 = fdWatch(ui, id, 'live-roll', data => {
+      latestLiveEvent = data && typeof data === 'object' ? { gameId: id, data } : null
+      if (data && typeof data === 'object') applyLiveEventToStreamingEntries(id, data)
+      refreshAll()
+    })
     const off3 = fdWatch(ui, id, 'workbench-sync', refreshAll)
+    let off4 = fdNoop
+    if (ui && typeof ui.watchTurnState === 'function') {
+      try {
+        const stopTurnState = ui.watchTurnState(id, () => refreshAll())
+        if (typeof stopTurnState === 'function') off4 = stopTurnState
+      } catch {}
+    }
     stopWatches = () => {
       off1()
       off2()
       off3()
+      off4()
     }
     refreshAll()
   }
@@ -777,7 +834,18 @@ function fdMountImperativeFloorHeaders(ui) {
   const offGameSub = fdSubscribeActiveGameId(bindGameWatches)
   const onTavernWindowSession = ev => {
     const sid = ev && ev.detail && ev.detail.sessionId
+    const prevId = watchedGameId
     if (sid) fdNoteActiveGameId(String(sid))
+    if (disposed) return
+    schedule()
+    if (!sid || String(sid).trim() === prevId) {
+      entries.forEach(entry => {
+        if (entry.streaming || !entry.record) {
+          entry.retryCount = 0
+          loadEntry(entry)
+        }
+      })
+    }
   }
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
     window.addEventListener('dsh-tavern-session-changed', onTavernWindowSession)
@@ -807,10 +875,13 @@ function fdMountImperativeFloorHeaders(ui) {
     headSlot.textContent = ''
     panelSlot.textContent = ''
 
-    const awaitingLiveRoll = Boolean(entry.streaming && (!record || record.streaming !== true))
-    const hasContent = awaitingLiveRoll || Boolean(
+    const hasRecordPayload = Boolean(
       record && (record.roll || record.setupRequiredReason || (record.judged && record.judged.shouldRoll === false))
     )
+    const awaitingLiveRoll = Boolean(
+      entry.streaming && (!hasRecordPayload || (record.streaming !== true && !entry.gotLiveStreamRecord))
+    )
+    const hasContent = awaitingLiveRoll || hasRecordPayload
     if (!hasContent) {
       clearMountedKey(entry)
       return
@@ -1048,20 +1119,41 @@ function fdMountImperativeFloorHeaders(ui) {
     }
     const reqSeq = (entry.reqSeq || 0) + 1
     entry.reqSeq = reqSeq
+    const activeGameId = fdGetActiveGameId()
     fdCall(ui, FD_RPC.readTurn, {
-      gameId: fdGetActiveGameId(),
+      gameId: activeGameId,
       turn: entry.turn,
       streaming: Boolean(entry.streaming)
     }).then(res => {
       if (disposed || entry.disposed || entry.reqSeq !== reqSeq) return
       const data = res && res.ok ? res.data : null
       if (data && data.gameId) fdNoteActiveGameId(String(data.gameId))
-      entry.record = data && typeof data === 'object' ? data : null
+      const nextRecord = data && typeof data === 'object' ? data : null
+      if (nextRecord) {
+        if (nextRecord.streaming === true) entry.gotLiveStreamRecord = true
+        entry.justFinishedStream = false
+        entry.record = nextRecord
+      } else if (entry.streaming && entry.gotLiveStreamRecord && entry.record) {
+        /* 保持已收到的实时检定快照，避免轮询间隙闪回「定难中」 */
+      } else if (!entry.streaming && entry.justFinishedStream && entry.gotLiveStreamRecord && entry.record && (entry.retryCount || 0) < 8) {
+        /* 流式刚结束、后台结算正在写入的极短窗口内保留流式检定显示并继续重试确认 */
+        entry.record = { ...entry.record, streaming: false }
+      } else {
+        entry.record = null
+      }
       renderEntry(entry)
-      const awaitingLive = Boolean(entry.streaming && (!entry.record || entry.record.streaming !== true))
-      if (awaitingLive && (entry.retryCount || 0) < 40) {
+      const hasPayload = Boolean(
+        entry.record && (entry.record.roll || entry.record.setupRequiredReason || (entry.record.judged && entry.record.judged.shouldRoll === false))
+      )
+      const awaitingLive = Boolean(
+        entry.streaming && (!hasPayload || (entry.record.streaming !== true && !entry.gotLiveStreamRecord))
+      )
+      const awaitingPostStreamSettle = Boolean(!entry.streaming && entry.justFinishedStream && !nextRecord && (entry.retryCount || 0) < 8)
+      if ((awaitingLive && (entry.retryCount || 0) < 40) || awaitingPostStreamSettle) {
         entry.retryCount = (entry.retryCount || 0) + 1
-        entry.retryTimer = setTimeout(() => loadEntry(entry), 500)
+        entry.retryTimer = setTimeout(() => loadEntry(entry), awaitingPostStreamSettle ? 400 : 500)
+      } else if (!entry.streaming) {
+        entry.justFinishedStream = false
       }
     })
   }
@@ -1086,6 +1178,8 @@ function fdMountImperativeFloorHeaders(ui) {
       seenArticles.add(article)
       let entry = entries.get(article)
       if (!entry || entry.head !== head) {
+        const inheritedRecord = entry && entry.gotLiveStreamRecord && entry.record ? entry.record : null
+        const inheritedLive = Boolean(entry && entry.gotLiveStreamRecord)
         if (entry) {
           entry.disposed = true
           if (entry.retryTimer) clearTimeout(entry.retryTimer)
@@ -1097,13 +1191,24 @@ function fdMountImperativeFloorHeaders(ui) {
         const panelSlot = fdEl(doc, 'div', 'fd-floor-panel-slot')
         head.appendChild(headSlot)
         head.appendChild(panelSlot)
+        let seedRecord = inheritedRecord
+        let seedGotLive = inheritedLive
+        if (!seedRecord && streaming && latestLiveEvent && latestLiveEvent.gameId === watchedGameId) {
+          const evTurn = fdNumber(latestLiveEvent.data && latestLiveEvent.data.turn, 0)
+          if (!evTurn || !turn || evTurn === turn) {
+            seedRecord = fdRecordFromLiveEvent(watchedGameId, turn, latestLiveEvent.data, null)
+            seedGotLive = Boolean(seedRecord)
+          }
+        }
         entry = {
           head,
           headSlot,
           panelSlot,
           turn,
           streaming,
-          record: null,
+          record: seedRecord,
+          gotLiveStreamRecord: seedGotLive,
+          justFinishedStream: false,
           expanded: false,
           peeked: false,
           rerolling: false,
@@ -1115,9 +1220,17 @@ function fdMountImperativeFloorHeaders(ui) {
           disposed: false
         }
         entries.set(article, entry)
+        if (seedRecord) renderEntry(entry)
         loadEntry(entry)
       } else {
-        const changed = entry.turn !== turn || entry.streaming !== streaming
+        const prevStreaming = entry.streaming
+        const changed = entry.turn !== turn || prevStreaming !== streaming
+        if (!prevStreaming && streaming) {
+          entry.gotLiveStreamRecord = false
+          entry.justFinishedStream = false
+        } else if (prevStreaming && !streaming) {
+          entry.justFinishedStream = true
+        }
         entry.turn = turn
         entry.streaming = streaming
         if (entry.headSlot.parentNode !== head) head.appendChild(entry.headSlot)
@@ -1163,7 +1276,7 @@ function fdMountImperativeFloorHeaders(ui) {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ['data-legacy-turn', 'data-row-key', 'data-story-held', 'class']
+    attributeFilter: ['data-legacy-turn', 'data-chat-turn', 'data-row-key', 'data-story-held', 'class']
   })
 
   return () => {
@@ -1198,6 +1311,7 @@ function StatusDiceSection(props) {
       setView(null)
       return undefined
     }
+    fdNoteActiveGameId(String(gameId))
     fdLoadWorkbench(ui, gameId).then(data => {
       if (alive) setView(data)
     })

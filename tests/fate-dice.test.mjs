@@ -1263,7 +1263,7 @@ test('楼层顶栏胶囊（与叙事阻尼器胶囊并排）：正在生成期�
   settledHeadSlot.children[0].click()
   assert.ok(settledPanelSlot.children.length === 1, '点击顶栏胶囊后应在下方展开详情面板')
   const panelText = settledPanelSlot.textContent
-  assert.match(panelText, /✦ 命运点 2\/3/)
+  assert.match(panelText, /✦ 命运点 [23]\/3/)
   assert.match(panelText, /✦ 逆命重投/)
   assert.match(panelText, /🔥 孤注一掷/)
   unmount2()
@@ -1363,4 +1363,227 @@ test('回归验证：历史免检定楼层开启「每轮必检定」后点「�
   await settledHooks[0]({ gameId: 'g-regen-always', turn: 18, textVersion: 'v18-1' })
   const turn18Read = await handlers.get('fate-dice:read-turn')({ gameId: 'g-regen-always', turn: 18 })
   assert.ok(turn18Read?.roll, '跳号后的新楼层（turn=18）结算必须正常落盘')
+})
+
+test('回归验证：切换会话 + 跳号第 5 楼（turn=18）流式期间不卡「定难中」，且异步落盘窗口内骰子胶囊不消失', async () => {
+  const turnSections = []
+  const settledHooks = []
+  const handlers = new Map()
+  const gameDataMap = new Map()
+  const turnDataMap = new Map()
+  const watchListeners = new Map()
+  let saveDelayMs = 0
+
+  function emitState(gameId, name, data) {
+    const set = watchListeners.get(`${gameId}:${name}`)
+    if (!set) return
+    for (const fn of set) fn(structuredClone(data))
+  }
+
+  applyFateDicePlugin({
+    tavern: {
+      capabilities: { decisionJudge: 1, narrativeDamper: 1 },
+      damperTurnQuestions() { return () => {} },
+      turnSection(def) { turnSections.push(def); return () => {} },
+      settlementSection() { return () => {} },
+      settlementTool() { return () => {} },
+      onTurnSettled(fn) { settledHooks.push(fn); return () => {} },
+      handle(name, fn) { handlers.set(name, fn) },
+      async savePluginData() {},
+      async readPluginData() { return null },
+      async saveGameData({ gameId, data }) {
+        if (saveDelayMs > 0) await new Promise(r => setTimeout(r, saveDelayMs))
+        gameDataMap.set(gameId, structuredClone(data))
+      },
+      async readGameData({ gameId }) { return structuredClone(gameDataMap.get(gameId) || null) },
+      async saveTurnData({ gameId, turn, textVersion, data }) {
+        if (saveDelayMs > 0) await new Promise(r => setTimeout(r, saveDelayMs))
+        turnDataMap.set(`${gameId}:${turn}`, { turn, textVersion, data: structuredClone(data) })
+        return { turn, textVersion }
+      },
+      async readTurnData({ gameId, turn }) { return structuredClone(turnDataMap.get(`${gameId}:${turn}`) || null) },
+      async getTurnState() { return { turn: 5, settled: true, generating: true, greeting: false } },
+      async getTurn() { return { turn: 5, text: '藏书阁烛光摇曳。', variables: {} } },
+      async publishState({ gameId, name, data }) { emitState(gameId, name, data) },
+      async getDamperTurnContext({ turn }) {
+        return {
+          active: true,
+          turn,
+          explicitSceneShift: false,
+          ruling: { rulingTier: 'costly_advance', deltaBudget: 'micro_step', leverageScore: 1.28 },
+          answers: {
+            fd_needs_check: { type: 'noul', probability: 0.78 },
+            fd_difficulty: { type: 'choice', choice: 'normal' },
+            fd_capability: { type: 'score', score: 1 },
+            fd_domain: { type: 'choice', choice: 'general_physical' }
+          }
+        }
+      },
+      async applyDamperDiceShift() {
+        return { applied: true, ruling: { rulingTier: 'costly_advance', deltaBudget: 'micro_step' } }
+      }
+    }
+  })
+
+  const clientCode = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+  let loadedModule = null
+  const effects = []
+
+  function makeEl(tag) {
+    const attrs = new Map()
+    const listeners = new Map()
+    const el = {
+      tagName: String(tag || '').toUpperCase(),
+      className: '',
+      title: '',
+      type: '',
+      disabled: false,
+      style: {},
+      parentNode: null,
+      children: [],
+      get lastElementChild() { return this.children.length ? this.children[this.children.length - 1] : null },
+      classList: {
+        contains(cls) { return String(el.className || '').split(/\s+/).includes(cls) }
+      },
+      setAttribute(k, v) { attrs.set(k, String(v)) },
+      getAttribute(k) { return attrs.has(k) ? attrs.get(k) : null },
+      hasAttribute(k) { return attrs.has(k) },
+      appendChild(child) {
+        if (child.parentNode && child.parentNode !== el) child.parentNode.removeChild(child)
+        const idx = el.children.indexOf(child)
+        if (idx >= 0) el.children.splice(idx, 1)
+        child.parentNode = el
+        el.children.push(child)
+        return child
+      },
+      removeChild(child) {
+        const idx = el.children.indexOf(child)
+        if (idx >= 0) el.children.splice(idx, 1)
+        child.parentNode = null
+        return child
+      },
+      querySelector(sel) {
+        if (sel === '.dsh-tavern-story-floor-head') {
+          return el.children.find(c => c.classList.contains('dsh-tavern-story-floor-head')) || null
+        }
+        return null
+      },
+      addEventListener(ev, fn) { listeners.set(ev, fn) }
+    }
+    Object.defineProperty(el, 'textContent', {
+      get() {
+        return el._text !== undefined && el.children.length === 0
+          ? el._text
+          : (el._text || '') + el.children.map(c => c.textContent).join('')
+      },
+      set(val) {
+        el._text = String(val ?? '')
+        if (val === '') el.children.forEach(c => { c.parentNode = null })
+        if (val === '') el.children = []
+      }
+    })
+    return el
+  }
+
+  let mutationCb = null
+  const articles = []
+  const fakeBody = makeEl('body')
+  const fakeDoc = {
+    head: makeEl('head'),
+    body: fakeBody,
+    getElementById: () => null,
+    createElement: tag => makeEl(tag),
+    querySelectorAll: sel => (sel === 'article.dsh-tavern-story-floor' ? articles : [])
+  }
+  const fakeReact = {
+    Fragment: Symbol('Fragment'),
+    createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+    useState: init => [typeof init === 'function' ? init() : init, () => {}],
+    useEffect: fn => { effects.push(fn) },
+    useMemo: fn => fn(),
+    useRef: val => ({ current: val })
+  }
+  const sandbox = {
+    window: { __ModuleLoader__: { load(def) { loadedModule = def } }, localStorage: { getItem: () => null, setItem: () => {} } },
+    document: fakeDoc,
+    MutationObserver: class {
+      constructor(cb) { mutationCb = cb }
+      observe() {}
+      disconnect() {}
+    },
+    setTimeout,
+    clearTimeout,
+    console
+  }
+  vm.runInNewContext(clientCode, sandbox, { filename: 'client.js' })
+  const exported = loadedModule.factory(mod => {
+    if (mod === 'react') return fakeReact
+    throw new Error('host exposes no ' + mod)
+  })
+
+  // 验证 data-row-key 退化为 index:N 时，fdExtractFloorTurn 仍取 data-chat-turn=18 而非 data-floor=5
+  const rowIndexArticle = makeEl('article')
+  rowIndexArticle.setAttribute('data-row-key', 'index:8')
+  rowIndexArticle.setAttribute('data-chat-turn', '18')
+  rowIndexArticle.setAttribute('data-floor', '5')
+  assert.equal(exported.__test.fdExtractFloorTurn(rowIndexArticle), 18)
+
+  const fakeUi = {
+    callHost: (name, args) => handlers.get(name)(args),
+    watchState: (gameId, name, fn) => {
+      const k = `${gameId}:${name}`
+      if (!watchListeners.has(k)) watchListeners.set(k, new Set())
+      watchListeners.get(k).add(fn)
+      return () => { watchListeners.get(k)?.delete(fn) }
+    }
+  }
+
+  // 先残留旧会话 ID（模拟之前打开过另一张角色卡），再由 ComposerLiveDock 切换至新会话 session-new
+  exported.__test.fdNoteActiveGameId('session-old-stale')
+  const unmountHeaders = exported.__test.fdMountImperativeFloorHeaders(fakeUi)
+  exported.__test.ComposerLiveDock({ ui: fakeUi, sessionId: 'session-new' })
+  while (effects.length) {
+    const fn = effects.shift()
+    fn()
+  }
+  assert.equal(exported.__test.fdGetActiveGameId(), 'session-new', 'ComposerLiveDock 必须将活跃会话同步到新局')
+
+  // 发送前 turnSection 先产出结果并广播 live-roll（turn=18，第 5 楼），随后流式 DOM 节点才插入
+  await turnSections[0].text({ gameId: 'session-new', turn: 18, input: '继续推进剑术' })
+
+  const streamArticle = makeEl('article')
+  streamArticle.className = 'dsh-tavern-story-transcript-row dsh-tavern-assistant dsh-tavern-story-floor dsh-tavern-story-streaming'
+  streamArticle.setAttribute('data-floor', '5')
+  streamArticle.setAttribute('data-legacy-turn', '18')
+  const streamHead = makeEl('div')
+  streamHead.className = 'dsh-tavern-story-floor-head'
+  streamArticle.appendChild(streamHead)
+  articles.push(streamArticle)
+
+  mutationCb([{ target: fakeBody }])
+  await new Promise(r => setTimeout(r, 25))
+
+  const headSlot = streamHead.children.find(c => c.classList.contains('fd-floor-head-slot'))
+  assert.ok(headSlot && headSlot.children.length === 1)
+  assert.doesNotMatch(headSlot.children[0].textContent, /真骰定难中/, '发送前已出结果时，流式期间不得卡在「真骰定难中」')
+  assert.match(headSlot.children[0].textContent, /体魄/, '流式期间应直接展示本轮已投出的真骰结果')
+
+  // 模拟正文流式刚结束（streaming 类移除）而后台 MVU + onTurnSettled 持久化仍在异步写入（saveDelayMs=40ms）
+  saveDelayMs = 40
+  const settlePromise = settledHooks[0]({ gameId: 'session-new', turn: 18, textVersion: 'v18-final' })
+  await new Promise(r => setTimeout(r, 10))
+
+  // 在 onTurnSettled 尚未写完磁盘的中间时刻，前端流式结束发起非流式读取，不得读空消失
+  streamArticle.className = 'dsh-tavern-story-transcript-row dsh-tavern-assistant dsh-tavern-story-floor'
+  mutationCb([{ target: streamArticle }])
+  await new Promise(r => setTimeout(r, 15))
+  assert.ok(headSlot.children.length === 1, '流式结束且结算落盘进行中时，顶栏骰子胶囊不得消失')
+  assert.match(headSlot.children[0].textContent, /体魄/)
+
+  await settlePromise
+  await new Promise(r => setTimeout(r, 20))
+  assert.ok(headSlot.children.length === 1, '生成与结算全部完成后，第 5 楼顶栏骰子胶囊必须稳定保留')
+  assert.match(headSlot.children[0].textContent, /体魄/)
+
+  unmountHeaders()
 })

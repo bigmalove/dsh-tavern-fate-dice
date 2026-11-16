@@ -12,13 +12,25 @@ function fdDetectUrlGameId() {
   return fdSafe(() => {
     if (typeof window !== 'undefined' && window.location) {
       const search = String(window.location.search || '')
-      const qMatch = /[?&](?:sessionId|gameId)=([^&#]+)/.exec(search)
+      const hash = String(window.location.hash || '')
+      const combinedQuery = search + (hash.includes('?') ? '&' + hash.slice(hash.indexOf('?') + 1) : '')
+      const qMatch = /[?&](?:sessionId|gameId)=([^&#]+)/.exec(combinedQuery)
       if (qMatch && qMatch[1]) return decodeURIComponent(qMatch[1])
-      const pathname = String(window.location.pathname || '')
-      const pMatch = /\/(?:sessions?|chats?|play|c)\/([a-zA-Z0-9_.:-]{6,})/.exec(pathname)
+      const routeText = String(window.location.pathname || '') + ' ' + hash
+      const pMatch = /\/(?:sessions?|chats?|play|c)\/([a-zA-Z0-9_.:-]{6,})/.exec(routeText)
       if (pMatch && pMatch[1]) return decodeURIComponent(pMatch[1])
+      const sMatch = /\b(session-[a-zA-Z0-9_.:-]{6,})\b/.exec(routeText)
+      if (sMatch && sMatch[1]) return sMatch[1]
     }
-    if (typeof document !== 'undefined' && typeof document.querySelector === 'function') {
+    if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
+      const els = document.querySelectorAll('[data-dsh-tavern-card-app-session], [data-session]')
+      for (let i = els.length - 1; i >= 0; i--) {
+        const el = els[i]
+        if (!el || typeof el.getAttribute !== 'function') continue
+        const sid = (el.getAttribute('data-dsh-tavern-card-app-session') || el.getAttribute('data-session') || '').trim()
+        if (sid) return sid
+      }
+    } else if (typeof document !== 'undefined' && typeof document.querySelector === 'function') {
       const el = document.querySelector('[data-dsh-tavern-card-app-session], [data-session]')
       if (el && typeof el.getAttribute === 'function') {
         const sid = el.getAttribute('data-dsh-tavern-card-app-session') || el.getAttribute('data-session') || ''
@@ -39,7 +51,12 @@ function fdNoteActiveGameId(gameId) {
 }
 
 function fdGetActiveGameId() {
-  return fdCurrentGameId || fdDetectUrlGameId() || ''
+  const detected = fdDetectUrlGameId()
+  if (detected && detected !== '__fate_dice_global__') {
+    if (detected !== fdCurrentGameId) fdCurrentGameId = detected
+    return detected
+  }
+  return fdCurrentGameId || ''
 }
 
 function fdSubscribeActiveGameId(listener) {
