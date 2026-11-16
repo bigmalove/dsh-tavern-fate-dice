@@ -458,3 +458,41 @@ test('浏览器端 client.js：极简双页签滚动工作台（检定与能力 
   assert.match(JSON.stringify(helpClosed), /fd-help-btn/)
   assert.ok((clientCode.match(/fd-help-btn|FdHelp|\bhelp\s*:/g) || []).length >= 20, '双页签所有设置与分区均配备 ? 详细说明')
 })
+
+test('collectCharacterMaterial：以 tavern.方法() 形式调用，保留调用者（宿主守卫靠 this 定位 fiber）', async () => {
+  // 复刻 dsh-tavern 插件 API 的 service 包装：带 gameId 的调用先按 this 定位调用方插件。
+  const service = {
+    _owner: 'dsh-tavern-fate-dice',
+    async getPlayerName() { return '苏夜' },
+    async getCharacterDesigns() { return { characters: [{ name: '苏夜', identity: '前荒坂反情报黑客' }] } },
+    async getCard() { return { name: '赛博委托人', description: '夜之城情报中间人。' } },
+    async getCardContext() { return { lore: [{ title: '深网协议', content: '军用冰墙需神经义体支撑。' }] } },
+    async getTurn() {
+      return { turn: 3, text: '苏夜拔出数据探针。', variables: { stat_data: { 神经负荷: 82, 信用点: 1500, 隐蔽度: 65 } } }
+    },
+    async getHistory() { return [{ turn: 3, input: '接入终端', text: '苏夜突破第一层防火墙。' }] }
+  }
+  for (const key of Object.keys(service)) {
+    const method = service[key]
+    if (typeof method !== 'function') continue
+    service[key] = async function (...args) {
+      const input = args[0]
+      if (input && typeof input === 'object' && (input.gameId !== undefined || input.card !== undefined)) {
+        const owner = String((this && this._owner) || '')
+        if (!owner || owner === 'root') throw new Error('请在插件里通过 ctx.inject 取得 tavern 服务，并以 tavern.方法名() 的形式调用')
+      }
+      return await method.apply(this, args)
+    }
+  }
+
+  const mat = await collectCharacterMaterial({ tavern: service, gameId: 'g-strict', turn: 4 })
+  assert.equal(mat.contextSources.playerName, '苏夜')
+  assert.equal(mat.contextSources.hasCard, true)
+  assert.equal(mat.contextSources.cardName, '赛博委托人')
+  assert.equal(mat.contextSources.loreCount, 1)
+  assert.equal(mat.contextSources.mvuKeyCount, 3, 'MVU 变量必须取到（摘方法裸调会让守卫抛错，四源全空）')
+  assert.equal(mat.contextSources.historyTurns, 1)
+  assert.match(mat.promptDigest, /神经负荷/)
+  assert.match(mat.promptDigest, /深网协议/)
+  assert.match(mat.promptDigest, /苏夜突破第一层防火墙/)
+})
