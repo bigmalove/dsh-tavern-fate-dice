@@ -2125,9 +2125,11 @@ function WorkbenchPanel(props) {
     const run = () => fdPersistSettings(ui, merged)
       .then(res => {
         if (!res || res.ok !== true) notify(fdToastResult(res, '改动已保存在本地浏览器'))
-        /* 宿主回包带权威设置时以宿主为准（例如宿主侧做了兜底归一化） */
+        /* 宿主回包带权威设置时以宿主为准（宿主侧可能做过兜底归一化）；
+           但如果用户在这趟往返期间又拨了别的开关，视图已是更新的值，不能再拿旧回包打回去 */
         const hostSettings = res && res.ok && res.data && res.data.settings
-        if (hostSettings && typeof hostSettings === 'object') {
+        const current = viewRef.current && viewRef.current.settings
+        if (hostSettings && typeof hostSettings === 'object' && current === merged) {
           const synced = fdNormalizeSettings({ ...merged, ...hostSettings })
           viewRef.current = { ...(viewRef.current || fdEmptyWorkbench()), settings: synced }
           patch(prev => ({ settings: synced }))
