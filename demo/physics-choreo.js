@@ -296,11 +296,11 @@ export class CinematicDiceStage {
     }
 
     const aspect = w / Math.max(1, h)
-    // 宽扁横幅或竖窄屏幕自适应视野距离
-    const distScale = aspect > 2.0 ? 0.72 : aspect < 0.9 ? 1.25 : 1.0
+    // 宽扁横幅或竖窄屏幕自适应视野距离（拉近约 22%，让多面体与数字饱满清晰）
+    const distScale = aspect > 2.1 ? 0.66 : aspect < 0.9 ? 1.15 : 0.88
     this.baseEye[0] = 0
-    this.baseEye[1] = -390 * distScale
-    this.baseEye[2] = 435 * distScale
+    this.baseEye[1] = -335 * distScale
+    this.baseEye[2] = 395 * distScale
     this.renderSingleFrame()
   }
 
@@ -324,6 +324,94 @@ export class CinematicDiceStage {
   setCinematicCam(flag) {
     this.cinematicCamEnabled = Boolean(flag)
     this.wake()
+  }
+
+  /**
+   * 手动按钮长按蓄力 API：按住重投/投掷按钮时，骰群升空进入中心引力聚能旋涡！
+   */
+  startButtonCharge(modeHint) {
+    if (this.charging) return
+    if (modeHint === 'fate') this.setTheme(NEXTGEN_THEMES[1])
+    else if (modeHint === 'push') this.setTheme(NEXTGEN_THEMES[2])
+    // 若舞台当前尚无骰子，先放置一颗默认多面体参与蓄力旋涡演出
+    if (!this.dice || this.dice.length === 0) {
+      this.setStaticRoll({ diceSpecs: [{ meshKey: 'd20', sides: 20, targetValue: 20 }], tier: 'success', mode: 'normal' })
+    }
+    this.charging = true
+    this.buttonCharging = true
+    this.chargeTime = 0
+    this.chargeWorld.x = 0
+    this.chargeWorld.y = -12
+    this.chargeWorld.z = 92
+    if (this.audio) this.audio.startChargeHum(this.theme.soundPreset)
+    this.wake()
+  }
+
+  /**
+   * 移出按钮取消蓄力：不消耗命运点或重投次数，平稳落回原状
+   */
+  cancelButtonCharge() {
+    if (!this.charging) return
+    this.charging = false
+    this.buttonCharging = false
+    if (this.audio) this.audio.stopChargeHum()
+    // 恢复落定态原坐标与姿态
+    for (let i = 0; i < this.dice.length; i++) {
+      const d = this.dice[i]
+      const ep = (MAX_STEPS - 1) * 3
+      const eq = (MAX_STEPS - 1) * 4
+      d.x = d.trajPos[ep]; d.y = d.trajPos[ep + 1]; d.z = d.trajPos[ep + 2]
+      d.qx = d.trajQuat[eq]; d.qy = d.trajQuat[eq + 1]; d.qz = d.trajQuat[eq + 2]; d.qw = d.trajQuat[eq + 3]
+      d.trailCount = 0
+      d.settled = true
+    }
+    this.settled = true
+    this.wake()
+  }
+
+  /**
+   * 松开蓄力按钮：带着蓄力能量将旋涡中的骰群爆发砸向指定真骰结果！
+   */
+  releaseButtonCharge(spec, charge01 = 0.6) {
+    const power = Math.max(0, Math.min(1, Number(charge01) || 0))
+    this.charging = false
+    this.buttonCharging = false
+    if (this.audio) this.audio.stopChargeHum()
+    const enriched = { ...(spec || {}) }
+    if (power > 0.12) {
+      const angle = (Math.random() - 0.5) * 1.1 + Math.PI * 0.5
+      const spd = 220 + power * 420
+      enriched.launchOrigin = { x: 0, y: -24, z: 98 + power * 48 }
+      enriched.launchVelocity = {
+        vx: Math.cos(angle) * spd * 0.55,
+        vy: Math.sin(angle) * spd * 0.55
+      }
+    }
+    this.throwDice(enriched)
+  }
+
+  /**
+   * 静态摆盘（打开已有楼层检定面板时直接展示已落定真骰，不重复假投）
+   */
+  setStaticRoll(spec = {}) {
+    this.throwDice({ ...spec, silentStatic: true })
+    this.settled = true
+    this.settleTime = 3.0
+    this.simTime = this.maxSimDuration
+    this.climax = 0
+    for (let i = 0; i < this.dice.length; i++) {
+      const d = this.dice[i]
+      const ep = (MAX_STEPS - 1) * 3
+      const eq = (MAX_STEPS - 1) * 4
+      d.x = d.trajPos[ep]; d.y = d.trajPos[ep + 1]; d.z = d.trajPos[ep + 2]
+      d.qx = d.trajQuat[eq]; d.qy = d.trajQuat[eq + 1]; d.qz = d.trajQuat[eq + 2]; d.qw = d.trajQuat[eq + 3]
+      d.speed = 0
+      d.trailCount = 0
+      d.settled = true
+    }
+    this.particles.active.fill(0)
+    this.particles.aliveCount = 0
+    this.renderSingleFrame()
   }
 
   _bindInteractiveSlingshot() {
@@ -489,10 +577,10 @@ export class CinematicDiceStage {
     this.bulletTimeAmount = 0
     this.bulletSoundPlayed = false
 
-    const baseR = count <= 1 ? 34 : count <= 2 ? 30 : count <= 4 ? 26 : count <= 8 ? 22 : count <= 14 ? 18 : 15
+    const baseR = count <= 1 ? 42 : count <= 2 ? 37 : count <= 4 ? 31 : count <= 8 ? 25 : count <= 14 ? 20 : 16
     const aspect = this.cssW / Math.max(1, this.cssH)
-    const boundX = Math.min(235, Math.max(95, 165 * aspect)) - baseR
-    const boundY = (this.compactMode ? 95 : 148) - baseR
+    const boundX = Math.min(225, Math.max(92, 155 * aspect)) - baseR
+    const boundY = (this.compactMode ? 88 : 138) - baseR
 
     const dice = []
     for (let i = 0; i < count; i++) {
@@ -571,10 +659,10 @@ export class CinematicDiceStage {
     this.simTime = 0
     this.bouncePlayCursor = 0
 
-    if (this.audio) {
+    if (this.audio && !spec.silentStatic) {
       this.audio.playThrowWhoosh(this.theme.soundPreset, 1.1)
     }
-    this.wake()
+    if (!spec.silentStatic) this.wake()
   }
 
   _bakeTrajectoriesAndExactLanding(dice, boundX, boundY) {
@@ -722,12 +810,12 @@ export class CinematicDiceStage {
     for (let i = 0; i < count; i++) {
       const d = dice[i]
       const tf = d.targetFace
-      // D4 四面体略微向镜头前倾以正视牌面，其余多面体朝向天顶微倾
-      const tiltCam = d.meshKey === 'd4' ? 0.32 : 0.08
+      // 落定面法线向摄像机方向适度前倾 (0.28 rad ≈ 16°)，消除透视压缩，让顶面大号数字正对视线！
+      const tiltCam = d.meshKey === 'd4' ? 0.44 : 0.28
       const wnX = 0, wnY = -Math.sin(tiltCam), wnZ = Math.cos(tiltCam)
 
-      // 自然轻微桌面偏航角 (±11°)
-      const yaw = (Math.random() - 0.5) * 0.38
+      // 保持极轻微偏航角 (±6°)，端正大气易读
+      const yaw = (Math.random() - 0.5) * 0.22
       const cy = Math.cos(yaw), sy = Math.sin(yaw)
       // 基准 Wv 指向屏幕下方 (-Y 侧)，绕 Wn 偏航后并设 Wu = cross(Wn, Wv) 以严格对齐 gl-meshes 切空间手性
       const wvX = sy
@@ -857,16 +945,16 @@ export class CinematicDiceStage {
       this.impactCursor++
       imp.x = d.x; imp.y = d.y; imp.age = 0.001; imp.strength = isCrit ? 1.25 : 0.85
 
-      // 大成功 / 孤注一掷 / 大失败：拔地而起冲天圣光柱 / 熔岩火柱 / 深渊紫柱！
+      // 大成功 / 孤注一掷 / 大失败：在骰子后方升起圣光背光柱，衬托轮廓而绝不遮挡正面数字！
       if ((isCrit || isFumble || this.mode === 'push') && idx < 6) {
         this._spawnSpark({
-          x: d.x, y: d.y, z: 2,
-          vx: 0, vy: 0, vz: isCrit ? 340 : 240, // pillar height
-          size: d.radius * (isCrit ? 1.55 : 1.2),
-          life: isCrit ? 1.35 : 0.95,
+          x: d.x, y: d.y + d.radius * 0.85, z: d.radius * 0.9,
+          vx: 0, vy: 0, vz: isCrit ? 320 : 220,
+          size: d.radius * (isCrit ? 1.15 : 0.95),
+          life: isCrit ? 0.92 : 0.72,
           grav: 0, drag: 0,
-          r: col[0] * 1.25, g: col[1] * 1.25, b: col[2] * 1.25,
-          a: 0.95,
+          r: col[0], g: col[1], b: col[2],
+          a: 0.58,
           pillar: true
         })
       }
@@ -1280,7 +1368,13 @@ export class CinematicDiceStage {
         ctx.font = '700 11.5px system-ui, sans-serif'
         ctx.fillStyle = '#ffffff'
         ctx.textAlign = 'center'
-        ctx.fillText('松开或划动甩投！', sx, sy + r + 18)
+        ctx.fillText(
+          this.buttonCharging
+            ? `⚡ 聚能蓄力 ${Math.round(c01 * 100)}% · 松开按钮爆发投掷`
+            : '松开或划动甩投！',
+          sx,
+          sy + r + 18
+        )
       }
     }
 

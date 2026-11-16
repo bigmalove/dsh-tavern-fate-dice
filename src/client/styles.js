@@ -1235,6 +1235,61 @@ const CSS_TEXT = `
   word-break: break-word;
 }
 
+/* ---------- WebGL2 HDR 3D 命运真骰内嵌舞台 & 手动按钮长按蓄力进度 ---------- */
+.fd-3d-stage {
+  position: relative;
+  width: 100%;
+  height: 164px;
+  border-radius: 11px;
+  overflow: hidden;
+  background: #070912;
+  border: 1px solid var(--fd-line);
+  margin: 6px 0 8px;
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.45);
+}
+.fd-3d-stage.is-compact {
+  height: 142px;
+  margin: 4px 0 7px;
+}
+.fd-3d-stage.is-banner {
+  width: 156px;
+  min-width: 156px;
+  height: 68px;
+  margin: 0;
+  border-radius: 9px;
+  flex: 0 0 156px;
+}
+.fd-3d-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.fd-reroll-btn,
+.fd-hold-btn {
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.fd-reroll-btn.is-charging,
+.fd-hold-btn.is-charging {
+  transform: scale(0.985);
+  box-shadow: 0 0 18px rgba(245, 185, 66, 0.42);
+}
+.fd-reroll-btn.is-charging::after,
+.fd-hold-btn.is-charging::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--fd-charge, 0%);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(255, 240, 180, 0.36));
+  border-right: 2px solid rgba(255, 255, 255, 0.85);
+  pointer-events: none;
+}
+
 @keyframes fd-tumble {
   0% { transform: translateY(-18px) rotateX(0deg) rotateZ(-200deg) scale(0.72); opacity: 0.25; }
   55% { transform: translateY(3px) rotateX(330deg) rotateZ(18deg) scale(1.1); opacity: 1; }

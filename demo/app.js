@@ -463,29 +463,139 @@ export function bootDemoApp() {
     })
   })
 
-  document.getElementById('btn-roll-now').addEventListener('click', () => triggerRoll())
+  // 通用长按按钮聚能蓄力绑定器（点按即投 · 长按蓄力旋涡 · 移出无损取消）
+  function bindButtonHoldCharge(btn, { mode, getStages, onRelease }) {
+    let timer = 0
+    let raf = 0
+    let downAt = 0
+    let charging = false
+    let handled = false
+    const origHTML = btn.innerHTML
 
-  // 酒馆预览内嵌「✦ 逆命重投」与「🔥 孤注一掷」实景交互
-  document.getElementById('btn-tv-fate').addEventListener('click', () => {
-    ensureTavernStages()
-    fatePoints = fatePoints > 0 ? fatePoints - 1 : 3
-    rollMode = 'fate'
-    selectTheme(1, false)
-    const spec = buildRollSpec(activePreset, 'critical', 'fate')
-    lastRollSpec = spec
-    tavernCapsuleStage.throwDice(spec)
-    tavernBannerStage.throwDice(spec)
+    const resetVisual = () => {
+      if (timer) { clearTimeout(timer); timer = 0 }
+      if (raf) { cancelAnimationFrame(raf); raf = 0 }
+      btn.classList.remove('is-charging')
+      btn.style.removeProperty('--charge-pct')
+      btn.innerHTML = origHTML
+    }
+
+    btn.addEventListener('pointerdown', e => {
+      if (e.button !== undefined && e.button !== 0) return
+      handled = false
+      charging = false
+      downAt = performance.now()
+      timer = setTimeout(() => {
+        charging = true
+        btn.classList.add('is-charging')
+        const resolvedMode = typeof mode === 'function' ? mode() : mode
+        for (const stg of getStages()) stg.startButtonCharge(resolvedMode)
+        const loop = () => {
+          if (!charging) return
+          const pct = Math.min(100, Math.max(5, Math.round(((performance.now() - downAt - 140) / 950) * 100)))
+          btn.style.setProperty('--charge-pct', pct + '%')
+          btn.textContent = `⚡ 蓄力 ${pct}% · 松手爆发！`
+          raf = requestAnimationFrame(loop)
+        }
+        loop()
+      }, 140)
+    })
+
+    btn.addEventListener('pointerup', () => {
+      if (!downAt) return
+      const elapsed = performance.now() - downAt
+      downAt = 0
+      handled = true
+      const wasCharging = charging
+      charging = false
+      resetVisual()
+      const power = wasCharging ? Math.min(1, Math.max(0.2, (elapsed - 140) / 950)) : 0
+      onRelease(power)
+    })
+
+    const cancel = () => {
+      if (!downAt && !charging) return
+      downAt = 0
+      const wasCharging = charging
+      charging = false
+      resetVisual()
+      if (wasCharging) {
+        for (const stg of getStages()) stg.cancelButtonCharge()
+      }
+    }
+
+    btn.addEventListener('pointerleave', cancel)
+    btn.addEventListener('pointercancel', cancel)
+    btn.addEventListener('click', e => {
+      if (handled) {
+        handled = false
+        e.preventDefault()
+        return
+      }
+      onRelease(0)
+    })
+  }
+
+  bindButtonHoldCharge(document.getElementById('btn-roll-now'), {
+    mode: () => rollMode,
+    getStages: () => {
+      if (currentView === 'arena') return [heroStage]
+      if (currentView === 'tavern') { ensureTavernStages(); return [tavernCapsuleStage] }
+      ensureMatrixStages()
+      return matrixStages
+    },
+    onRelease: power => {
+      const spec = makeCurrentSpec()
+      if (currentView === 'arena') {
+        if (power > 0.1) heroStage.releaseButtonCharge(spec, power)
+        else heroStage.throwDice(spec)
+      } else if (currentView === 'tavern') {
+        ensureTavernStages()
+        if (power > 0.1) tavernCapsuleStage.releaseButtonCharge(spec, power)
+        else tavernCapsuleStage.throwDice(spec)
+        tavernBannerStage.throwDice(spec)
+      } else {
+        ensureMatrixStages()
+        for (const stg of matrixStages) {
+          stg.resize()
+          if (power > 0.1) stg.releaseButtonCharge(spec, power)
+          else stg.throwDice(spec)
+        }
+      }
+    }
   })
 
-  document.getElementById('btn-tv-push').addEventListener('click', () => {
-    ensureTavernStages()
-    rollMode = 'push'
-    selectTheme(2, false)
-    const outcome = Math.random() < 0.55 ? 'costly' : 'fumble'
-    const spec = buildRollSpec(activePreset, outcome, 'push')
-    lastRollSpec = spec
-    tavernCapsuleStage.throwDice(spec)
-    tavernBannerStage.throwDice(spec)
+  // 酒馆预览内嵌「✦ 逆命重投」与「🔥 孤注一掷」按钮长按蓄力实景交互
+  bindButtonHoldCharge(document.getElementById('btn-tv-fate'), {
+    mode: 'fate',
+    getStages: () => { ensureTavernStages(); return [tavernCapsuleStage] },
+    onRelease: power => {
+      ensureTavernStages()
+      fatePoints = fatePoints > 0 ? fatePoints - 1 : 3
+      rollMode = 'fate'
+      selectTheme(1, false)
+      const spec = buildRollSpec(activePreset, 'critical', 'fate')
+      lastRollSpec = spec
+      if (power > 0.1) tavernCapsuleStage.releaseButtonCharge(spec, power)
+      else tavernCapsuleStage.throwDice(spec)
+      tavernBannerStage.throwDice(spec)
+    }
+  })
+
+  bindButtonHoldCharge(document.getElementById('btn-tv-push'), {
+    mode: 'push',
+    getStages: () => { ensureTavernStages(); return [tavernCapsuleStage] },
+    onRelease: power => {
+      ensureTavernStages()
+      rollMode = 'push'
+      selectTheme(2, false)
+      const outcome = Math.random() < 0.55 ? 'costly' : 'fumble'
+      const spec = buildRollSpec(activePreset, outcome, 'push')
+      lastRollSpec = spec
+      if (power > 0.1) tavernCapsuleStage.releaseButtonCharge(spec, power)
+      else tavernCapsuleStage.throwDice(spec)
+      tavernBannerStage.throwDice(spec)
+    }
   })
 
   document.getElementById('btn-tv-theme').addEventListener('click', e => {

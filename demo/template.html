@@ -201,7 +201,24 @@
       transform: translateY(-1px) scale(1.015);
       box-shadow: 0 12px 32px rgba(245, 185, 66, 0.5);
     }
-    .cta-roll-btn:active { transform: translateY(1px) scale(0.99); }
+    .cta-roll-btn, .chip-btn {
+      position: relative;
+      overflow: hidden;
+      user-select: none;
+    }
+    .cta-roll-btn.is-charging, .chip-btn.is-charging {
+      box-shadow: 0 0 26px rgba(255, 214, 92, 0.68);
+      transform: scale(0.985);
+    }
+    .cta-roll-btn.is-charging::after, .chip-btn.is-charging::after {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: var(--charge-pct, 0%);
+      background: linear-gradient(90deg, rgba(255,255,255,0.12), rgba(255,255,255,0.45));
+      border-right: 2px solid #fff;
+      pointer-events: none;
+    }
 
     /* 主舞台布局：左侧 6 大次世代 HDR 主题 + 右侧超宽银幕 WebGL2 舞台 */
     .arena-layout {
@@ -642,7 +659,7 @@
         </div>
       </div>
 
-      <button type="button" id="btn-roll-now" class="cta-roll-btn">🎲 立即投掷 (Space)</button>
+      <button type="button" id="btn-roll-now" class="cta-roll-btn" title="轻点即投；按住按钮不放可激活 3D 引力旋涡蓄力，移出按钮取消">🎲 投掷 · 长按按钮蓄力</button>
     </section>
 
     <!-- 视图 1：主舞台沉浸工坊 -->
@@ -699,8 +716,8 @@
             <div class="tv-capsule-actions">
               <span style="opacity:0.78">⛓ 叙事阻尼器已联动：可直接按住上方胶囊舞台亲手蓄力重投！</span>
               <div style="display:flex;gap:6px">
-                <button type="button" id="btn-tv-fate" class="chip-btn">✦ 消耗 1 命运点 · 逆命重投</button>
-                <button type="button" id="btn-tv-push" class="chip-btn">🔥 零消耗 · 孤注一掷</button>
+                <button type="button" id="btn-tv-fate" class="chip-btn">✦ 逆命重投 (长按按钮蓄力)</button>
+                <button type="button" id="btn-tv-push" class="chip-btn">🔥 孤注一掷 (长按按钮蓄力)</button>
               </div>
             </div>
           </div>

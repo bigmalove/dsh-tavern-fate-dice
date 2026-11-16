@@ -1,11 +1,10 @@
 // ============================================================================
-// demo/gl-meshes.js — 高精度倒角多面体 WebGL2 网格库 + 4通道法线凹凸雕文图集生成器
-// 支持：D4 / D6(数字与圆点双模) / D8 / D10 / D100(00-90十位 + 0-9个位) / D12 / D20 / 4dF
-// 图集 RGBA 四通道编码：
-//   R = 锐利雕文蒙版 (Crisp Mask)
-//   G = 凹槽水平法线偏导 (dH/du -> 0..1) —— 实现真实金属/宝石刻槽边缘受光高光！
-//   B = 凹槽垂直法线偏导 (dH/dv -> 0..1)
-//   A = 柔和能量内发光距离场 (Soft Emissive Halo)
+// demo/gl-meshes.js — 高精度倒角多面体 WebGL2 网格库 + 高对比抗眩光雕文图集生成器
+// 图集 RGBA 四通道编码（2048x2048，专为极致数字可读性与 PBR 凹凸光影设计）：
+//   R = 锐利超粗字形核心蒙版 (Crisp Extra-Bold Mask)
+//   G = 暗槽描边衬底环 (High-Contrast Outline Moat) —— 彻底隔绝背景花纹干扰！
+//   B = 凹槽斜向受光凹凸偏导 (Directional Bevel Slope -> 0..1)
+//   A = 柔和外发光能量晕 (Soft Outer Halo)
 // ============================================================================
 
 function vSub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]] }
@@ -24,11 +23,9 @@ function vNorm(a) {
   return [a[0] / l, a[1] / l, a[2] / l]
 }
 
-// 图集布局：8x8 网格，每格 256x256 => 2048x2048
 export const ATLAS_GRID = 8
 export const TILE_PX = 256
 
-// 牌面符号到图集 Tile ID 的固定映射表
 export const GLYPH_TILE_MAP = Object.freeze({
   '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7,
   '8': 8, '9': 9, '10': 10, '11': 11, '12': 12, '13': 13, '14': 14, '15': 15,
@@ -39,16 +36,6 @@ export const GLYPH_TILE_MAP = Object.freeze({
   '?': 40
 })
 
-export function tileRect(tileId) {
-  const col = tileId % ATLAS_GRID
-  const row = Math.floor(tileId / ATLAS_GRID)
-  const step = 1 / ATLAS_GRID
-  return [col * step, row * step, step, step]
-}
-
-/**
- * 程序化烘焙 2048x2048 RGBA 四通道（蒙版 + 凹凸法线 XY + 能量光晕）雕文图集
- */
 export function buildEngravedAtlasCanvas() {
   const size = ATLAS_GRID * TILE_PX
   const maskCv = document.createElement('canvas')
@@ -56,12 +43,18 @@ export function buildEngravedAtlasCanvas() {
   maskCv.height = size
   const mctx = maskCv.getContext('2d', { willReadFrequently: true })
 
+  const moatCv = document.createElement('canvas')
+  moatCv.width = size
+  moatCv.height = size
+  const octx = moatCv.getContext('2d', { willReadFrequently: true })
+
   const haloCv = document.createElement('canvas')
   haloCv.width = size
   haloCv.height = size
   const hctx = haloCv.getContext('2d', { willReadFrequently: true })
 
   mctx.clearRect(0, 0, size, size)
+  octx.clearRect(0, 0, size, size)
   hctx.clearRect(0, 0, size, size)
 
   const entries = [
@@ -84,11 +77,14 @@ export function buildEngravedAtlasCanvas() {
     6: [[-0.42, -0.50], [0.42, -0.50], [-0.42, 0], [0.42, 0], [-0.42, 0.50], [0.42, 0.50]]
   }
 
-  function drawGlyphInto(ctx, isHalo) {
+  // mode: 'mask' | 'moat' | 'halo'
+  function drawGlyphPass(ctx, mode) {
     ctx.save()
+    const isMoat = mode === 'moat'
+    const isHalo = mode === 'halo'
     if (isHalo) {
       ctx.shadowColor = '#ffffff'
-      ctx.shadowBlur = 22
+      ctx.shadowBlur = 24
     }
     ctx.fillStyle = '#ffffff'
     ctx.strokeStyle = '#ffffff'
@@ -106,64 +102,69 @@ export function buildEngravedAtlasCanvas() {
 
       if (item.pip) {
         const pts = PIP_COORDS[item.pip]
-        const span = TILE_PX * 0.29
+        const span = TILE_PX * 0.30
+        const pad = isMoat ? 11 : 0
         for (const [px, py] of pts) {
           const x = px * span
           const y = py * span
           if (item.pip === 1) {
-            // 1点大主印：双环星芒纹章
             ctx.beginPath()
-            ctx.arc(x, y, TILE_PX * 0.125, 0, Math.PI * 2)
+            ctx.arc(x, y, TILE_PX * 0.145 + pad, 0, Math.PI * 2)
             ctx.fill()
-            ctx.lineWidth = 6
-            ctx.beginPath()
-            ctx.arc(x, y, TILE_PX * 0.175, 0, Math.PI * 2)
-            ctx.stroke()
           } else {
             ctx.beginPath()
-            ctx.arc(x, y, TILE_PX * 0.068, 0, Math.PI * 2)
+            ctx.arc(x, y, TILE_PX * 0.082 + pad, 0, Math.PI * 2)
             ctx.fill()
           }
         }
       } else if (item.fateBlank) {
-        ctx.lineWidth = 10
+        ctx.lineWidth = isMoat ? 32 : 14
         ctx.beginPath()
-        ctx.arc(0, 0, TILE_PX * 0.14, 0, Math.PI * 2)
+        ctx.arc(0, 0, TILE_PX * 0.16, 0, Math.PI * 2)
         ctx.stroke()
       } else if (item.eyeSeal) {
-        // 暗骰秘眼纹章
-        ctx.lineWidth = 9
+        ctx.lineWidth = isMoat ? 28 : 12
         ctx.beginPath()
-        ctx.moveTo(-64, 0)
-        ctx.quadraticCurveTo(0, -48, 64, 0)
-        ctx.quadraticCurveTo(0, 48, -64, 0)
+        ctx.moveTo(-72, 0)
+        ctx.quadraticCurveTo(0, -54, 72, 0)
+        ctx.quadraticCurveTo(0, 54, -72, 0)
         ctx.closePath()
         ctx.stroke()
         ctx.beginPath()
-        ctx.ellipse(0, 0, 12, 28, 0, 0, Math.PI * 2)
+        ctx.ellipse(0, 0, isMoat ? 24 : 15, isMoat ? 40 : 32, 0, 0, Math.PI * 2)
         ctx.fill()
       } else {
         const txt = item.text
-        const fontSize = txt.length >= 2 ? 96 : 114
-        ctx.font = `800 ${fontSize}px "Cinzel", "Georgia", "Times New Roman", "PingFang SC", serif`
+        const fontSize = txt.length >= 2 ? 124 : 152
+        // 采用高开口、超粗无衬线几何字形，小尺寸与倾斜视角下依然清晰锐利
+        ctx.font = `900 ${fontSize}px system-ui, -apple-system, "Segoe UI", "Arial Black", "PingFang SC", sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        ctx.fillText(txt, 0, item.crown ? 6 : 2)
+        const yOff = item.crown ? 8 : (item.underline ? -4 : 2)
+
+        if (isMoat) {
+          ctx.lineWidth = 26
+          ctx.strokeText(txt, 0, yOff)
+        } else {
+          ctx.lineWidth = 4
+          ctx.strokeText(txt, 0, yOff)
+        }
+        ctx.fillText(txt, 0, yOff)
 
         if (item.underline) {
+          const pad = isMoat ? 9 : 0
           ctx.beginPath()
-          ctx.roundRect(-28, 52, 56, 9, 4)
+          ctx.roundRect(-34 - pad, 62 - pad, 68 + pad * 2, 12 + pad * 2, 6)
           ctx.fill()
         }
         if (item.crown) {
-          // 20 点大成功皇冠星芒饰纹
-          ctx.lineWidth = 5.5
+          ctx.lineWidth = isMoat ? 20 : 8
           ctx.beginPath()
-          ctx.moveTo(-34, -52)
-          ctx.lineTo(-16, -64)
-          ctx.lineTo(0, -50)
-          ctx.lineTo(16, -64)
-          ctx.lineTo(34, -52)
+          ctx.moveTo(-38, -60)
+          ctx.lineTo(-18, -76)
+          ctx.lineTo(0, -60)
+          ctx.lineTo(18, -76)
+          ctx.lineTo(38, -60)
           ctx.stroke()
         }
       }
@@ -172,17 +173,16 @@ export function buildEngravedAtlasCanvas() {
     ctx.restore()
   }
 
-  drawGlyphInto(mctx, false)
-  // 叠加两遍柔光使距离场饱满平滑
-  drawGlyphInto(hctx, true)
-  drawGlyphInto(hctx, true)
+  drawGlyphPass(mctx, 'mask')
+  drawGlyphPass(octx, 'moat')
+  drawGlyphPass(hctx, 'halo')
 
   const maskData = mctx.getImageData(0, 0, size, size).data
+  const moatData = octx.getImageData(0, 0, size, size).data
   const haloData = hctx.getImageData(0, 0, size, size).data
   const outImg = mctx.createImageData(size, size)
   const dst = outImg.data
 
-  // 用蒙版与光晕混合高度场计算高精度凹凸偏导 (dH/du, dH/dv)
   const stride = size * 4
   for (let y = 0; y < size; y++) {
     const yPrev = Math.max(0, y - 2)
@@ -192,18 +192,18 @@ export function buildEngravedAtlasCanvas() {
       const xPrev = Math.max(0, x - 2)
       const xNext = Math.min(size - 1, x + 2)
 
-      const hL = maskData[y * stride + xPrev * 4 + 3] * 0.7 + haloData[y * stride + xPrev * 4 + 3] * 0.3
-      const hR = maskData[y * stride + xNext * 4 + 3] * 0.7 + haloData[y * stride + xNext * 4 + 3] * 0.3
-      const hU = maskData[yPrev * stride + x * 4 + 3] * 0.7 + haloData[yPrev * stride + x * 4 + 3] * 0.3
-      const hD = maskData[yNext * stride + x * 4 + 3] * 0.7 + haloData[yNext * stride + x * 4 + 3] * 0.3
+      const hL = maskData[y * stride + xPrev * 4 + 3]
+      const hR = maskData[y * stride + xNext * 4 + 3]
+      const hU = maskData[yPrev * stride + x * 4 + 3]
+      const hD = maskData[yNext * stride + x * 4 + 3]
 
-      const dx = (hR - hL) / 255
-      const dy = (hD - hU) / 255
+      // 左上受光凹槽斜率合成单通道法线高度偏导
+      const bevel = ((hR - hL) * 0.707 + (hD - hU) * 0.707) / 255
 
-      dst[idx] = maskData[idx + 3] // R: 锐利字形蒙版
-      dst[idx + 1] = Math.max(0, Math.min(255, Math.round((dx * 0.5 + 0.5) * 255))) // G: dH/du
-      dst[idx + 2] = Math.max(0, Math.min(255, Math.round((dy * 0.5 + 0.5) * 255))) // B: dH/dv
-      dst[idx + 3] = haloData[idx + 3] // A: 柔和发光晕
+      dst[idx] = maskData[idx + 3]     // R: 超清锐利字芯蒙版
+      dst[idx + 1] = moatData[idx + 3] // G: 外扩暗槽描边保护环
+      dst[idx + 2] = Math.max(0, Math.min(255, Math.round((bevel * 0.5 + 0.5) * 255))) // B: 刻槽立体凹凸受光
+      dst[idx + 3] = haloData[idx + 3] // A: 柔和能量外晕
     }
   }
 
@@ -211,14 +211,9 @@ export function buildEngravedAtlasCanvas() {
   return maskCv
 }
 
-/**
- * 将多面体编译为支持逐像素圆角倒角与凹凸贴图的交错顶点缓冲：
- * 每个顶点 19 个 float：
- *   pos(3) + faceNormal(3) + smoothNormal(3) + tangent(3) + bitangent(3) + localUV(2) + edgeDist(1) + faceIdx(1)
- */
 export const VERTEX_FLOATS = 19
 
-function buildBeveledPolyhedron(kind, rawVerts, rawFaces, labels, faceValues, uvScale = 1.42) {
+function buildBeveledPolyhedron(kind, rawVerts, rawFaces, labels, faceValues, uvScale = 1.18) {
   const normVerts = rawVerts.map(vNorm)
   const faces = []
   const triData = []
@@ -245,7 +240,6 @@ function buildBeveledPolyhedron(kind, rawVerts, rawFaces, labels, faceValues, uv
       n = vScale(n, -1)
     }
 
-    // 切空间正交基：使数字顶端朝向首个主顶点 pTop
     const pTop = normVerts[indices[0]]
     let up = vSub(pTop, center)
     up = vSub(up, vScale(n, vDot(up, n)))
@@ -253,10 +247,9 @@ function buildBeveledPolyhedron(kind, rawVerts, rawFaces, labels, faceValues, uv
       up = Math.abs(n[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0]
       up = vSub(up, vScale(n, vDot(up, n)))
     }
-    const vAxis = vScale(vNorm(up), -1) // 图像 +V 朝下 (-Up)
-    const uAxis = vNorm(vCross(n, vAxis)) // 右手系 (+U 朝右): (-vAxis) × n = n × vAxis
+    const vAxis = vScale(vNorm(up), -1)
+    const uAxis = vNorm(vCross(n, vAxis))
 
-    // 内切半径（中心到各边中点的最短距离）
     let inRadius = Infinity
     for (let i = 0; i < indices.length; i++) {
       const va = normVerts[indices[i]]
@@ -287,8 +280,6 @@ function buildBeveledPolyhedron(kind, rawVerts, rawFaces, labels, faceValues, uv
       pipTile
     })
 
-    // 以面中心为扇心拆分为三角形：中心 edgeDist = 1.0，外棱边两个顶点 edgeDist = 0.0！
-    // 在片元着色器中线性插值后的 edgeDist 即为精确的归一化距边距离！
     const pushVert = (pos, smoothN, edgeDist) => {
       const rel = vSub(pos, center)
       const lu = vDot(rel, uAxis) * invSpan * 0.5 + 0.5
@@ -380,7 +371,7 @@ function createTrapezohedron(kind, labels, values) {
   const faces = []
   for (let k = 0; k < 5; k++) faces.push([0, 2 + k, 7 + k, 2 + ((k + 1) % 5)])
   for (let k = 0; k < 5; k++) faces.push([1, 7 + ((k + 1) % 5), 2 + ((k + 1) % 5), 7 + k])
-  return buildBeveledPolyhedron(kind, verts, faces, labels, values, 1.48)
+  return buildBeveledPolyhedron(kind, verts, faces, labels, values, 1.16)
 }
 
 function createD12() {
@@ -408,7 +399,7 @@ function createD12() {
     d12Faces.push(inc)
   }
   const vals = assignOppositeNumbers(d12Faces, d12Verts, 12)
-  return buildBeveledPolyhedron('d12', d12Verts, d12Faces, vals, vals, 1.56)
+  return buildBeveledPolyhedron('d12', d12Verts, d12Faces, vals, vals, 1.22)
 }
 
 export const GL_MESHES = Object.freeze({
@@ -416,25 +407,25 @@ export const GL_MESHES = Object.freeze({
     'd4',
     [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]],
     [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],
-    [1, 2, 3, 4], [1, 2, 3, 4], 1.52
+    [1, 2, 3, 4], [1, 2, 3, 4], 1.18
   ),
   d6: buildBeveledPolyhedron(
     'd6',
     [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1], [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1]],
     [[3, 2, 1, 0], [6, 7, 4, 5], [2, 6, 5, 1], [7, 3, 0, 4], [7, 6, 2, 3], [0, 1, 5, 4]],
-    ['6', '1', '2', '5', '3', '4'], [6, 1, 2, 5, 3, 4], 1.56
+    ['6', '1', '2', '5', '3', '4'], [6, 1, 2, 5, 3, 4], 1.24
   ),
   df: buildBeveledPolyhedron(
     'df',
     [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1], [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1]],
     [[3, 2, 1, 0], [6, 7, 4, 5], [2, 6, 5, 1], [7, 3, 0, 4], [7, 6, 2, 3], [0, 1, 5, 4]],
-    ['+', '−', '+', '−', '◯', '◯'], [1, -1, 1, -1, 0, 0], 1.56
+    ['+', '−', '+', '−', '◯', '◯'], [1, -1, 1, -1, 0, 0], 1.24
   ),
   d8: buildBeveledPolyhedron(
     'd8',
     [[0, 0, 1], [0, 0, -1], [1, 0, 0], [0, 1, 0], [-1, 0, 0], [0, -1, 0]],
     [[0, 2, 3], [1, 4, 5], [0, 3, 4], [1, 5, 2], [0, 4, 5], [1, 2, 3], [0, 5, 2], [1, 3, 4]],
-    [8, 1, 2, 7, 6, 3, 4, 5], [8, 1, 2, 7, 6, 3, 4, 5], 1.52
+    [8, 1, 2, 7, 6, 3, 4, 5], [8, 1, 2, 7, 6, 3, 4, 5], 1.18
   ),
   d10: createTrapezohedron('d10', ['10', '2', '4', '6', '8', '1', '9', '7', '5', '3'], [10, 2, 4, 6, 8, 1, 9, 7, 5, 3]),
   d100_tens: createTrapezohedron('d100_tens', ['00', '20', '40', '60', '80', '10', '90', '70', '50', '30'], [0, 20, 40, 60, 80, 10, 90, 70, 50, 30]),
@@ -443,6 +434,6 @@ export const GL_MESHES = Object.freeze({
   d20: (() => {
     const ico = buildIcosahedronRaw()
     const vals = assignOppositeNumbers(ico.faces, ico.verts, 20)
-    return buildBeveledPolyhedron('d20', ico.verts, ico.faces, vals, vals, 1.48)
+    return buildBeveledPolyhedron('d20', ico.verts, ico.faces, vals, vals, 1.16)
   })()
 })

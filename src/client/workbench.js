@@ -30,12 +30,13 @@ function fdLocalRollExpression(expression) {
   }
 }
 
-/* 自由骰小工具：默认折叠，纯娱乐投掷，不写入剧情也不触发阻尼器 */
+/* 自由骰小工具：默认折叠，纯娱乐投掷，不写入剧情也不触发阻尼器（支持 3D 舞台与长按按钮聚能蓄力！） */
 function FreeRollCard(props) {
-  const { gameId, notify, ui } = props || {}
+  const { gameId, notify, ui, animation } = props || {}
   const [expr, setExpr] = useState('2d6')
   const [result, setResult] = useState(null)
   const [busy, setBusy] = useState(false)
+  const stageRef = useRef(null)
 
   const roll = value => {
     const expression = String(value || expr || '').trim()
@@ -53,14 +54,32 @@ function FreeRollCard(props) {
     }).finally(() => setBusy(false))
   }
 
+  const holdCharge = useFdHoldCharge({
+    mode: 'normal',
+    disabled: busy,
+    stageRef,
+    onTrigger: () => roll()
+  })
+
+  const idlePreview = useMemo(() => {
+    const m = /^(\d*)d(\d+)/i.exec(String(expr || '').trim())
+    const count = m ? fdClamp(m[1] === '' ? 1 : Number(m[1]), 1, 12) : 2
+    const sides = m ? fdClamp(Number(m[2]), 2, 100) : 6
+    const face = sides === 100 ? 100 : sides
+    const dice = Array.from({ length: count }, () => face)
+    return { expression: expr || '2d6', dice, sides, total: count * face, rolledAt: 0 }
+  }, [expr])
+
+  const previewRoll = result || idlePreview
+
   return h(FdCollapse, {
     title: '🎲 自由骰小工具',
-    sub: '默认折叠 · 纯娱乐投掷',
+    sub: '默认折叠 · 支持长按按钮聚能蓄力',
     right: h(FdHelp, {
       title: '自由骰小工具',
       text: [
         '支持 ndm 与加减修正量表达式，例如 2d6+1、1d20、3d10-2：前缀为骰子个数，d 后为面数，后面可跟 +N / -N。',
-        '投掷优先走宿主侧密码学真随机数；宿主接口不可用时退回本地 Math.random 模拟，并在结果里标注「本地模拟」以便区分。',
+        '点击「投掷」即刻出点；长按「投掷」按钮可激活 3D 引力聚能旋涡蓄力，松手爆发投出（蓄力途中移出按钮可无损取消）。',
         '这里只投骰与展示骰面，不写入剧情行动文本，也不会触发叙事阻尼器请求；结果仅留在本机界面。'
       ]
     })
@@ -77,7 +96,24 @@ function FreeRollCard(props) {
       mono: true,
       onChange: setExpr
     })),
-    h(FdBtn, { primary: true, disabled: busy, onClick: () => roll() }, busy ? '投掷中…' : '投掷')),
+    h('button', {
+      type: 'button',
+      className: 'fd-btn is-primary fd-hold-btn' + (holdCharge.charging ? ' is-charging' : ''),
+      disabled: busy,
+      title: '点击即投；长按按钮可激活 3D 旋涡蓄力，移出按钮取消',
+      ...holdCharge.bindProps
+    }, busy ? '投掷中…' : (holdCharge.charging ? `⚡ 蓄力 ${holdCharge.chargePct}%` : '🎲 投掷 (长按蓄力)'))),
+  previewRoll
+    ? h(Fd3DDiceStage, {
+      roll: previewRoll,
+      isFree: true,
+      revealed: true,
+      animation,
+      compact: true,
+      animateOnMount: Boolean(result),
+      stageRef
+    })
+    : null,
   result
     ? h('div', { className: 'fd-row' },
       h('div', { className: 'fd-row-main' },
@@ -90,7 +126,7 @@ function FreeRollCard(props) {
           label: face,
           tier: 'success'
         }))))
-    : h('div', { className: 'fd-hint' }, '仅输入骰子表达式，不涉及剧情行动文本'))
+    : h('div', { className: 'fd-hint' }, '仅输入骰子表达式，不涉及剧情行动文本 · 长按「投掷」按钮可体验 3D 蓄力甩投'))
 }
 
 /* 决策模型未就绪时的醒目引导横幅：常驻在「检定与能力」页首，可收起详情但保留横幅 */

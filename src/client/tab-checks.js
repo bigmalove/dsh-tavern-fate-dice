@@ -370,5 +370,5 @@ function ChecksTab(props) {
         : h('div', { className: 'fd-hint' }, '本局尚无检定记录，发送一轮行动后开始记录')),
 
     /* ---------------- 5. 自由骰小工具（默认折叠） ---------------- */
-    h(FreeRollCard, { ui, gameId, notify }))
+    h(FreeRollCard, { ui, gameId, notify, animation: settings.animation }))
 }

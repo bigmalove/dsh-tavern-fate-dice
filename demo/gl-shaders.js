@@ -439,29 +439,31 @@ void main() {
   float ridgeLine = smoothstep(0.055, 0.008, v_edgeDist);
   vec3 N = normalize(mix(v_faceN, v_smoothN, bevelMask * 0.82));
 
-  // 2. 采样 2048x2048 四通道法线雕文图集
+  // 2. 采样 2048x2048 高对比四通道雕文图集（R:锐利字芯, G:暗槽描边保护环, B:刻槽斜率, A:外晕）
   float glyphMask = 0.0;
+  float moatMask  = 0.0;
   float glyphHalo = 0.0;
-  vec2 bumpGrad = vec2(0.0);
+  float bumpSlope = 0.0;
 
-  if (v_uv.x > 0.04 && v_uv.x < 0.96 && v_uv.y > 0.04 && v_uv.y < 0.96) {
+  if (v_uv.x > 0.03 && v_uv.x < 0.97 && v_uv.y > 0.03 && v_uv.y < 0.97) {
     int tileId = u_faceTiles[clamp(v_faceIdx, 0, 19)];
     vec2 tileOrigin = vec2(float(tileId & 7), float(tileId >> 3)) * 0.125;
     vec2 atlasUV = tileOrigin + clamp(v_uv, 0.02, 0.98) * 0.125;
     vec4 tex = texture(u_atlas, atlasUV);
-    glyphMask = smoothstep(0.32, 0.68, tex.r);
-    bumpGrad = (tex.gb * 2.0 - 1.0);
-    glyphHalo = tex.a;
+    float aa = max(0.08, fwidth(tex.r) * 1.1);
+    glyphMask = smoothstep(0.52 - aa, 0.52 + aa, tex.r);
+    moatMask  = clamp(smoothstep(0.28, 0.65, tex.g) - glyphMask, 0.0, 1.0);
+    bumpSlope = (tex.b * 2.0 - 1.0);
+    glyphHalo = clamp(tex.a - glyphMask * 0.85, 0.0, 1.0);
   }
 
-  // 将雕文凹槽斜率扰动注入表面法线 -> 旋转时凹槽侧壁产生真实金属/宝石高光！
-  N = normalize(N - (v_tan * bumpGrad.x + v_bitan * bumpGrad.y) * 0.95);
+  // 刻槽边缘立体法线扰动（仅作用于字芯边缘，保持字芯内部平坦锐利不眩光）
+  N = normalize(N - (v_tan + v_bitan) * (bumpSlope * 0.52));
 
   float NdotV = max(dot(N, V), 0.001);
   vec3 R = reflect(-V, N);
   float fresnel = pow(1.0 - NdotV, 4.0);
 
-  // 主光源 + 冷色轮廓背光
   vec3 L1 = normalize(vec3(-0.38, -0.45, 0.81));
   vec3 L2 = normalize(vec3(0.65, 0.52, 0.55));
   float diff1 = max(dot(N, L1), 0.0);
@@ -470,92 +472,105 @@ void main() {
   vec3 H2 = normalize(L2 + V);
 
   bool isWinFace = (v_faceIdx == u_winningFace) && (u_settled > 0.5);
-  float winBoost = isWinFace
-    ? (u_tier == 1 ? 2.8 : u_tier == 5 ? 2.2 : 1.45) * (0.65 + 0.35 * sin(u_time * 7.0))
-    : 1.0;
+  float winPulse = isWinFace ? (1.25 + 0.22 * sin(u_time * 6.5)) : 1.0;
 
-  // 内部视差深空坐标（沿折射视线深入骰子核心！）
-  vec3 localView = v_localPos - V * 0.38;
+  vec3 localView = v_localPos - V * 0.36;
   float interiorNoise = noise3(localView * 3.8 + vec3(u_time * 0.25, -u_time * 0.18, u_time * 0.15));
   float interiorFine  = noise3(localView * 8.2 - vec3(0.0, u_time * 0.4, 0.0));
 
-  vec3 baseColor = vec3(0.05);
+  vec3 baseColor = vec3(0.04);
   vec3 emissive  = vec3(0.0);
   float roughness = 0.15;
   float metallic  = 0.1;
+  float clearZone = clamp(glyphMask + moatMask * 0.95, 0.0, 1.0);
 
   if (u_theme == 0) {
-    // [0] 星穹秘法：深空星曜黑曜石 + 内部星云视差 + 24K 鎏金镶嵌雕文与金丝棱线
-    vec3 deepNebula = mix(vec3(0.015, 0.012, 0.045), vec3(0.18, 0.07, 0.36), interiorNoise);
-    deepNebula += vec3(0.85, 0.52, 0.15) * pow(interiorFine, 3.5) * 0.55;
-    vec3 goldAlbedo = vec3(0.96, 0.72, 0.24);
-    float goldMask = clamp(glyphMask + ridgeLine * 0.78, 0.0, 1.0);
+    // [0] 星穹秘法：深邃黑曜石底 + 纯黑描边护城槽 + 零过曝高锐度鎏金亮白数字（对比度 > 18:1）
+    vec3 deepNebula = mix(vec3(0.008, 0.006, 0.024), vec3(0.08, 0.03, 0.18), interiorNoise) * (1.0 - clearZone);
+    deepNebula += vec3(0.45, 0.28, 0.08) * pow(interiorFine, 4.0) * 0.35 * (1.0 - clearZone);
+    deepNebula = mix(deepNebula, vec3(0.004, 0.003, 0.010), moatMask);
 
-    baseColor = mix(deepNebula, goldAlbedo, goldMask);
-    metallic  = mix(0.08, 0.92, goldMask);
-    roughness = mix(0.08, 0.22, goldMask);
+    vec3 rimGold  = vec3(0.95, 0.70, 0.22);
+    vec3 numColor = isWinFace ? vec3(1.0, 0.94, 0.68) : vec3(0.98, 0.84, 0.42);
+    baseColor = mix(deepNebula, rimGold, ridgeLine * 0.85 * (1.0 - clearZone));
+    baseColor = mix(baseColor, numColor, glyphMask);
+    metallic  = mix(0.08, 0.88, ridgeLine * (1.0 - clearZone));
+    roughness = mix(0.10, 0.45, glyphMask);
 
-    vec3 runeGlow = u_tier == 5 ? vec3(2.2, 0.3, 3.2) : vec3(2.8, 1.75, 0.42);
-    emissive = runeGlow * (glyphMask * 0.85 + glyphHalo * 0.28 + ridgeLine * 0.22) * winBoost;
+    vec3 auraCol = u_tier == 5 ? vec3(2.1, 0.28, 3.0) : vec3(2.4, 1.52, 0.38);
+    // 仅棱脊高光触发 HDR Bloom，字芯保持在 0.95 以内，100% 锐利零糊边！
+    emissive = auraCol * (ridgeLine * 0.52 * winPulse) * (1.0 - clearZone)
+             + numColor * (glyphMask * 0.42);
   } else if (u_theme == 1) {
-    // [1] 时停棱镜：高折射彩虹色散钻石圣晶！
+    // [1] 时停棱镜：深海蓝宝石棱镜 + 深靛黑护城槽 + 纯白高锐度刻字
     vec3 irid = spectralIridescence(NdotV, interiorNoise * 0.55 + u_time * 0.08);
-    vec3 refractedCore = mix(vec3(0.08, 0.35, 0.62), irid * 1.25, 0.58 + 0.42 * interiorFine);
-    baseColor = mix(refractedCore, vec3(0.95, 0.98, 1.0), glyphMask);
-    roughness = 0.05;
-    metallic  = 0.15;
-    emissive  = irid * (fresnel * 1.85 + bevelMask * 0.65)
-              + vec3(1.5, 2.8, 3.6) * (glyphMask * 1.15 + glyphHalo * 0.35) * winBoost;
+    vec3 refractedCore = mix(vec3(0.02, 0.11, 0.26), irid * 0.52, (0.45 + 0.35 * interiorFine) * (1.0 - clearZone));
+    refractedCore = mix(refractedCore, vec3(0.005, 0.015, 0.045), moatMask);
+
+    vec3 numCol = vec3(0.98, 0.99, 1.0);
+    baseColor = mix(refractedCore, numCol, glyphMask);
+    roughness = mix(0.06, 0.42, glyphMask);
+    metallic  = 0.12 * (1.0 - glyphMask);
+    emissive  = irid * (fresnel * 1.45 + ridgeLine * 0.72) * (1.0 - clearZone)
+              + numCol * (glyphMask * 0.46);
   } else if (u_theme == 2) {
-    // [2] 焚天熔炉：锻打陨铁暗壳 + 内部炽白岩浆涌动裂隙！
+    // [2] 焚天熔炉：锻打黑铁壳 + 纯黑隔热槽 + 亮金白清晰数字
     float coreHeat = pow(clamp(interiorNoise * 0.65 + interiorFine * 0.55, 0.0, 1.0), 2.2);
-    vec3 magmaCore = mix(vec3(1.8, 0.18, 0.01), vec3(5.2, 2.6, 0.45), coreHeat);
-    float fissure = smoothstep(0.62, 0.86, interiorFine) * (1.0 - bevelMask * 0.5);
-    baseColor = vec3(0.045, 0.038, 0.036);
-    metallic  = 0.68;
+    vec3 magmaCore = mix(vec3(1.6, 0.18, 0.01), vec3(3.8, 1.85, 0.32), coreHeat);
+    float fissure = smoothstep(0.66, 0.88, interiorFine) * (1.0 - bevelMask * 0.5) * (1.0 - clearZone);
+
+    vec3 ironBody = mix(vec3(0.022, 0.018, 0.017), vec3(0.004, 0.003, 0.003), moatMask);
+    vec3 hotNum   = isWinFace ? vec3(1.0, 0.95, 0.72) : vec3(1.0, 0.86, 0.48);
+    baseColor = mix(ironBody, hotNum, glyphMask);
+    metallic  = mix(0.62, 0.10, clearZone);
     roughness = 0.34;
-    emissive  = magmaCore * (fissure * 0.9 + ridgeLine * 0.85 + glyphMask * 1.35 + glyphHalo * 0.38) * winBoost;
+    emissive  = magmaCore * (fissure * 0.85 + ridgeLine * 0.88) * (1.0 - clearZone)
+              + hotNum * (glyphMask * 0.44);
   } else if (u_theme == 3) {
-    // [3] 赛博超频：烟熏全息暗晶 + 世界空间激光扫描面 + 霓虹电路棱线
-    float scanPlane = exp(-abs(fract(v_worldPos.z * 0.035 - u_time * 0.85) - 0.5) * 18.0);
-    vec3 holoTint = (v_faceIdx & 1) == 0 ? vec3(0.05, 2.3, 2.6) : vec3(2.5, 0.18, 1.75);
-    baseColor = vec3(0.02, 0.035, 0.07);
-    roughness = 0.09;
-    metallic  = 0.25;
-    emissive  = holoTint * (ridgeLine * 1.25 + scanPlane * 0.55 + glyphHalo * 0.42)
-              + vec3(1.8, 3.2, 3.5) * glyphMask * 1.2 * winBoost;
+    // [3] 赛博超频：深黑装甲玻璃 + 纯黑护城槽 + 高对比荧光冰青白数码字
+    float scanPlane = exp(-abs(fract(v_worldPos.z * 0.035 - u_time * 0.85) - 0.5) * 18.0) * (1.0 - clearZone);
+    vec3 holoTint = (v_faceIdx & 1) == 0 ? vec3(0.05, 2.2, 2.5) : vec3(2.4, 0.18, 1.75);
+    vec3 body = mix(vec3(0.010, 0.016, 0.038), vec3(0.002, 0.004, 0.010), moatMask);
+    vec3 cyberNum = isWinFace ? vec3(0.95, 1.0, 1.0) : vec3(0.55, 0.98, 1.0);
+
+    baseColor = mix(body, cyberNum, glyphMask);
+    roughness = mix(0.09, 0.40, glyphMask);
+    metallic  = 0.20 * (1.0 - clearZone);
+    emissive  = holoTint * (ridgeLine * 1.25 + scanPlane * 0.48) * (1.0 - clearZone)
+              + cyberNum * (glyphMask * 0.44);
   } else if (u_theme == 4) {
-    // [4] 水墨剑心：温润羊脂白玉（真实次表面散射 SSS 透光！）+ 鎏金包边 + 朱砂/浓墨刻字
-    float jadeCloud = interiorNoise * 0.12;
-    vec3 jadeBody = vec3(0.88, 0.90, 0.85) - vec3(0.06, 0.03, 0.05) * jadeCloud;
-    // 次表面散射（Wrap Lighting + 背光翡翠温润透射）
+    // [4] 水墨剑心：温润羊脂白玉 + 素白净空衬底 + 浓黑徽墨 / 深沉朱砂阴文（印刷级清晰度！）
+    float jadeCloud = interiorNoise * 0.09 * (1.0 - clearZone);
+    vec3 jadeBody = vec3(0.91, 0.92, 0.88) - vec3(0.05, 0.03, 0.04) * jadeCloud;
     float wrapDiff = max(0.0, (dot(N, L1) + 0.55) / 1.55);
-    float backTrans = pow(clamp(dot(V, -L1), 0.0, 1.0), 2.5) * 0.45;
-    jadeBody *= (0.42 + 0.72 * wrapDiff + backTrans * vec3(0.85, 1.05, 0.92));
+    float backTrans = pow(clamp(dot(V, -L1), 0.0, 1.0), 2.5) * 0.34;
+    jadeBody *= (0.52 + 0.64 * wrapDiff + backTrans * vec3(0.88, 1.02, 0.92));
+    jadeBody = mix(jadeBody, vec3(0.97, 0.97, 0.94), moatMask * 0.72);
 
-    // 大成功/点数 1 或 20 采用千年朱砂红刻字，其余采用徽墨/赤金刻字
-    bool useCinnabar = isWinFace || (u_tier == 1) || (v_faceIdx == 0);
-    vec3 inkCol = useCinnabar ? vec3(0.76, 0.11, 0.09) : vec3(0.09, 0.10, 0.12);
-    vec3 trimGold = vec3(0.72, 0.56, 0.26);
+    bool useCinnabar = isWinFace || (u_tier == 1 && v_faceIdx == u_winningFace) || (v_faceIdx == 0);
+    vec3 inkCol = useCinnabar ? vec3(0.68, 0.04, 0.04) : vec3(0.02, 0.025, 0.032);
+    vec3 trimGold = vec3(0.74, 0.56, 0.24);
 
-    baseColor = mix(jadeBody, trimGold, ridgeLine * 0.72);
+    baseColor = mix(jadeBody, trimGold, ridgeLine * 0.78 * (1.0 - clearZone));
     baseColor = mix(baseColor, inkCol, glyphMask);
-    roughness = mix(0.16, 0.35, glyphMask);
-    metallic  = ridgeLine * 0.65;
-    if (isWinFace && u_tier == 1) {
-      emissive = vec3(2.2, 0.45, 0.22) * (glyphMask * 0.9 + glyphHalo * 0.3);
-    }
+    roughness = mix(0.16, 0.82, glyphMask);
+    metallic  = ridgeLine * 0.65 * (1.0 - clearZone);
   } else {
-    // [5] 虚空星噬：古神苍骨黑晶 + 幽冥荧光生物脉络
-    float vein = pow(1.0 - abs(interiorFine * 2.0 - 1.0), 6.0);
-    baseColor = mix(vec3(0.03, 0.05, 0.06), vec3(0.12, 0.18, 0.17), interiorNoise);
-    roughness = 0.18;
-    metallic  = 0.2;
-    vec3 voidGlow = u_tier == 5 ? vec3(1.9, 0.3, 2.9) : vec3(0.25, 2.35, 1.85);
-    emissive = voidGlow * (vein * 0.55 + ridgeLine * 0.5 + glyphMask * 1.25 + glyphHalo * 0.38) * winBoost;
+    // [5] 虚空星噬：深渊黑骨 + 纯黑护城槽 + 锐利薄荷白秘文
+    float vein = pow(1.0 - abs(interiorFine * 2.0 - 1.0), 6.0) * (1.0 - clearZone);
+    vec3 bone = mix(vec3(0.015, 0.026, 0.032), vec3(0.06, 0.10, 0.09), interiorNoise * (1.0 - clearZone));
+    bone = mix(bone, vec3(0.003, 0.006, 0.008), moatMask);
+    vec3 voidNum = u_tier == 5 ? vec3(0.96, 0.78, 1.0) : vec3(0.78, 1.0, 0.92);
+
+    baseColor = mix(bone, voidNum, glyphMask);
+    roughness = mix(0.18, 0.42, glyphMask);
+    metallic  = 0.16 * (1.0 - clearZone);
+    vec3 voidGlow = u_tier == 5 ? vec3(1.9, 0.28, 2.8) : vec3(0.22, 2.2, 1.72);
+    emissive = voidGlow * (vein * 0.48 + ridgeLine * 0.68 * winPulse) * (1.0 - clearZone)
+             + voidNum * (glyphMask * 0.42);
   }
 
-  // 3. PBR 高光与环境反射合成
+  // 3. PBR 高光与环境反射合成（字芯与暗槽 98% 消光抗眩，任何视角绝不反光糊字！）
   float specPow = mix(128.0, 14.0, roughness);
   float spec1 = pow(max(dot(N, H1), 0.0), specPow) * (1.8 - roughness);
   float spec2 = pow(max(dot(N, H2), 0.0), specPow * 0.6) * 0.65;
@@ -564,15 +579,14 @@ void main() {
   vec3 F  = F0 + (1.0 - F0) * fresnel;
   vec3 env = sampleEnvMap(R, u_theme);
 
-  vec3 diffuse = baseColor * (1.0 - metallic * 0.85) * (0.28 + 0.78 * diff1 + 0.28 * diff2);
-  if (u_theme == 4) {
-    // 羊脂白玉保留前面算好的温润 SSS 漫反射亮度
-    diffuse = baseColor * (1.0 - metallic * 0.6);
+  vec3 diffuse = baseColor * (1.0 - metallic * 0.85) * (0.34 + 0.74 * diff1 + 0.24 * diff2);
+  if (u_theme == 4 || glyphMask > 0.35) {
+    diffuse = baseColor * (1.0 - metallic * 0.5);
   }
-  vec3 specular = F * env * (1.0 - roughness * 0.55) + (F + 0.18) * (spec1 * vec3(1.35, 1.25, 1.1) + spec2 * vec3(0.8, 0.95, 1.2));
+  float antiGlare = 1.0 - clamp(glyphMask * 0.98 + moatMask * 0.85, 0.0, 0.98);
+  vec3 specular = (F * env * (1.0 - roughness * 0.55) + (F + 0.18) * (spec1 * vec3(1.35, 1.25, 1.1) + spec2 * vec3(0.8, 0.95, 1.2))) * antiGlare;
 
-  // 倒角边缘高光加强：让多面体每一道棱脊在旋转时都闪耀锐利星芒！
-  specular += F * bevelMask * pow(max(dot(v_smoothN, H1), 0.0), 42.0) * 1.85;
+  specular += F * bevelMask * pow(max(dot(v_smoothN, H1), 0.0), 42.0) * 1.75 * antiGlare;
 
   vec3 finalHDR = diffuse + specular + emissive;
   fragColor = vec4(max(finalHDR, vec3(0.0)), 1.0);

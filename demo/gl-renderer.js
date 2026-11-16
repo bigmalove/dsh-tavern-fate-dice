@@ -641,7 +641,7 @@ export class WebGLDiceRenderer {
         gl.activeTexture(gl.TEXTURE0)
         gl.bindTexture(gl.TEXTURE_2D, srcTex)
         gl.uniform2f(bdu.u_texelSize, 1.0 / srcW, 1.0 / srcH)
-        gl.uniform1f(bdu.u_threshold, i === 0 ? (isShuimo ? 1.15 : 0.92) : -1.0)
+        gl.uniform1f(bdu.u_threshold, i === 0 ? (isShuimo ? 1.25 : 1.18) : -1.0)
         gl.drawArrays(gl.TRIANGLES, 0, 3)
         srcTex = dst.tex
         srcW = dst.w
@@ -689,7 +689,7 @@ export class WebGLDiceRenderer {
     gl.uniform4f(cu.u_shockwave, shockwave[0], shockwave[1], shockwave[2], shockwave[3])
     gl.uniform1f(cu.u_chroma, chroma)
     gl.uniform1f(cu.u_bulletTime, bulletTime)
-    gl.uniform1f(cu.u_bloomStrength, bloomEnabled ? (isShuimo ? 0.42 : 0.78) : 0.0)
+    gl.uniform1f(cu.u_bloomStrength, bloomEnabled ? (isShuimo ? 0.35 : 0.52) : 0.0)
     gl.uniform1f(cu.u_time, time)
 
     gl.bindVertexArray(this.emptyVAO)

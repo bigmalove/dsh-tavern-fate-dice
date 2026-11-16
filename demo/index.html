@@ -201,7 +201,24 @@
       transform: translateY(-1px) scale(1.015);
       box-shadow: 0 12px 32px rgba(245, 185, 66, 0.5);
     }
-    .cta-roll-btn:active { transform: translateY(1px) scale(0.99); }
+    .cta-roll-btn, .chip-btn {
+      position: relative;
+      overflow: hidden;
+      user-select: none;
+    }
+    .cta-roll-btn.is-charging, .chip-btn.is-charging {
+      box-shadow: 0 0 26px rgba(255, 214, 92, 0.68);
+      transform: scale(0.985);
+    }
+    .cta-roll-btn.is-charging::after, .chip-btn.is-charging::after {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: var(--charge-pct, 0%);
+      background: linear-gradient(90deg, rgba(255,255,255,0.12), rgba(255,255,255,0.45));
+      border-right: 2px solid #fff;
+      pointer-events: none;
+    }
 
     /* 主舞台布局：左侧 6 大次世代 HDR 主题 + 右侧超宽银幕 WebGL2 舞台 */
     .arena-layout {
@@ -642,7 +659,7 @@
         </div>
       </div>
 
-      <button type="button" id="btn-roll-now" class="cta-roll-btn">🎲 立即投掷 (Space)</button>
+      <button type="button" id="btn-roll-now" class="cta-roll-btn" title="轻点即投；按住按钮不放可激活 3D 引力旋涡蓄力，移出按钮取消">🎲 投掷 · 长按按钮蓄力</button>
     </section>
 
     <!-- 视图 1：主舞台沉浸工坊 -->
@@ -699,8 +716,8 @@
             <div class="tv-capsule-actions">
               <span style="opacity:0.78">⛓ 叙事阻尼器已联动：可直接按住上方胶囊舞台亲手蓄力重投！</span>
               <div style="display:flex;gap:6px">
-                <button type="button" id="btn-tv-fate" class="chip-btn">✦ 消耗 1 命运点 · 逆命重投</button>
-                <button type="button" id="btn-tv-push" class="chip-btn">🔥 零消耗 · 孤注一掷</button>
+                <button type="button" id="btn-tv-fate" class="chip-btn">✦ 逆命重投 (长按按钮蓄力)</button>
+                <button type="button" id="btn-tv-push" class="chip-btn">🔥 孤注一掷 (长按按钮蓄力)</button>
               </div>
             </div>
           </div>
@@ -740,13 +757,12 @@
 // --- 1. Beveled Polyhedra & 4-Channel Normal-Bump Engraved Atlas ---
 
 // ============================================================================
-// demo/gl-meshes.js — 高精度倒角多面体 WebGL2 网格库 + 4通道法线凹凸雕文图集生成器
-// 支持：D4 / D6(数字与圆点双模) / D8 / D10 / D100(00-90十位 + 0-9个位) / D12 / D20 / 4dF
-// 图集 RGBA 四通道编码：
-//   R = 锐利雕文蒙版 (Crisp Mask)
-//   G = 凹槽水平法线偏导 (dH/du -> 0..1) —— 实现真实金属/宝石刻槽边缘受光高光！
-//   B = 凹槽垂直法线偏导 (dH/dv -> 0..1)
-//   A = 柔和能量内发光距离场 (Soft Emissive Halo)
+// demo/gl-meshes.js — 高精度倒角多面体 WebGL2 网格库 + 高对比抗眩光雕文图集生成器
+// 图集 RGBA 四通道编码（2048x2048，专为极致数字可读性与 PBR 凹凸光影设计）：
+//   R = 锐利超粗字形核心蒙版 (Crisp Extra-Bold Mask)
+//   G = 暗槽描边衬底环 (High-Contrast Outline Moat) —— 彻底隔绝背景花纹干扰！
+//   B = 凹槽斜向受光凹凸偏导 (Directional Bevel Slope -> 0..1)
+//   A = 柔和外发光能量晕 (Soft Outer Halo)
 // ============================================================================
 
 function vSub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]] }
@@ -765,11 +781,9 @@ function vNorm(a) {
   return [a[0] / l, a[1] / l, a[2] / l]
 }
 
-// 图集布局：8x8 网格，每格 256x256 => 2048x2048
 const ATLAS_GRID = 8
 const TILE_PX = 256
 
-// 牌面符号到图集 Tile ID 的固定映射表
 const GLYPH_TILE_MAP = Object.freeze({
   '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7,
   '8': 8, '9': 9, '10': 10, '11': 11, '12': 12, '13': 13, '14': 14, '15': 15,
@@ -780,16 +794,6 @@ const GLYPH_TILE_MAP = Object.freeze({
   '?': 40
 })
 
-function tileRect(tileId) {
-  const col = tileId % ATLAS_GRID
-  const row = Math.floor(tileId / ATLAS_GRID)
-  const step = 1 / ATLAS_GRID
-  return [col * step, row * step, step, step]
-}
-
-/**
- * 程序化烘焙 2048x2048 RGBA 四通道（蒙版 + 凹凸法线 XY + 能量光晕）雕文图集
- */
 function buildEngravedAtlasCanvas() {
   const size = ATLAS_GRID * TILE_PX
   const maskCv = document.createElement('canvas')
@@ -797,12 +801,18 @@ function buildEngravedAtlasCanvas() {
   maskCv.height = size
   const mctx = maskCv.getContext('2d', { willReadFrequently: true })
 
+  const moatCv = document.createElement('canvas')
+  moatCv.width = size
+  moatCv.height = size
+  const octx = moatCv.getContext('2d', { willReadFrequently: true })
+
   const haloCv = document.createElement('canvas')
   haloCv.width = size
   haloCv.height = size
   const hctx = haloCv.getContext('2d', { willReadFrequently: true })
 
   mctx.clearRect(0, 0, size, size)
+  octx.clearRect(0, 0, size, size)
   hctx.clearRect(0, 0, size, size)
 
   const entries = [
@@ -825,11 +835,14 @@ function buildEngravedAtlasCanvas() {
     6: [[-0.42, -0.50], [0.42, -0.50], [-0.42, 0], [0.42, 0], [-0.42, 0.50], [0.42, 0.50]]
   }
 
-  function drawGlyphInto(ctx, isHalo) {
+  // mode: 'mask' | 'moat' | 'halo'
+  function drawGlyphPass(ctx, mode) {
     ctx.save()
+    const isMoat = mode === 'moat'
+    const isHalo = mode === 'halo'
     if (isHalo) {
       ctx.shadowColor = '#ffffff'
-      ctx.shadowBlur = 22
+      ctx.shadowBlur = 24
     }
     ctx.fillStyle = '#ffffff'
     ctx.strokeStyle = '#ffffff'
@@ -847,64 +860,69 @@ function buildEngravedAtlasCanvas() {
 
       if (item.pip) {
         const pts = PIP_COORDS[item.pip]
-        const span = TILE_PX * 0.29
+        const span = TILE_PX * 0.30
+        const pad = isMoat ? 11 : 0
         for (const [px, py] of pts) {
           const x = px * span
           const y = py * span
           if (item.pip === 1) {
-            // 1点大主印：双环星芒纹章
             ctx.beginPath()
-            ctx.arc(x, y, TILE_PX * 0.125, 0, Math.PI * 2)
+            ctx.arc(x, y, TILE_PX * 0.145 + pad, 0, Math.PI * 2)
             ctx.fill()
-            ctx.lineWidth = 6
-            ctx.beginPath()
-            ctx.arc(x, y, TILE_PX * 0.175, 0, Math.PI * 2)
-            ctx.stroke()
           } else {
             ctx.beginPath()
-            ctx.arc(x, y, TILE_PX * 0.068, 0, Math.PI * 2)
+            ctx.arc(x, y, TILE_PX * 0.082 + pad, 0, Math.PI * 2)
             ctx.fill()
           }
         }
       } else if (item.fateBlank) {
-        ctx.lineWidth = 10
+        ctx.lineWidth = isMoat ? 32 : 14
         ctx.beginPath()
-        ctx.arc(0, 0, TILE_PX * 0.14, 0, Math.PI * 2)
+        ctx.arc(0, 0, TILE_PX * 0.16, 0, Math.PI * 2)
         ctx.stroke()
       } else if (item.eyeSeal) {
-        // 暗骰秘眼纹章
-        ctx.lineWidth = 9
+        ctx.lineWidth = isMoat ? 28 : 12
         ctx.beginPath()
-        ctx.moveTo(-64, 0)
-        ctx.quadraticCurveTo(0, -48, 64, 0)
-        ctx.quadraticCurveTo(0, 48, -64, 0)
+        ctx.moveTo(-72, 0)
+        ctx.quadraticCurveTo(0, -54, 72, 0)
+        ctx.quadraticCurveTo(0, 54, -72, 0)
         ctx.closePath()
         ctx.stroke()
         ctx.beginPath()
-        ctx.ellipse(0, 0, 12, 28, 0, 0, Math.PI * 2)
+        ctx.ellipse(0, 0, isMoat ? 24 : 15, isMoat ? 40 : 32, 0, 0, Math.PI * 2)
         ctx.fill()
       } else {
         const txt = item.text
-        const fontSize = txt.length >= 2 ? 96 : 114
-        ctx.font = `800 ${fontSize}px "Cinzel", "Georgia", "Times New Roman", "PingFang SC", serif`
+        const fontSize = txt.length >= 2 ? 124 : 152
+        // 采用高开口、超粗无衬线几何字形，小尺寸与倾斜视角下依然清晰锐利
+        ctx.font = `900 ${fontSize}px system-ui, -apple-system, "Segoe UI", "Arial Black", "PingFang SC", sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        ctx.fillText(txt, 0, item.crown ? 6 : 2)
+        const yOff = item.crown ? 8 : (item.underline ? -4 : 2)
+
+        if (isMoat) {
+          ctx.lineWidth = 26
+          ctx.strokeText(txt, 0, yOff)
+        } else {
+          ctx.lineWidth = 4
+          ctx.strokeText(txt, 0, yOff)
+        }
+        ctx.fillText(txt, 0, yOff)
 
         if (item.underline) {
+          const pad = isMoat ? 9 : 0
           ctx.beginPath()
-          ctx.roundRect(-28, 52, 56, 9, 4)
+          ctx.roundRect(-34 - pad, 62 - pad, 68 + pad * 2, 12 + pad * 2, 6)
           ctx.fill()
         }
         if (item.crown) {
-          // 20 点大成功皇冠星芒饰纹
-          ctx.lineWidth = 5.5
+          ctx.lineWidth = isMoat ? 20 : 8
           ctx.beginPath()
-          ctx.moveTo(-34, -52)
-          ctx.lineTo(-16, -64)
-          ctx.lineTo(0, -50)
-          ctx.lineTo(16, -64)
-          ctx.lineTo(34, -52)
+          ctx.moveTo(-38, -60)
+          ctx.lineTo(-18, -76)
+          ctx.lineTo(0, -60)
+          ctx.lineTo(18, -76)
+          ctx.lineTo(38, -60)
           ctx.stroke()
         }
       }
@@ -913,17 +931,16 @@ function buildEngravedAtlasCanvas() {
     ctx.restore()
   }
 
-  drawGlyphInto(mctx, false)
-  // 叠加两遍柔光使距离场饱满平滑
-  drawGlyphInto(hctx, true)
-  drawGlyphInto(hctx, true)
+  drawGlyphPass(mctx, 'mask')
+  drawGlyphPass(octx, 'moat')
+  drawGlyphPass(hctx, 'halo')
 
   const maskData = mctx.getImageData(0, 0, size, size).data
+  const moatData = octx.getImageData(0, 0, size, size).data
   const haloData = hctx.getImageData(0, 0, size, size).data
   const outImg = mctx.createImageData(size, size)
   const dst = outImg.data
 
-  // 用蒙版与光晕混合高度场计算高精度凹凸偏导 (dH/du, dH/dv)
   const stride = size * 4
   for (let y = 0; y < size; y++) {
     const yPrev = Math.max(0, y - 2)
@@ -933,18 +950,18 @@ function buildEngravedAtlasCanvas() {
       const xPrev = Math.max(0, x - 2)
       const xNext = Math.min(size - 1, x + 2)
 
-      const hL = maskData[y * stride + xPrev * 4 + 3] * 0.7 + haloData[y * stride + xPrev * 4 + 3] * 0.3
-      const hR = maskData[y * stride + xNext * 4 + 3] * 0.7 + haloData[y * stride + xNext * 4 + 3] * 0.3
-      const hU = maskData[yPrev * stride + x * 4 + 3] * 0.7 + haloData[yPrev * stride + x * 4 + 3] * 0.3
-      const hD = maskData[yNext * stride + x * 4 + 3] * 0.7 + haloData[yNext * stride + x * 4 + 3] * 0.3
+      const hL = maskData[y * stride + xPrev * 4 + 3]
+      const hR = maskData[y * stride + xNext * 4 + 3]
+      const hU = maskData[yPrev * stride + x * 4 + 3]
+      const hD = maskData[yNext * stride + x * 4 + 3]
 
-      const dx = (hR - hL) / 255
-      const dy = (hD - hU) / 255
+      // 左上受光凹槽斜率合成单通道法线高度偏导
+      const bevel = ((hR - hL) * 0.707 + (hD - hU) * 0.707) / 255
 
-      dst[idx] = maskData[idx + 3] // R: 锐利字形蒙版
-      dst[idx + 1] = Math.max(0, Math.min(255, Math.round((dx * 0.5 + 0.5) * 255))) // G: dH/du
-      dst[idx + 2] = Math.max(0, Math.min(255, Math.round((dy * 0.5 + 0.5) * 255))) // B: dH/dv
-      dst[idx + 3] = haloData[idx + 3] // A: 柔和发光晕
+      dst[idx] = maskData[idx + 3]     // R: 超清锐利字芯蒙版
+      dst[idx + 1] = moatData[idx + 3] // G: 外扩暗槽描边保护环
+      dst[idx + 2] = Math.max(0, Math.min(255, Math.round((bevel * 0.5 + 0.5) * 255))) // B: 刻槽立体凹凸受光
+      dst[idx + 3] = haloData[idx + 3] // A: 柔和能量外晕
     }
   }
 
@@ -952,14 +969,9 @@ function buildEngravedAtlasCanvas() {
   return maskCv
 }
 
-/**
- * 将多面体编译为支持逐像素圆角倒角与凹凸贴图的交错顶点缓冲：
- * 每个顶点 19 个 float：
- *   pos(3) + faceNormal(3) + smoothNormal(3) + tangent(3) + bitangent(3) + localUV(2) + edgeDist(1) + faceIdx(1)
- */
 const VERTEX_FLOATS = 19
 
-function buildBeveledPolyhedron(kind, rawVerts, rawFaces, labels, faceValues, uvScale = 1.42) {
+function buildBeveledPolyhedron(kind, rawVerts, rawFaces, labels, faceValues, uvScale = 1.18) {
   const normVerts = rawVerts.map(vNorm)
   const faces = []
   const triData = []
@@ -986,7 +998,6 @@ function buildBeveledPolyhedron(kind, rawVerts, rawFaces, labels, faceValues, uv
       n = vScale(n, -1)
     }
 
-    // 切空间正交基：使数字顶端朝向首个主顶点 pTop
     const pTop = normVerts[indices[0]]
     let up = vSub(pTop, center)
     up = vSub(up, vScale(n, vDot(up, n)))
@@ -994,10 +1005,9 @@ function buildBeveledPolyhedron(kind, rawVerts, rawFaces, labels, faceValues, uv
       up = Math.abs(n[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0]
       up = vSub(up, vScale(n, vDot(up, n)))
     }
-    const vAxis = vScale(vNorm(up), -1) // 图像 +V 朝下 (-Up)
-    const uAxis = vNorm(vCross(n, vAxis)) // 右手系 (+U 朝右): (-vAxis) × n = n × vAxis
+    const vAxis = vScale(vNorm(up), -1)
+    const uAxis = vNorm(vCross(n, vAxis))
 
-    // 内切半径（中心到各边中点的最短距离）
     let inRadius = Infinity
     for (let i = 0; i < indices.length; i++) {
       const va = normVerts[indices[i]]
@@ -1028,8 +1038,6 @@ function buildBeveledPolyhedron(kind, rawVerts, rawFaces, labels, faceValues, uv
       pipTile
     })
 
-    // 以面中心为扇心拆分为三角形：中心 edgeDist = 1.0，外棱边两个顶点 edgeDist = 0.0！
-    // 在片元着色器中线性插值后的 edgeDist 即为精确的归一化距边距离！
     const pushVert = (pos, smoothN, edgeDist) => {
       const rel = vSub(pos, center)
       const lu = vDot(rel, uAxis) * invSpan * 0.5 + 0.5
@@ -1121,7 +1129,7 @@ function createTrapezohedron(kind, labels, values) {
   const faces = []
   for (let k = 0; k < 5; k++) faces.push([0, 2 + k, 7 + k, 2 + ((k + 1) % 5)])
   for (let k = 0; k < 5; k++) faces.push([1, 7 + ((k + 1) % 5), 2 + ((k + 1) % 5), 7 + k])
-  return buildBeveledPolyhedron(kind, verts, faces, labels, values, 1.48)
+  return buildBeveledPolyhedron(kind, verts, faces, labels, values, 1.16)
 }
 
 function createD12() {
@@ -1149,7 +1157,7 @@ function createD12() {
     d12Faces.push(inc)
   }
   const vals = assignOppositeNumbers(d12Faces, d12Verts, 12)
-  return buildBeveledPolyhedron('d12', d12Verts, d12Faces, vals, vals, 1.56)
+  return buildBeveledPolyhedron('d12', d12Verts, d12Faces, vals, vals, 1.22)
 }
 
 const GL_MESHES = Object.freeze({
@@ -1157,25 +1165,25 @@ const GL_MESHES = Object.freeze({
     'd4',
     [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]],
     [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],
-    [1, 2, 3, 4], [1, 2, 3, 4], 1.52
+    [1, 2, 3, 4], [1, 2, 3, 4], 1.18
   ),
   d6: buildBeveledPolyhedron(
     'd6',
     [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1], [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1]],
     [[3, 2, 1, 0], [6, 7, 4, 5], [2, 6, 5, 1], [7, 3, 0, 4], [7, 6, 2, 3], [0, 1, 5, 4]],
-    ['6', '1', '2', '5', '3', '4'], [6, 1, 2, 5, 3, 4], 1.56
+    ['6', '1', '2', '5', '3', '4'], [6, 1, 2, 5, 3, 4], 1.24
   ),
   df: buildBeveledPolyhedron(
     'df',
     [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1], [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1]],
     [[3, 2, 1, 0], [6, 7, 4, 5], [2, 6, 5, 1], [7, 3, 0, 4], [7, 6, 2, 3], [0, 1, 5, 4]],
-    ['+', '−', '+', '−', '◯', '◯'], [1, -1, 1, -1, 0, 0], 1.56
+    ['+', '−', '+', '−', '◯', '◯'], [1, -1, 1, -1, 0, 0], 1.24
   ),
   d8: buildBeveledPolyhedron(
     'd8',
     [[0, 0, 1], [0, 0, -1], [1, 0, 0], [0, 1, 0], [-1, 0, 0], [0, -1, 0]],
     [[0, 2, 3], [1, 4, 5], [0, 3, 4], [1, 5, 2], [0, 4, 5], [1, 2, 3], [0, 5, 2], [1, 3, 4]],
-    [8, 1, 2, 7, 6, 3, 4, 5], [8, 1, 2, 7, 6, 3, 4, 5], 1.52
+    [8, 1, 2, 7, 6, 3, 4, 5], [8, 1, 2, 7, 6, 3, 4, 5], 1.18
   ),
   d10: createTrapezohedron('d10', ['10', '2', '4', '6', '8', '1', '9', '7', '5', '3'], [10, 2, 4, 6, 8, 1, 9, 7, 5, 3]),
   d100_tens: createTrapezohedron('d100_tens', ['00', '20', '40', '60', '80', '10', '90', '70', '50', '30'], [0, 20, 40, 60, 80, 10, 90, 70, 50, 30]),
@@ -1184,7 +1192,7 @@ const GL_MESHES = Object.freeze({
   d20: (() => {
     const ico = buildIcosahedronRaw()
     const vals = assignOppositeNumbers(ico.faces, ico.verts, 20)
-    return buildBeveledPolyhedron('d20', ico.verts, ico.faces, vals, vals, 1.48)
+    return buildBeveledPolyhedron('d20', ico.verts, ico.faces, vals, vals, 1.16)
   })()
 })
 
@@ -1632,29 +1640,31 @@ void main() {
   float ridgeLine = smoothstep(0.055, 0.008, v_edgeDist);
   vec3 N = normalize(mix(v_faceN, v_smoothN, bevelMask * 0.82));
 
-  // 2. 采样 2048x2048 四通道法线雕文图集
+  // 2. 采样 2048x2048 高对比四通道雕文图集（R:锐利字芯, G:暗槽描边保护环, B:刻槽斜率, A:外晕）
   float glyphMask = 0.0;
+  float moatMask  = 0.0;
   float glyphHalo = 0.0;
-  vec2 bumpGrad = vec2(0.0);
+  float bumpSlope = 0.0;
 
-  if (v_uv.x > 0.04 && v_uv.x < 0.96 && v_uv.y > 0.04 && v_uv.y < 0.96) {
+  if (v_uv.x > 0.03 && v_uv.x < 0.97 && v_uv.y > 0.03 && v_uv.y < 0.97) {
     int tileId = u_faceTiles[clamp(v_faceIdx, 0, 19)];
     vec2 tileOrigin = vec2(float(tileId & 7), float(tileId >> 3)) * 0.125;
     vec2 atlasUV = tileOrigin + clamp(v_uv, 0.02, 0.98) * 0.125;
     vec4 tex = texture(u_atlas, atlasUV);
-    glyphMask = smoothstep(0.32, 0.68, tex.r);
-    bumpGrad = (tex.gb * 2.0 - 1.0);
-    glyphHalo = tex.a;
+    float aa = max(0.08, fwidth(tex.r) * 1.1);
+    glyphMask = smoothstep(0.52 - aa, 0.52 + aa, tex.r);
+    moatMask  = clamp(smoothstep(0.28, 0.65, tex.g) - glyphMask, 0.0, 1.0);
+    bumpSlope = (tex.b * 2.0 - 1.0);
+    glyphHalo = clamp(tex.a - glyphMask * 0.85, 0.0, 1.0);
   }
 
-  // 将雕文凹槽斜率扰动注入表面法线 -> 旋转时凹槽侧壁产生真实金属/宝石高光！
-  N = normalize(N - (v_tan * bumpGrad.x + v_bitan * bumpGrad.y) * 0.95);
+  // 刻槽边缘立体法线扰动（仅作用于字芯边缘，保持字芯内部平坦锐利不眩光）
+  N = normalize(N - (v_tan + v_bitan) * (bumpSlope * 0.52));
 
   float NdotV = max(dot(N, V), 0.001);
   vec3 R = reflect(-V, N);
   float fresnel = pow(1.0 - NdotV, 4.0);
 
-  // 主光源 + 冷色轮廓背光
   vec3 L1 = normalize(vec3(-0.38, -0.45, 0.81));
   vec3 L2 = normalize(vec3(0.65, 0.52, 0.55));
   float diff1 = max(dot(N, L1), 0.0);
@@ -1663,92 +1673,105 @@ void main() {
   vec3 H2 = normalize(L2 + V);
 
   bool isWinFace = (v_faceIdx == u_winningFace) && (u_settled > 0.5);
-  float winBoost = isWinFace
-    ? (u_tier == 1 ? 2.8 : u_tier == 5 ? 2.2 : 1.45) * (0.65 + 0.35 * sin(u_time * 7.0))
-    : 1.0;
+  float winPulse = isWinFace ? (1.25 + 0.22 * sin(u_time * 6.5)) : 1.0;
 
-  // 内部视差深空坐标（沿折射视线深入骰子核心！）
-  vec3 localView = v_localPos - V * 0.38;
+  vec3 localView = v_localPos - V * 0.36;
   float interiorNoise = noise3(localView * 3.8 + vec3(u_time * 0.25, -u_time * 0.18, u_time * 0.15));
   float interiorFine  = noise3(localView * 8.2 - vec3(0.0, u_time * 0.4, 0.0));
 
-  vec3 baseColor = vec3(0.05);
+  vec3 baseColor = vec3(0.04);
   vec3 emissive  = vec3(0.0);
   float roughness = 0.15;
   float metallic  = 0.1;
+  float clearZone = clamp(glyphMask + moatMask * 0.95, 0.0, 1.0);
 
   if (u_theme == 0) {
-    // [0] 星穹秘法：深空星曜黑曜石 + 内部星云视差 + 24K 鎏金镶嵌雕文与金丝棱线
-    vec3 deepNebula = mix(vec3(0.015, 0.012, 0.045), vec3(0.18, 0.07, 0.36), interiorNoise);
-    deepNebula += vec3(0.85, 0.52, 0.15) * pow(interiorFine, 3.5) * 0.55;
-    vec3 goldAlbedo = vec3(0.96, 0.72, 0.24);
-    float goldMask = clamp(glyphMask + ridgeLine * 0.78, 0.0, 1.0);
+    // [0] 星穹秘法：深邃黑曜石底 + 纯黑描边护城槽 + 零过曝高锐度鎏金亮白数字（对比度 > 18:1）
+    vec3 deepNebula = mix(vec3(0.008, 0.006, 0.024), vec3(0.08, 0.03, 0.18), interiorNoise) * (1.0 - clearZone);
+    deepNebula += vec3(0.45, 0.28, 0.08) * pow(interiorFine, 4.0) * 0.35 * (1.0 - clearZone);
+    deepNebula = mix(deepNebula, vec3(0.004, 0.003, 0.010), moatMask);
 
-    baseColor = mix(deepNebula, goldAlbedo, goldMask);
-    metallic  = mix(0.08, 0.92, goldMask);
-    roughness = mix(0.08, 0.22, goldMask);
+    vec3 rimGold  = vec3(0.95, 0.70, 0.22);
+    vec3 numColor = isWinFace ? vec3(1.0, 0.94, 0.68) : vec3(0.98, 0.84, 0.42);
+    baseColor = mix(deepNebula, rimGold, ridgeLine * 0.85 * (1.0 - clearZone));
+    baseColor = mix(baseColor, numColor, glyphMask);
+    metallic  = mix(0.08, 0.88, ridgeLine * (1.0 - clearZone));
+    roughness = mix(0.10, 0.45, glyphMask);
 
-    vec3 runeGlow = u_tier == 5 ? vec3(2.2, 0.3, 3.2) : vec3(2.8, 1.75, 0.42);
-    emissive = runeGlow * (glyphMask * 0.85 + glyphHalo * 0.28 + ridgeLine * 0.22) * winBoost;
+    vec3 auraCol = u_tier == 5 ? vec3(2.1, 0.28, 3.0) : vec3(2.4, 1.52, 0.38);
+    // 仅棱脊高光触发 HDR Bloom，字芯保持在 0.95 以内，100% 锐利零糊边！
+    emissive = auraCol * (ridgeLine * 0.52 * winPulse) * (1.0 - clearZone)
+             + numColor * (glyphMask * 0.42);
   } else if (u_theme == 1) {
-    // [1] 时停棱镜：高折射彩虹色散钻石圣晶！
+    // [1] 时停棱镜：深海蓝宝石棱镜 + 深靛黑护城槽 + 纯白高锐度刻字
     vec3 irid = spectralIridescence(NdotV, interiorNoise * 0.55 + u_time * 0.08);
-    vec3 refractedCore = mix(vec3(0.08, 0.35, 0.62), irid * 1.25, 0.58 + 0.42 * interiorFine);
-    baseColor = mix(refractedCore, vec3(0.95, 0.98, 1.0), glyphMask);
-    roughness = 0.05;
-    metallic  = 0.15;
-    emissive  = irid * (fresnel * 1.85 + bevelMask * 0.65)
-              + vec3(1.5, 2.8, 3.6) * (glyphMask * 1.15 + glyphHalo * 0.35) * winBoost;
+    vec3 refractedCore = mix(vec3(0.02, 0.11, 0.26), irid * 0.52, (0.45 + 0.35 * interiorFine) * (1.0 - clearZone));
+    refractedCore = mix(refractedCore, vec3(0.005, 0.015, 0.045), moatMask);
+
+    vec3 numCol = vec3(0.98, 0.99, 1.0);
+    baseColor = mix(refractedCore, numCol, glyphMask);
+    roughness = mix(0.06, 0.42, glyphMask);
+    metallic  = 0.12 * (1.0 - glyphMask);
+    emissive  = irid * (fresnel * 1.45 + ridgeLine * 0.72) * (1.0 - clearZone)
+              + numCol * (glyphMask * 0.46);
   } else if (u_theme == 2) {
-    // [2] 焚天熔炉：锻打陨铁暗壳 + 内部炽白岩浆涌动裂隙！
+    // [2] 焚天熔炉：锻打黑铁壳 + 纯黑隔热槽 + 亮金白清晰数字
     float coreHeat = pow(clamp(interiorNoise * 0.65 + interiorFine * 0.55, 0.0, 1.0), 2.2);
-    vec3 magmaCore = mix(vec3(1.8, 0.18, 0.01), vec3(5.2, 2.6, 0.45), coreHeat);
-    float fissure = smoothstep(0.62, 0.86, interiorFine) * (1.0 - bevelMask * 0.5);
-    baseColor = vec3(0.045, 0.038, 0.036);
-    metallic  = 0.68;
+    vec3 magmaCore = mix(vec3(1.6, 0.18, 0.01), vec3(3.8, 1.85, 0.32), coreHeat);
+    float fissure = smoothstep(0.66, 0.88, interiorFine) * (1.0 - bevelMask * 0.5) * (1.0 - clearZone);
+
+    vec3 ironBody = mix(vec3(0.022, 0.018, 0.017), vec3(0.004, 0.003, 0.003), moatMask);
+    vec3 hotNum   = isWinFace ? vec3(1.0, 0.95, 0.72) : vec3(1.0, 0.86, 0.48);
+    baseColor = mix(ironBody, hotNum, glyphMask);
+    metallic  = mix(0.62, 0.10, clearZone);
     roughness = 0.34;
-    emissive  = magmaCore * (fissure * 0.9 + ridgeLine * 0.85 + glyphMask * 1.35 + glyphHalo * 0.38) * winBoost;
+    emissive  = magmaCore * (fissure * 0.85 + ridgeLine * 0.88) * (1.0 - clearZone)
+              + hotNum * (glyphMask * 0.44);
   } else if (u_theme == 3) {
-    // [3] 赛博超频：烟熏全息暗晶 + 世界空间激光扫描面 + 霓虹电路棱线
-    float scanPlane = exp(-abs(fract(v_worldPos.z * 0.035 - u_time * 0.85) - 0.5) * 18.0);
-    vec3 holoTint = (v_faceIdx & 1) == 0 ? vec3(0.05, 2.3, 2.6) : vec3(2.5, 0.18, 1.75);
-    baseColor = vec3(0.02, 0.035, 0.07);
-    roughness = 0.09;
-    metallic  = 0.25;
-    emissive  = holoTint * (ridgeLine * 1.25 + scanPlane * 0.55 + glyphHalo * 0.42)
-              + vec3(1.8, 3.2, 3.5) * glyphMask * 1.2 * winBoost;
+    // [3] 赛博超频：深黑装甲玻璃 + 纯黑护城槽 + 高对比荧光冰青白数码字
+    float scanPlane = exp(-abs(fract(v_worldPos.z * 0.035 - u_time * 0.85) - 0.5) * 18.0) * (1.0 - clearZone);
+    vec3 holoTint = (v_faceIdx & 1) == 0 ? vec3(0.05, 2.2, 2.5) : vec3(2.4, 0.18, 1.75);
+    vec3 body = mix(vec3(0.010, 0.016, 0.038), vec3(0.002, 0.004, 0.010), moatMask);
+    vec3 cyberNum = isWinFace ? vec3(0.95, 1.0, 1.0) : vec3(0.55, 0.98, 1.0);
+
+    baseColor = mix(body, cyberNum, glyphMask);
+    roughness = mix(0.09, 0.40, glyphMask);
+    metallic  = 0.20 * (1.0 - clearZone);
+    emissive  = holoTint * (ridgeLine * 1.25 + scanPlane * 0.48) * (1.0 - clearZone)
+              + cyberNum * (glyphMask * 0.44);
   } else if (u_theme == 4) {
-    // [4] 水墨剑心：温润羊脂白玉（真实次表面散射 SSS 透光！）+ 鎏金包边 + 朱砂/浓墨刻字
-    float jadeCloud = interiorNoise * 0.12;
-    vec3 jadeBody = vec3(0.88, 0.90, 0.85) - vec3(0.06, 0.03, 0.05) * jadeCloud;
-    // 次表面散射（Wrap Lighting + 背光翡翠温润透射）
+    // [4] 水墨剑心：温润羊脂白玉 + 素白净空衬底 + 浓黑徽墨 / 深沉朱砂阴文（印刷级清晰度！）
+    float jadeCloud = interiorNoise * 0.09 * (1.0 - clearZone);
+    vec3 jadeBody = vec3(0.91, 0.92, 0.88) - vec3(0.05, 0.03, 0.04) * jadeCloud;
     float wrapDiff = max(0.0, (dot(N, L1) + 0.55) / 1.55);
-    float backTrans = pow(clamp(dot(V, -L1), 0.0, 1.0), 2.5) * 0.45;
-    jadeBody *= (0.42 + 0.72 * wrapDiff + backTrans * vec3(0.85, 1.05, 0.92));
+    float backTrans = pow(clamp(dot(V, -L1), 0.0, 1.0), 2.5) * 0.34;
+    jadeBody *= (0.52 + 0.64 * wrapDiff + backTrans * vec3(0.88, 1.02, 0.92));
+    jadeBody = mix(jadeBody, vec3(0.97, 0.97, 0.94), moatMask * 0.72);
 
-    // 大成功/点数 1 或 20 采用千年朱砂红刻字，其余采用徽墨/赤金刻字
-    bool useCinnabar = isWinFace || (u_tier == 1) || (v_faceIdx == 0);
-    vec3 inkCol = useCinnabar ? vec3(0.76, 0.11, 0.09) : vec3(0.09, 0.10, 0.12);
-    vec3 trimGold = vec3(0.72, 0.56, 0.26);
+    bool useCinnabar = isWinFace || (u_tier == 1 && v_faceIdx == u_winningFace) || (v_faceIdx == 0);
+    vec3 inkCol = useCinnabar ? vec3(0.68, 0.04, 0.04) : vec3(0.02, 0.025, 0.032);
+    vec3 trimGold = vec3(0.74, 0.56, 0.24);
 
-    baseColor = mix(jadeBody, trimGold, ridgeLine * 0.72);
+    baseColor = mix(jadeBody, trimGold, ridgeLine * 0.78 * (1.0 - clearZone));
     baseColor = mix(baseColor, inkCol, glyphMask);
-    roughness = mix(0.16, 0.35, glyphMask);
-    metallic  = ridgeLine * 0.65;
-    if (isWinFace && u_tier == 1) {
-      emissive = vec3(2.2, 0.45, 0.22) * (glyphMask * 0.9 + glyphHalo * 0.3);
-    }
+    roughness = mix(0.16, 0.82, glyphMask);
+    metallic  = ridgeLine * 0.65 * (1.0 - clearZone);
   } else {
-    // [5] 虚空星噬：古神苍骨黑晶 + 幽冥荧光生物脉络
-    float vein = pow(1.0 - abs(interiorFine * 2.0 - 1.0), 6.0);
-    baseColor = mix(vec3(0.03, 0.05, 0.06), vec3(0.12, 0.18, 0.17), interiorNoise);
-    roughness = 0.18;
-    metallic  = 0.2;
-    vec3 voidGlow = u_tier == 5 ? vec3(1.9, 0.3, 2.9) : vec3(0.25, 2.35, 1.85);
-    emissive = voidGlow * (vein * 0.55 + ridgeLine * 0.5 + glyphMask * 1.25 + glyphHalo * 0.38) * winBoost;
+    // [5] 虚空星噬：深渊黑骨 + 纯黑护城槽 + 锐利薄荷白秘文
+    float vein = pow(1.0 - abs(interiorFine * 2.0 - 1.0), 6.0) * (1.0 - clearZone);
+    vec3 bone = mix(vec3(0.015, 0.026, 0.032), vec3(0.06, 0.10, 0.09), interiorNoise * (1.0 - clearZone));
+    bone = mix(bone, vec3(0.003, 0.006, 0.008), moatMask);
+    vec3 voidNum = u_tier == 5 ? vec3(0.96, 0.78, 1.0) : vec3(0.78, 1.0, 0.92);
+
+    baseColor = mix(bone, voidNum, glyphMask);
+    roughness = mix(0.18, 0.42, glyphMask);
+    metallic  = 0.16 * (1.0 - clearZone);
+    vec3 voidGlow = u_tier == 5 ? vec3(1.9, 0.28, 2.8) : vec3(0.22, 2.2, 1.72);
+    emissive = voidGlow * (vein * 0.48 + ridgeLine * 0.68 * winPulse) * (1.0 - clearZone)
+             + voidNum * (glyphMask * 0.42);
   }
 
-  // 3. PBR 高光与环境反射合成
+  // 3. PBR 高光与环境反射合成（字芯与暗槽 98% 消光抗眩，任何视角绝不反光糊字！）
   float specPow = mix(128.0, 14.0, roughness);
   float spec1 = pow(max(dot(N, H1), 0.0), specPow) * (1.8 - roughness);
   float spec2 = pow(max(dot(N, H2), 0.0), specPow * 0.6) * 0.65;
@@ -1757,15 +1780,14 @@ void main() {
   vec3 F  = F0 + (1.0 - F0) * fresnel;
   vec3 env = sampleEnvMap(R, u_theme);
 
-  vec3 diffuse = baseColor * (1.0 - metallic * 0.85) * (0.28 + 0.78 * diff1 + 0.28 * diff2);
-  if (u_theme == 4) {
-    // 羊脂白玉保留前面算好的温润 SSS 漫反射亮度
-    diffuse = baseColor * (1.0 - metallic * 0.6);
+  vec3 diffuse = baseColor * (1.0 - metallic * 0.85) * (0.34 + 0.74 * diff1 + 0.24 * diff2);
+  if (u_theme == 4 || glyphMask > 0.35) {
+    diffuse = baseColor * (1.0 - metallic * 0.5);
   }
-  vec3 specular = F * env * (1.0 - roughness * 0.55) + (F + 0.18) * (spec1 * vec3(1.35, 1.25, 1.1) + spec2 * vec3(0.8, 0.95, 1.2));
+  float antiGlare = 1.0 - clamp(glyphMask * 0.98 + moatMask * 0.85, 0.0, 0.98);
+  vec3 specular = (F * env * (1.0 - roughness * 0.55) + (F + 0.18) * (spec1 * vec3(1.35, 1.25, 1.1) + spec2 * vec3(0.8, 0.95, 1.2))) * antiGlare;
 
-  // 倒角边缘高光加强：让多面体每一道棱脊在旋转时都闪耀锐利星芒！
-  specular += F * bevelMask * pow(max(dot(v_smoothN, H1), 0.0), 42.0) * 1.85;
+  specular += F * bevelMask * pow(max(dot(v_smoothN, H1), 0.0), 42.0) * 1.75 * antiGlare;
 
   vec3 finalHDR = diffuse + specular + emissive;
   fragColor = vec4(max(finalHDR, vec3(0.0)), 1.0);
@@ -2659,7 +2681,7 @@ class WebGLDiceRenderer {
         gl.activeTexture(gl.TEXTURE0)
         gl.bindTexture(gl.TEXTURE_2D, srcTex)
         gl.uniform2f(bdu.u_texelSize, 1.0 / srcW, 1.0 / srcH)
-        gl.uniform1f(bdu.u_threshold, i === 0 ? (isShuimo ? 1.15 : 0.92) : -1.0)
+        gl.uniform1f(bdu.u_threshold, i === 0 ? (isShuimo ? 1.25 : 1.18) : -1.0)
         gl.drawArrays(gl.TRIANGLES, 0, 3)
         srcTex = dst.tex
         srcW = dst.w
@@ -2707,7 +2729,7 @@ class WebGLDiceRenderer {
     gl.uniform4f(cu.u_shockwave, shockwave[0], shockwave[1], shockwave[2], shockwave[3])
     gl.uniform1f(cu.u_chroma, chroma)
     gl.uniform1f(cu.u_bulletTime, bulletTime)
-    gl.uniform1f(cu.u_bloomStrength, bloomEnabled ? (isShuimo ? 0.42 : 0.78) : 0.0)
+    gl.uniform1f(cu.u_bloomStrength, bloomEnabled ? (isShuimo ? 0.35 : 0.52) : 0.0)
     gl.uniform1f(cu.u_time, time)
 
     gl.bindVertexArray(this.emptyVAO)
@@ -3471,11 +3493,11 @@ class CinematicDiceStage {
     }
 
     const aspect = w / Math.max(1, h)
-    // 宽扁横幅或竖窄屏幕自适应视野距离
-    const distScale = aspect > 2.0 ? 0.72 : aspect < 0.9 ? 1.25 : 1.0
+    // 宽扁横幅或竖窄屏幕自适应视野距离（拉近约 22%，让多面体与数字饱满清晰）
+    const distScale = aspect > 2.1 ? 0.66 : aspect < 0.9 ? 1.15 : 0.88
     this.baseEye[0] = 0
-    this.baseEye[1] = -390 * distScale
-    this.baseEye[2] = 435 * distScale
+    this.baseEye[1] = -335 * distScale
+    this.baseEye[2] = 395 * distScale
     this.renderSingleFrame()
   }
 
@@ -3499,6 +3521,94 @@ class CinematicDiceStage {
   setCinematicCam(flag) {
     this.cinematicCamEnabled = Boolean(flag)
     this.wake()
+  }
+
+  /**
+   * 手动按钮长按蓄力 API：按住重投/投掷按钮时，骰群升空进入中心引力聚能旋涡！
+   */
+  startButtonCharge(modeHint) {
+    if (this.charging) return
+    if (modeHint === 'fate') this.setTheme(NEXTGEN_THEMES[1])
+    else if (modeHint === 'push') this.setTheme(NEXTGEN_THEMES[2])
+    // 若舞台当前尚无骰子，先放置一颗默认多面体参与蓄力旋涡演出
+    if (!this.dice || this.dice.length === 0) {
+      this.setStaticRoll({ diceSpecs: [{ meshKey: 'd20', sides: 20, targetValue: 20 }], tier: 'success', mode: 'normal' })
+    }
+    this.charging = true
+    this.buttonCharging = true
+    this.chargeTime = 0
+    this.chargeWorld.x = 0
+    this.chargeWorld.y = -12
+    this.chargeWorld.z = 92
+    if (this.audio) this.audio.startChargeHum(this.theme.soundPreset)
+    this.wake()
+  }
+
+  /**
+   * 移出按钮取消蓄力：不消耗命运点或重投次数，平稳落回原状
+   */
+  cancelButtonCharge() {
+    if (!this.charging) return
+    this.charging = false
+    this.buttonCharging = false
+    if (this.audio) this.audio.stopChargeHum()
+    // 恢复落定态原坐标与姿态
+    for (let i = 0; i < this.dice.length; i++) {
+      const d = this.dice[i]
+      const ep = (MAX_STEPS - 1) * 3
+      const eq = (MAX_STEPS - 1) * 4
+      d.x = d.trajPos[ep]; d.y = d.trajPos[ep + 1]; d.z = d.trajPos[ep + 2]
+      d.qx = d.trajQuat[eq]; d.qy = d.trajQuat[eq + 1]; d.qz = d.trajQuat[eq + 2]; d.qw = d.trajQuat[eq + 3]
+      d.trailCount = 0
+      d.settled = true
+    }
+    this.settled = true
+    this.wake()
+  }
+
+  /**
+   * 松开蓄力按钮：带着蓄力能量将旋涡中的骰群爆发砸向指定真骰结果！
+   */
+  releaseButtonCharge(spec, charge01 = 0.6) {
+    const power = Math.max(0, Math.min(1, Number(charge01) || 0))
+    this.charging = false
+    this.buttonCharging = false
+    if (this.audio) this.audio.stopChargeHum()
+    const enriched = { ...(spec || {}) }
+    if (power > 0.12) {
+      const angle = (Math.random() - 0.5) * 1.1 + Math.PI * 0.5
+      const spd = 220 + power * 420
+      enriched.launchOrigin = { x: 0, y: -24, z: 98 + power * 48 }
+      enriched.launchVelocity = {
+        vx: Math.cos(angle) * spd * 0.55,
+        vy: Math.sin(angle) * spd * 0.55
+      }
+    }
+    this.throwDice(enriched)
+  }
+
+  /**
+   * 静态摆盘（打开已有楼层检定面板时直接展示已落定真骰，不重复假投）
+   */
+  setStaticRoll(spec = {}) {
+    this.throwDice({ ...spec, silentStatic: true })
+    this.settled = true
+    this.settleTime = 3.0
+    this.simTime = this.maxSimDuration
+    this.climax = 0
+    for (let i = 0; i < this.dice.length; i++) {
+      const d = this.dice[i]
+      const ep = (MAX_STEPS - 1) * 3
+      const eq = (MAX_STEPS - 1) * 4
+      d.x = d.trajPos[ep]; d.y = d.trajPos[ep + 1]; d.z = d.trajPos[ep + 2]
+      d.qx = d.trajQuat[eq]; d.qy = d.trajQuat[eq + 1]; d.qz = d.trajQuat[eq + 2]; d.qw = d.trajQuat[eq + 3]
+      d.speed = 0
+      d.trailCount = 0
+      d.settled = true
+    }
+    this.particles.active.fill(0)
+    this.particles.aliveCount = 0
+    this.renderSingleFrame()
   }
 
   _bindInteractiveSlingshot() {
@@ -3664,10 +3774,10 @@ class CinematicDiceStage {
     this.bulletTimeAmount = 0
     this.bulletSoundPlayed = false
 
-    const baseR = count <= 1 ? 34 : count <= 2 ? 30 : count <= 4 ? 26 : count <= 8 ? 22 : count <= 14 ? 18 : 15
+    const baseR = count <= 1 ? 42 : count <= 2 ? 37 : count <= 4 ? 31 : count <= 8 ? 25 : count <= 14 ? 20 : 16
     const aspect = this.cssW / Math.max(1, this.cssH)
-    const boundX = Math.min(235, Math.max(95, 165 * aspect)) - baseR
-    const boundY = (this.compactMode ? 95 : 148) - baseR
+    const boundX = Math.min(225, Math.max(92, 155 * aspect)) - baseR
+    const boundY = (this.compactMode ? 88 : 138) - baseR
 
     const dice = []
     for (let i = 0; i < count; i++) {
@@ -3746,10 +3856,10 @@ class CinematicDiceStage {
     this.simTime = 0
     this.bouncePlayCursor = 0
 
-    if (this.audio) {
+    if (this.audio && !spec.silentStatic) {
       this.audio.playThrowWhoosh(this.theme.soundPreset, 1.1)
     }
-    this.wake()
+    if (!spec.silentStatic) this.wake()
   }
 
   _bakeTrajectoriesAndExactLanding(dice, boundX, boundY) {
@@ -3897,12 +4007,12 @@ class CinematicDiceStage {
     for (let i = 0; i < count; i++) {
       const d = dice[i]
       const tf = d.targetFace
-      // D4 四面体略微向镜头前倾以正视牌面，其余多面体朝向天顶微倾
-      const tiltCam = d.meshKey === 'd4' ? 0.32 : 0.08
+      // 落定面法线向摄像机方向适度前倾 (0.28 rad ≈ 16°)，消除透视压缩，让顶面大号数字正对视线！
+      const tiltCam = d.meshKey === 'd4' ? 0.44 : 0.28
       const wnX = 0, wnY = -Math.sin(tiltCam), wnZ = Math.cos(tiltCam)
 
-      // 自然轻微桌面偏航角 (±11°)
-      const yaw = (Math.random() - 0.5) * 0.38
+      // 保持极轻微偏航角 (±6°)，端正大气易读
+      const yaw = (Math.random() - 0.5) * 0.22
       const cy = Math.cos(yaw), sy = Math.sin(yaw)
       // 基准 Wv 指向屏幕下方 (-Y 侧)，绕 Wn 偏航后并设 Wu = cross(Wn, Wv) 以严格对齐 gl-meshes 切空间手性
       const wvX = sy
@@ -4032,16 +4142,16 @@ class CinematicDiceStage {
       this.impactCursor++
       imp.x = d.x; imp.y = d.y; imp.age = 0.001; imp.strength = isCrit ? 1.25 : 0.85
 
-      // 大成功 / 孤注一掷 / 大失败：拔地而起冲天圣光柱 / 熔岩火柱 / 深渊紫柱！
+      // 大成功 / 孤注一掷 / 大失败：在骰子后方升起圣光背光柱，衬托轮廓而绝不遮挡正面数字！
       if ((isCrit || isFumble || this.mode === 'push') && idx < 6) {
         this._spawnSpark({
-          x: d.x, y: d.y, z: 2,
-          vx: 0, vy: 0, vz: isCrit ? 340 : 240, // pillar height
-          size: d.radius * (isCrit ? 1.55 : 1.2),
-          life: isCrit ? 1.35 : 0.95,
+          x: d.x, y: d.y + d.radius * 0.85, z: d.radius * 0.9,
+          vx: 0, vy: 0, vz: isCrit ? 320 : 220,
+          size: d.radius * (isCrit ? 1.15 : 0.95),
+          life: isCrit ? 0.92 : 0.72,
           grav: 0, drag: 0,
-          r: col[0] * 1.25, g: col[1] * 1.25, b: col[2] * 1.25,
-          a: 0.95,
+          r: col[0], g: col[1], b: col[2],
+          a: 0.58,
           pillar: true
         })
       }
@@ -4455,7 +4565,13 @@ class CinematicDiceStage {
         ctx.font = '700 11.5px system-ui, sans-serif'
         ctx.fillStyle = '#ffffff'
         ctx.textAlign = 'center'
-        ctx.fillText('松开或划动甩投！', sx, sy + r + 18)
+        ctx.fillText(
+          this.buttonCharging
+            ? `⚡ 聚能蓄力 ${Math.round(c01 * 100)}% · 松开按钮爆发投掷`
+            : '松开或划动甩投！',
+          sx,
+          sy + r + 18
+        )
       }
     }
 
@@ -5013,29 +5129,139 @@ function bootDemoApp() {
     })
   })
 
-  document.getElementById('btn-roll-now').addEventListener('click', () => triggerRoll())
+  // 通用长按按钮聚能蓄力绑定器（点按即投 · 长按蓄力旋涡 · 移出无损取消）
+  function bindButtonHoldCharge(btn, { mode, getStages, onRelease }) {
+    let timer = 0
+    let raf = 0
+    let downAt = 0
+    let charging = false
+    let handled = false
+    const origHTML = btn.innerHTML
 
-  // 酒馆预览内嵌「✦ 逆命重投」与「🔥 孤注一掷」实景交互
-  document.getElementById('btn-tv-fate').addEventListener('click', () => {
-    ensureTavernStages()
-    fatePoints = fatePoints > 0 ? fatePoints - 1 : 3
-    rollMode = 'fate'
-    selectTheme(1, false)
-    const spec = buildRollSpec(activePreset, 'critical', 'fate')
-    lastRollSpec = spec
-    tavernCapsuleStage.throwDice(spec)
-    tavernBannerStage.throwDice(spec)
+    const resetVisual = () => {
+      if (timer) { clearTimeout(timer); timer = 0 }
+      if (raf) { cancelAnimationFrame(raf); raf = 0 }
+      btn.classList.remove('is-charging')
+      btn.style.removeProperty('--charge-pct')
+      btn.innerHTML = origHTML
+    }
+
+    btn.addEventListener('pointerdown', e => {
+      if (e.button !== undefined && e.button !== 0) return
+      handled = false
+      charging = false
+      downAt = performance.now()
+      timer = setTimeout(() => {
+        charging = true
+        btn.classList.add('is-charging')
+        const resolvedMode = typeof mode === 'function' ? mode() : mode
+        for (const stg of getStages()) stg.startButtonCharge(resolvedMode)
+        const loop = () => {
+          if (!charging) return
+          const pct = Math.min(100, Math.max(5, Math.round(((performance.now() - downAt - 140) / 950) * 100)))
+          btn.style.setProperty('--charge-pct', pct + '%')
+          btn.textContent = `⚡ 蓄力 ${pct}% · 松手爆发！`
+          raf = requestAnimationFrame(loop)
+        }
+        loop()
+      }, 140)
+    })
+
+    btn.addEventListener('pointerup', () => {
+      if (!downAt) return
+      const elapsed = performance.now() - downAt
+      downAt = 0
+      handled = true
+      const wasCharging = charging
+      charging = false
+      resetVisual()
+      const power = wasCharging ? Math.min(1, Math.max(0.2, (elapsed - 140) / 950)) : 0
+      onRelease(power)
+    })
+
+    const cancel = () => {
+      if (!downAt && !charging) return
+      downAt = 0
+      const wasCharging = charging
+      charging = false
+      resetVisual()
+      if (wasCharging) {
+        for (const stg of getStages()) stg.cancelButtonCharge()
+      }
+    }
+
+    btn.addEventListener('pointerleave', cancel)
+    btn.addEventListener('pointercancel', cancel)
+    btn.addEventListener('click', e => {
+      if (handled) {
+        handled = false
+        e.preventDefault()
+        return
+      }
+      onRelease(0)
+    })
+  }
+
+  bindButtonHoldCharge(document.getElementById('btn-roll-now'), {
+    mode: () => rollMode,
+    getStages: () => {
+      if (currentView === 'arena') return [heroStage]
+      if (currentView === 'tavern') { ensureTavernStages(); return [tavernCapsuleStage] }
+      ensureMatrixStages()
+      return matrixStages
+    },
+    onRelease: power => {
+      const spec = makeCurrentSpec()
+      if (currentView === 'arena') {
+        if (power > 0.1) heroStage.releaseButtonCharge(spec, power)
+        else heroStage.throwDice(spec)
+      } else if (currentView === 'tavern') {
+        ensureTavernStages()
+        if (power > 0.1) tavernCapsuleStage.releaseButtonCharge(spec, power)
+        else tavernCapsuleStage.throwDice(spec)
+        tavernBannerStage.throwDice(spec)
+      } else {
+        ensureMatrixStages()
+        for (const stg of matrixStages) {
+          stg.resize()
+          if (power > 0.1) stg.releaseButtonCharge(spec, power)
+          else stg.throwDice(spec)
+        }
+      }
+    }
   })
 
-  document.getElementById('btn-tv-push').addEventListener('click', () => {
-    ensureTavernStages()
-    rollMode = 'push'
-    selectTheme(2, false)
-    const outcome = Math.random() < 0.55 ? 'costly' : 'fumble'
-    const spec = buildRollSpec(activePreset, outcome, 'push')
-    lastRollSpec = spec
-    tavernCapsuleStage.throwDice(spec)
-    tavernBannerStage.throwDice(spec)
+  // 酒馆预览内嵌「✦ 逆命重投」与「🔥 孤注一掷」按钮长按蓄力实景交互
+  bindButtonHoldCharge(document.getElementById('btn-tv-fate'), {
+    mode: 'fate',
+    getStages: () => { ensureTavernStages(); return [tavernCapsuleStage] },
+    onRelease: power => {
+      ensureTavernStages()
+      fatePoints = fatePoints > 0 ? fatePoints - 1 : 3
+      rollMode = 'fate'
+      selectTheme(1, false)
+      const spec = buildRollSpec(activePreset, 'critical', 'fate')
+      lastRollSpec = spec
+      if (power > 0.1) tavernCapsuleStage.releaseButtonCharge(spec, power)
+      else tavernCapsuleStage.throwDice(spec)
+      tavernBannerStage.throwDice(spec)
+    }
+  })
+
+  bindButtonHoldCharge(document.getElementById('btn-tv-push'), {
+    mode: 'push',
+    getStages: () => { ensureTavernStages(); return [tavernCapsuleStage] },
+    onRelease: power => {
+      ensureTavernStages()
+      rollMode = 'push'
+      selectTheme(2, false)
+      const outcome = Math.random() < 0.55 ? 'costly' : 'fumble'
+      const spec = buildRollSpec(activePreset, outcome, 'push')
+      lastRollSpec = spec
+      if (power > 0.1) tavernCapsuleStage.releaseButtonCharge(spec, power)
+      else tavernCapsuleStage.throwDice(spec)
+      tavernBannerStage.throwDice(spec)
+    }
   })
 
   document.getElementById('btn-tv-theme').addEventListener('click', e => {

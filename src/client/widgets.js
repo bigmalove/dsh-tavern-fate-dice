@@ -126,20 +126,21 @@ function LiveRollBanner(props) {
       setRolling(false)
       return undefined
     }
+    const use3D = Boolean(FD3D.canUseWebGL2() && FD3D.resolveTheme(animation, 'normal', hidden))
     setRolling(true)
     const sides = fdNumber(roll && roll.sides, fdNumber(freeResult && freeResult.sides, 6))
-    const ticker = setInterval(() => {
+    const ticker = use3D ? 0 : setInterval(() => {
       setTickFace(String(1 + Math.floor(Math.random() * Math.max(2, sides))))
     }, 70)
     const stopper = setTimeout(() => {
-      clearInterval(ticker)
+      if (ticker) clearInterval(ticker)
       setRolling(false)
-    }, animation === 'compact' ? 320 : 760)
+    }, animation === 'compact' ? 320 : (use3D ? 1120 : 760))
     const hider = setTimeout(() => {
       if (typeof onDismiss === 'function') onDismiss()
-    }, 4200)
+    }, use3D ? 5200 : 4200)
     return () => {
-      clearInterval(ticker)
+      if (ticker) clearInterval(ticker)
       clearTimeout(stopper)
       clearTimeout(hider)
     }
@@ -203,6 +204,8 @@ function LiveRollBanner(props) {
         ? (isReused ? '已复用本轮首次暗骰结果（轻触偷看）' : '结果已暗中注入本轮裁定（轻触偷看）')
         : (isReused ? `已锁定复用首次真骰 · ${formatRollSummary(roll, true)}` : `${formatRollSummary(roll, true)} · 轻触收起`)
 
+  const use3DBanner = Boolean(FD3D.canUseWebGL2() && FD3D.resolveTheme(animation, (roll && roll.rerollMeta && roll.rerollMeta.mode) || 'normal', hidden))
+
   return h('div', {
     className: 'fd-root',
     style: { padding: '2px 0' }
@@ -217,15 +220,24 @@ function LiveRollBanner(props) {
       else if (typeof onDismiss === 'function') onDismiss()
     }
   },
-  h('div', { className: 'fd-die-stage' },
-    (faces.length ? faces : ['?']).slice(0, 3).map((face, idx) => h(DieGlyph, {
-      key: idx,
-      sides,
-      label: rolling && !hidden ? tickFace : face,
-      rolling,
-      tier,
-      hidden
-    }))),
+  use3DBanner
+    ? h(Fd3DDiceStage, {
+      roll: isFree ? freeResult : roll,
+      isFree,
+      revealed,
+      animation,
+      banner: true,
+      animateOnMount: !isReused
+    })
+    : h('div', { className: 'fd-die-stage' },
+      (faces.length ? faces : ['?']).slice(0, 3).map((face, idx) => h(DieGlyph, {
+        key: idx,
+        sides,
+        label: rolling && !hidden ? tickFace : face,
+        rolling,
+        tier,
+        hidden
+      }))),
   h('div', { className: 'fd-live-body' },
     h('div', { className: 'fd-live-title' },
       h('span', { className: 'fd-turn-summary', style: { minWidth: 0 } }, titleText),
@@ -366,6 +378,7 @@ function fdResolveFloorToneAndLabel(record, peeked, awaitingLiveRoll) {
 
 function ComposerDicePopover(props) {
   const { record, peeked, rerolling, rerollHint, isStreaming, popoverStyle, popoverRef, onReroll, onClose } = props || {}
+  const stageRef = useRef(null)
   const roll = record && record.roll ? record.roll : null
   const judged = record && record.judged ? record.judged : null
   const setupReason = (record && record.setupRequiredReason) || ''
@@ -420,6 +433,14 @@ function ComposerDicePopover(props) {
       }, '×'))),
   roll
     ? h(Fragment, null,
+      h(Fd3DDiceStage, {
+        roll,
+        revealed: !covered,
+        animation: record && record.animation,
+        compact: true,
+        animateOnMount: false,
+        stageRef
+      }),
       h('dl', { className: 'fd-turn-details' },
         h('dt', { className: 'fd-turn-dt' }, '骰面算式'),
         h('dd', { className: 'fd-turn-dd' },
@@ -442,6 +463,7 @@ function ComposerDicePopover(props) {
         rerollHint,
         isStreaming,
         compact: true,
+        stageRef,
         onReroll
       }))
     : h('div', { className: 'fd-hint' },
@@ -809,6 +831,7 @@ const fdMountedTurnViews = new Set()
 
 function TurnRollCapsule(props) {
   const { ui, gameId, turn, children, defaultOpen, fromTurnView, emptyFallback } = props || {}
+  const stageRef = useRef(null)
   const [record, setRecord] = useState(undefined)
   const [open, setOpen] = useState(Boolean(defaultOpen))
   const [peeked, setPeeked] = useState(false)
@@ -928,6 +951,16 @@ function TurnRollCapsule(props) {
           covered ? '点按揭晓' : (roll.tierLabel || '结果'))),
         open
           ? h(Fragment, null,
+            !covered
+              ? h(Fd3DDiceStage, {
+                roll,
+                revealed: true,
+                animation: record && record.animation,
+                compact: false,
+                animateOnMount: false,
+                stageRef
+              })
+              : null,
             fdBuildTurnDetails(record, peeked),
             !covered
               ? h(FdRerollActionBox, {
@@ -937,6 +970,7 @@ function TurnRollCapsule(props) {
                 rerollHint,
                 isStreaming: false,
                 compact: false,
+                stageRef,
                 onReroll: manualReroll
               })
               : null)
@@ -947,10 +981,22 @@ function TurnRollCapsule(props) {
 const fdMountedHeaderTurns = new Set()
 
 function FdRerollActionBox(props) {
-  const { rerollState, fate, rerolling, rerollHint, isStreaming, compact, onReroll } = props || {}
+  const { rerollState, fate, rerolling, rerollHint, isStreaming, compact, stageRef, onReroll } = props || {}
   const state = rerollState && typeof rerollState === 'object' ? rerollState : { allowed: false }
   const safeFate = fdNormalizeFate(fate)
   const compactCls = compact ? ' is-compact' : ''
+  const fateHold = useFdHoldCharge({
+    mode: 'fate',
+    disabled: Boolean(rerolling),
+    stageRef,
+    onTrigger: mode => (typeof onReroll === 'function' ? onReroll(mode) : undefined)
+  })
+  const pushHold = useFdHoldCharge({
+    mode: 'push',
+    disabled: Boolean(rerolling),
+    stageRef,
+    onTrigger: mode => (typeof onReroll === 'function' ? onReroll(mode) : undefined)
+  })
 
   if (isStreaming) {
     return h('div', { className: 'fd-reroll-status' + compactCls },
@@ -962,33 +1008,39 @@ function FdRerollActionBox(props) {
     const maxPoints = fdNumber(state.fateMax, safeFate.max)
     return h('div', { className: 'fd-reroll-bar' + compactCls },
       h('div', { className: 'fd-reroll-prompt' },
-        h('span', null, '⚡ 点击下方按钮改命重投（每轮限 1 次）'),
-        h('span', { className: 'fd-hint' }, '重投后点酒馆「重新生成正文」生效')),
+        h('span', null, '⚡ 点按即投 · 长按按钮可蓄力聚能（每轮限 1 次）'),
+        h('span', { className: 'fd-hint' }, '蓄力移出按钮可取消 · 重投后点「重新生成正文」生效')),
       h('div', { className: 'fd-reroll-grid' },
         state.canFate
           ? h('button', {
             type: 'button',
-            className: 'fd-reroll-btn is-fate',
+            className: 'fd-reroll-btn is-fate' + (fateHold.charging ? ' is-charging' : ''),
             disabled: Boolean(rerolling),
-            title: '消耗 1 点命运点，无恶化或挂彩惩罚重掷本轮真骰（每轮限 1 次）',
-            onClick: () => (typeof onReroll === 'function' ? onReroll('fate') : undefined)
+            title: '消耗 1 点命运点稳妥重掷（点按即投；长按按钮激活 3D 星晶聚能旋涡蓄力，移出按钮可无损取消）',
+            ...fateHold.bindProps
           },
           h('span', { className: 'fd-reroll-btn-top' },
-            h('span', { className: 'fd-reroll-btn-title' }, rerolling ? '⏳ 重投中…' : '✦ 逆命重投'),
+            h('span', { className: 'fd-reroll-btn-title' },
+              rerolling
+                ? '⏳ 重投中…'
+                : (fateHold.charging ? `✦ 逆命蓄力 ${fateHold.chargePct}% · 松手改命` : '✦ 逆命重投')),
             h('span', { className: 'fd-reroll-btn-tag' }, `-1 点 · 余 ${remPoints}/${maxPoints} ▸`)),
-          h('span', { className: 'fd-reroll-btn-sub' }, '无恶化与挂彩惩罚 · 稳妥重掷本轮真骰'))
+          h('span', { className: 'fd-reroll-btn-sub' }, '无恶化与挂彩惩罚 · 长按按钮可聚能蓄力'))
           : null,
         h('button', {
           type: 'button',
-          className: 'fd-reroll-btn is-push',
+          className: 'fd-reroll-btn is-push' + (pushHold.charging ? ' is-charging' : ''),
           disabled: Boolean(rerolling),
-          title: '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
-          onClick: () => (typeof onReroll === 'function' ? onReroll('push') : undefined)
+          title: '不耗命运点强行一搏（点按即投；长按按钮激活 3D 焚天熔炉蓄力，移出按钮可无损取消）',
+          ...pushHold.bindProps
         },
         h('span', { className: 'fd-reroll-btn-top' },
-          h('span', { className: 'fd-reroll-btn-title' }, rerolling ? '⏳ 搏命中…' : '🔥 孤注一掷'),
+          h('span', { className: 'fd-reroll-btn-title' },
+            rerolling
+              ? '⏳ 搏命中…'
+              : (pushHold.charging ? `🔥 熔炉蓄力 ${pushHold.chargePct}% · 松手搏命` : '🔥 孤注一掷')),
           h('span', { className: 'fd-reroll-btn-tag' }, '0 点 · 成王败寇 ▸')),
-        h('span', { className: 'fd-reroll-btn-sub' }, '败则强制恶化大失败 · 翻盘封顶成功并带伤'))),
+        h('span', { className: 'fd-reroll-btn-sub' }, '败则恶化大失败 · 长按按钮可熔炉蓄力'))),
       h('div', { className: 'fd-reroll-foot' },
         rerollHint || '直接点「重新生成正文」将自动复用原骰点；不重投认栽可攒回命运点'))
   }
@@ -1040,6 +1092,7 @@ function fdFormatCompactDice(roll) {
 
 function StoryFloorDiceItem(props) {
   const { ui, gameId, turn, streaming, headSlot, panelSlot } = props || {}
+  const stageRef = useRef(null)
   const [record, setRecord] = useState(null)
   const [expanded, setExpanded] = useState(false)
   const [peeked, setPeeked] = useState(false)
@@ -1202,7 +1255,16 @@ function StoryFloorDiceItem(props) {
           roll && roll.damper ? h('span', { className: 'fd-floor-tag' }, `⛓ ${roll.damper.quotaLabel || '阻尼联动'}`) : null,
           h('span', { className: 'fd-floor-tag' }, `✦ 命运点 ${fate.points}/${fate.max}`))),
       roll
-        ? fdBuildTurnDetails(record, true)
+        ? h(Fragment, null,
+          h(Fd3DDiceStage, {
+            roll,
+            revealed: true,
+            animation: record && record.animation,
+            compact: true,
+            animateOnMount: false,
+            stageRef
+          }),
+          fdBuildTurnDetails(record, true))
         : h('div', { className: 'fd-hint' },
           setupReason
             ? '请前往酒馆「设置 › 叙事阻尼器」填写决策模型与 API Key，配置后即可自动定难并投掷真骰。'
@@ -1215,6 +1277,7 @@ function StoryFloorDiceItem(props) {
           rerollHint,
           isStreaming,
           compact: true,
+          stageRef,
           onReroll: runManualReroll
         })
         : null),
@@ -1482,7 +1545,15 @@ function fdMountImperativeFloorHeaders(ui) {
     })
     headSlot.appendChild(pillBtn)
 
-    if (!entry.expanded) return
+    if (!entry.expanded) {
+      if (entry.stage3d) {
+        entry.stage3d.stop()
+        entry.stage3d = null
+        entry.stageWrapEl = null
+        entry.lastStageRollKey = ''
+      }
+      return
+    }
 
     const panel = fdEl(doc, 'section', 'fd-root fd-floor-panel')
     panel.setAttribute('data-tone', tone)
@@ -1507,6 +1578,46 @@ function fdMountImperativeFloorHeaders(ui) {
     panel.appendChild(pHead)
 
     if (roll) {
+      const animPref = (record && record.animation) || fdGetCachedAnimationPref()
+      const rerollMode = roll.rerollMeta && roll.rerollMeta.mode
+      const theme3d = FD3D.resolveTheme(animPref, rerollMode || 'normal', false)
+      if (theme3d && FD3D.canUseWebGL2()) {
+        if (!entry.stageWrapEl || !entry.stage3d) {
+          const wrap = fdEl(doc, 'div', 'fd-3d-stage is-compact')
+          const cv = fdEl(doc, 'canvas', 'fd-3d-canvas')
+          cv.setAttribute('aria-hidden', 'true')
+          wrap.appendChild(cv)
+          entry.stageWrapEl = wrap
+          entry.stage3d = new FD3D.SharedBlitDiceStage(cv, {
+            audio: FD3D.getAudio(),
+            banner: false,
+            compact: true
+          })
+          entry.lastStageRollKey = ''
+        }
+        panel.appendChild(entry.stageWrapEl)
+        const rKey = `${roll.rolledAt || ''}:${roll.total || ''}:${(roll.dice || []).join(',')}`
+        const spec = FD3D.rollToStageSpec({ ...roll, hidden: false }, false)
+        entry.stage3d.setTheme(theme3d)
+        if (spec && entry.lastStageRollKey !== rKey) {
+          const wasFirst = !entry.lastStageRollKey
+          entry.lastStageRollKey = rKey
+          requestAnimationFrame(() => {
+            if (!entry.stage3d) return
+            entry.stage3d.resize()
+            if (wasFirst && !entry.pendingChargePower && !entry.justRerolled) {
+              entry.stage3d.setStaticRoll(spec)
+            } else {
+              const pwr = entry.pendingChargePower || 0
+              entry.pendingChargePower = 0
+              entry.justRerolled = false
+              if (pwr > 0.1) entry.stage3d.releaseButtonCharge(spec, pwr)
+              else entry.stage3d.throwDice(spec)
+            }
+          })
+        }
+      }
+
       const dl = fdEl(doc, 'dl', 'fd-turn-details')
       const addRow = (label, value) => {
         dl.appendChild(fdEl(doc, 'dt', 'fd-turn-dt', label))
@@ -1542,14 +1653,15 @@ function fdMountImperativeFloorHeaders(ui) {
       } else if (rerollState.allowed) {
         const bar = fdEl(doc, 'div', 'fd-reroll-bar is-compact')
         const prompt = fdEl(doc, 'div', 'fd-reroll-prompt')
-        prompt.appendChild(fdEl(doc, 'span', '', '⚡ 点击下方按钮改命重投（每轮限 1 次）'))
-        prompt.appendChild(fdEl(doc, 'span', 'fd-hint', '重投后点酒馆「重新生成正文」生效'))
+        prompt.appendChild(fdEl(doc, 'span', '', '⚡ 点按即投 · 长按按钮可蓄力聚能（每轮限 1 次）'))
+        prompt.appendChild(fdEl(doc, 'span', 'fd-hint', '蓄力移出按钮可取消 · 重投后点「重新生成正文」生效'))
         bar.appendChild(prompt)
 
         const grid = fdEl(doc, 'div', 'fd-reroll-grid')
         const triggerReroll = mode => {
           if (entry.rerolling || !effectiveTurn) return
           entry.rerolling = true
+          entry.justRerolled = true
           entry.rerollHint = ''
           renderEntry(entry)
           fdCall(ui, FD_RPC.rerollTurn, { gameId: fdGetActiveGameId(), turn: effectiveTurn, mode })
@@ -1590,7 +1702,15 @@ function fdMountImperativeFloorHeaders(ui) {
           top.appendChild(fdEl(doc, 'span', 'fd-reroll-btn-tag', tagText))
           btn.appendChild(top)
           btn.appendChild(fdEl(doc, 'span', 'fd-reroll-btn-sub', subText))
-          btn.addEventListener('click', () => triggerReroll(mode))
+          fdAttachHoldChargeToDomBtn(btn, {
+            mode,
+            getStage: () => entry.stage3d,
+            onTrigger: (m, power) => {
+              entry.pendingChargePower = power
+              triggerReroll(m)
+            },
+            baseLabel: titleText
+          })
           return btn
         }
 
@@ -1601,8 +1721,8 @@ function fdMountImperativeFloorHeaders(ui) {
             'is-fate',
             entry.rerolling ? '⏳ 重投中…' : '✦ 逆命重投',
             `-1 点 · 余 ${remPoints}/${maxPoints} ▸`,
-            '无恶化与挂彩惩罚 · 稳妥重掷本轮真骰',
-            '消耗 1 点命运点，无恶化惩罚重掷本轮真骰（每轮限 1 次）',
+            '无恶化与挂彩惩罚 · 长按按钮可聚能蓄力',
+            '消耗 1 点命运点稳妥重掷（点按即投；长按按钮激活 3D 星晶旋涡蓄力，移出取消）',
             'fate'
           ))
         }
@@ -1611,8 +1731,8 @@ function fdMountImperativeFloorHeaders(ui) {
           'is-push',
           entry.rerolling ? '⏳ 搏命中…' : '🔥 孤注一掷',
           '0 点 · 成王败寇 ▸',
-          '败则强制恶化大失败 · 翻盘封顶成功并带伤',
-          '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
+          '败则恶化大失败 · 长按按钮可熔炉蓄力',
+          '不耗命运点强行一搏（点按即投；长按按钮激活 3D 焚天熔炉蓄力，移出取消）',
           'push'
         ))
 

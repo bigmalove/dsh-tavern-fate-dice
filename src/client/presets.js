@@ -46,9 +46,14 @@ const FD_TONE_OPTIONS = [
 ]
 
 const FD_ANIMATION_OPTIONS = [
-  { value: 'bounce', label: '多面体弹跳' },
-  { value: 'compact', label: '极简闪现' },
-  { value: 'none', label: '关闭动画' }
+  { value: 'bounce', label: '3D 星穹秘法 · 智能切换（默认）' },
+  { value: 'prism', label: '3D 时停棱镜 · 碎星圣晶（子弹时间）' },
+  { value: 'inferno', label: '3D 焚天熔炉 · 玄武熔铁（烈焰光柱）' },
+  { value: 'cyber', label: '3D 赛博超频 · 霓虹矩阵（战术准星）' },
+  { value: 'jianxin', label: '3D 水墨剑心 · 太虚白玉（剑气朱印）' },
+  { value: 'singularity', label: '3D 虚空星噬 · 诡秘奇点（引力透镜）' },
+  { value: 'compact', label: '2D 极简闪现（轻量徽标）' },
+  { value: 'none', label: '关闭动画（直接显示结果）' }
 ]
 
 const FD_DEFAULT_SETTINGS = {

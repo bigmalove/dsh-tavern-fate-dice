@@ -1944,3 +1944,142 @@ test('移动端胶囊收成纯骰子图标：三处胶囊共用图标位，窄�
   assert.ok((client.match(/'aria-label':\s*pillText/g) || []).length >= 1, '轮次胶囊须带 aria-label')
   assert.ok((client.match(/setAttribute\('aria-label', pillText\)/g) || []).length >= 1, '楼层顶栏胶囊须带 aria-label')
 })
+
+test('3D HDR 舞台映射、6 款 WebGL2 主题设置与手动按钮长按蓄力控制器（无 WebGL 环境优雅降级）', async () => {
+  const clientCode = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+  const ReactMock = {
+    createElement(type, props, ...children) {
+      return { type, props: props || {}, children }
+    },
+    Fragment: 'Fragment',
+    useEffect() {},
+    useMemo: fn => fn(),
+    useRef: initial => ({ current: initial }),
+    useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}]
+  }
+  let exported = null
+  const sandbox = {
+    window: {
+      __ModuleLoader__: {
+        load(mod) {
+          exported = mod.factory(id => (id === 'react' ? ReactMock : null))
+        }
+      },
+      matchMedia: () => ({ matches: false })
+    },
+    document: undefined,
+    setTimeout,
+    clearTimeout,
+    console
+  }
+  vm.runInNewContext(clientCode, sandbox)
+  assert.ok(exported && exported.__test, 'client.js 必须导出 __test 辅助集')
+
+  const { FD3D, Fd3DDiceStage, FdRerollActionBox, fdAttachHoldChargeToDomBtn } = exported.__test
+  assert.ok(FD3D && typeof FD3D.resolveTheme === 'function', '必须导出 FD3D 3D 引擎工具')
+  assert.equal(FD3D.canUseWebGL2(), false, 'Node 无浏览器环境必须安全探测为 false 而不抛错')
+
+  // 无 WebGL2 时 Fd3DDiceStage 返回 null 零副作用降级
+  assert.equal(Fd3DDiceStage({ roll: { rule: '2d6', dice: [3, 4], total: 7 }, animation: 'bounce' }), null)
+
+  // 主题路由：bounce 随模式智能切换；explicit 主题直接命中；compact/none 返回 null
+  assert.equal(FD3D.resolveTheme('bounce', 'normal', false).id, 'astral')
+  assert.equal(FD3D.resolveTheme('bounce', 'fate', false).id, 'prism')
+  assert.equal(FD3D.resolveTheme('bounce', 'push', false).id, 'inferno')
+  assert.equal(FD3D.resolveTheme('bounce', 'normal', true).id, 'singularity')
+  assert.equal(FD3D.resolveTheme('jianxin', 'normal', false).id, 'jianxin')
+  assert.equal(FD3D.resolveTheme('cyber', 'fate', false).id, 'cyber')
+  assert.equal(FD3D.resolveTheme('compact', 'normal', false), null)
+  assert.equal(FD3D.resolveTheme('none', 'normal', false), null)
+
+  // 骰制到 3D 多面体规格转换（含 d100 -> 00+0）
+  const d100Spec = FD3D.rollToStageSpec({ rule: 'd100', dice: [100], total: 100, tier: 'fumble', check: '克苏鲁神话' }, false)
+  assert.equal(d100Spec.diceSpecs.length, 2)
+  assert.equal(d100Spec.diceSpecs[0].meshKey, 'd100_tens')
+  assert.equal(d100Spec.diceSpecs[0].targetValue, 0)
+  assert.equal(d100Spec.diceSpecs[1].meshKey, 'd100_ones')
+  assert.equal(d100Spec.diceSpecs[1].targetValue, 0)
+
+  const d20Spec = FD3D.rollToStageSpec({ rule: 'd20', dice: [20], total: 22, tier: 'critical', check: '潜行', rerollMeta: { mode: 'fate' } }, false)
+  assert.equal(d20Spec.mode, 'fate')
+  assert.equal(d20Spec.diceSpecs[0].meshKey, 'd20')
+  assert.equal(d20Spec.diceSpecs[0].targetValue, 20)
+
+  // React 重投按钮必须绑定长按蓄力事件与保留普通点击触发
+  const triggered = []
+  const box = FdRerollActionBox({
+    rerollState: { allowed: true, canFate: true, canPush: true, fatePoints: 2, fateMax: 3 },
+    fate: { points: 2, max: 3, failCount: 0 },
+    rerolling: false,
+    onReroll: m => triggered.push(m)
+  })
+  const findButtons = node => {
+    const out = []
+    if (!node || typeof node !== 'object') return out
+    if (node.type === 'button') out.push(node)
+    if (Array.isArray(node.children)) node.children.forEach(c => out.push(...findButtons(c)))
+    return out
+  }
+  const btns = findButtons(box)
+  assert.equal(btns.length, 2)
+  assert.equal(typeof btns[0].props.onPointerDown, 'function')
+  assert.equal(typeof btns[0].props.onPointerLeave, 'function')
+  btns[0].props.onClick()
+  btns[1].props.onClick()
+  assert.deepEqual(triggered, ['fate', 'push'])
+
+  // 原生 DOM 长按蓄力控制器：按住进入蓄力 -> 移出无损取消；按住释放 -> 携带 power > 0 触发
+  const makeFakeBtn = () => {
+    const listeners = new Map()
+    const classes = new Set()
+    const titleEl = { textContent: '✦ 逆命重投' }
+    return {
+      disabled: false,
+      style: { removeProperty() {}, setProperty() {} },
+      classList: {
+        add: c => classes.add(c),
+        remove: c => classes.delete(c),
+        has: c => classes.has(c)
+      },
+      querySelector: () => titleEl,
+      addEventListener: (ev, fn) => listeners.set(ev, fn),
+      emit: (ev, payload = { button: 0 }) => listeners.get(ev)?.(payload),
+      titleEl
+    }
+  }
+  const calls = []
+  const chargeEvents = []
+  const fakeStage = {
+    startButtonCharge: m => chargeEvents.push(['start', m]),
+    cancelButtonCharge: () => chargeEvents.push(['cancel'])
+  }
+  const domBtn = makeFakeBtn()
+  fdAttachHoldChargeToDomBtn(domBtn, {
+    mode: 'fate',
+    getStage: () => fakeStage,
+    onTrigger: (m, p) => calls.push([m, p])
+  })
+
+  // 1) 长按 180ms 进入蓄力后移出取消：不触发重投且取消 3D 旋涡
+  domBtn.emit('pointerdown', { button: 0 })
+  await new Promise(r => setTimeout(r, 180))
+  assert.ok(domBtn.classList.has('is-charging'), '长按超过 140ms 必须进入蓄力态')
+  domBtn.emit('pointerleave', {})
+  assert.equal(domBtn.classList.has('is-charging'), false, '移出按钮必须立刻解除蓄力态')
+  assert.equal(calls.length, 0, '移出取消绝不能误触重投扣命运点')
+  assert.deepEqual(chargeEvents, [['start', 'fate'], ['cancel']])
+
+  // 2) 长按 220ms 后松手释放：携带 power > 0 爆发触发
+  domBtn.emit('pointerdown', { button: 0 })
+  await new Promise(r => setTimeout(r, 220))
+  domBtn.emit('pointerup', {})
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0][0], 'fate')
+  assert.ok(calls[0][1] > 0.1, '蓄力释放必须携带蓄力强度 power > 0.1')
+
+  // 3) 宿主端也接收所有新 3D 动效枚举值
+  const { handlers } = mountPluginWithData()
+  const saved = await handlers.get('fate-dice:save-global-settings')({ settings: { animation: 'jianxin' } })
+  assert.equal(saved.settings.animation, 'jianxin', '后端设置白名单必须持久化 3D 动效主题值')
+})
+
