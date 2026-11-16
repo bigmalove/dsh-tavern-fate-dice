@@ -683,3 +683,137 @@ test('检定设置页：拨动「每轮必检定」当场走持久化（无草�
   assert.equal(flat.includes('保存设置'), false, '不得再出现「保存设置」按钮文案')
   assert.ok(flat.includes('即时生效'), '必须向用户说明改动即时生效')
 })
+
+test('同楼层重新生成锁骰复用：turn 与 inputHash 未变时强制复用首次已结算真骰并重同步阻尼器配额，改写行动或手动重投才换新骰', async () => {
+  const turnSections = []
+  const settledHooks = []
+  const timelineHooks = []
+  const handlers = new Map()
+  const states = new Map()
+  const damperShifts = []
+  let pluginData = null
+  const gameDataMap = new Map()
+  const turnDataMap = new Map()
+  let damperBudgetSeq = 0
+
+  applyFateDicePlugin({
+    tavern: {
+      capabilities: { decisionJudge: 1, narrativeDamper: 1 },
+      damperTurnQuestions() { return () => {} },
+      turnSection(def) { turnSections.push(def); return () => {} },
+      settlementSection() { return () => {} },
+      settlementTool() { return () => {} },
+      onTurnSettled(fn) { settledHooks.push(fn); return () => {} },
+      onTimelineChanged(fn) { timelineHooks.push(fn); return () => {} },
+      onGameRemoved() { return () => {} },
+      handle(name, fn) { handlers.set(name, fn) },
+      async savePluginData({ data }) { pluginData = structuredClone(data) },
+      async readPluginData() { return pluginData ? structuredClone(pluginData) : null },
+      async saveGameData({ gameId, data }) { gameDataMap.set(gameId, structuredClone(data)) },
+      async readGameData({ gameId }) { return structuredClone(gameDataMap.get(gameId) || null) },
+      async saveTurnData({ gameId, turn, textVersion, data }) {
+        turnDataMap.set(`${gameId}:${turn}`, { turn, textVersion, data: structuredClone(data) })
+        return { turn, textVersion }
+      },
+      async readTurnData({ gameId, turn }) { return structuredClone(turnDataMap.get(`${gameId}:${turn}`) || null) },
+      async getTurn() { return { turn: 1, text: '铁门紧锁，走廊尽头传来脚步声。', variables: {} } },
+      async publishState({ gameId, name, data }) { states.set(`${gameId}:${name}`, data) },
+      async getDamperTurnContext({ turn }) {
+        return {
+          active: true,
+          turn,
+          explicitSceneShift: false,
+          stateSnapshot: { kind: 'plain', data: { intimacy_trust: 20, psychological_guard: 70, arousal_or_tension: 65, leverage_depth: 1 } },
+          ruling: { rulingTier: 'resist_pushback', deltaBudget: 'frozen', leverageScore: 2.0 },
+          answers: {
+            fd_needs_check: { type: 'noul', probability: 0.95 },
+            fd_difficulty: { type: 'choice', choice: 'hard' },
+            fd_capability: { type: 'score', score: 2 },
+            fd_domain: { type: 'choice', choice: 'general_deft' }
+          }
+        }
+      },
+      async applyDamperDiceShift(payload) {
+        damperBudgetSeq += 1
+        damperShifts.push(payload)
+        return {
+          applied: true,
+          ruling: {
+            rulingTier: 'conflicted_half_step',
+            deltaBudget: `budget_pass_${damperBudgetSeq}`
+          }
+        }
+      }
+    }
+  })
+
+  const actionA = '我屏住呼吸用细铁丝拨动锁芯尝试撬开铁门'
+
+  // 1) 第 2 轮首次生成并落盘结算
+  const inj1 = await turnSections[0].text({ gameId: 'g-lock', turn: 2, input: actionA })
+  const firstRoll = structuredClone(states.get('g-lock:live-roll')?.roll)
+  assert.ok(firstRoll, '首次行动应正常投出真骰')
+  assert.equal(damperShifts.length, 1)
+  assert.equal(firstRoll.damper.quotaLabel, '配额:budget_pass_1')
+
+  await settledHooks[0]({ gameId: 'g-lock', turn: 2, textVersion: 'v2-1' })
+  const wb1 = await handlers.get('fate-dice:workbench')({ gameId: 'g-lock' })
+  assert.equal(wb1.summary.total, 1)
+
+  // 2) 模拟点击「重新生成」：触发时间线变更清内存缓存，甚至清空旧 textVersion 的 turnData，再次请求同楼层同输入
+  timelineHooks[0]({ gameId: 'g-lock' })
+  turnDataMap.delete('g-lock:2')
+
+  const inj2 = await turnSections[0].text({ gameId: 'g-lock', turn: 2, input: actionA })
+  const regenRoll = structuredClone(states.get('g-lock:live-roll')?.roll)
+  assert.equal(inj2, inj1, '重新生成注入文本应完全复用首次已结算真骰结果')
+  assert.deepEqual(regenRoll.dice, firstRoll.dice, '骰面数组必须与首次结算严格一致')
+  assert.equal(regenRoll.total, firstRoll.total, '总点数必须与首次结算严格一致')
+  assert.equal(regenRoll.tier, firstRoll.tier, '成败档位必须与首次结算严格一致')
+  assert.equal(regenRoll.rolledAt, firstRoll.rolledAt, '真骰时间戳必须保持首次结算原值')
+  assert.equal(regenRoll.reusedOnRegenerate, true, '应标记为重新生成锁骰复用')
+  assert.equal(damperShifts.length, 2, '重新生成时必须向叙事阻尼器重新同步配额')
+  assert.equal(damperShifts[1].tier, firstRoll.tier)
+  assert.equal(regenRoll.damper.quotaLabel, '配额:budget_pass_2', '阻尼器最新配额回包应同步更新')
+
+  await settledHooks[0]({ gameId: 'g-lock', turn: 2, textVersion: 'v2-2' })
+  const wb2 = await handlers.get('g-lock') || await handlers.get('fate-dice:workbench')({ gameId: 'g-lock' })
+  assert.equal(wb2.summary.total, 1, '重新生成复用原骰不应重复累加本局累计检定次数')
+
+  // 3) 连续第二次重新生成：依然死锁在首次已结算结果
+  timelineHooks[0]({ gameId: 'g-lock' })
+  const inj3 = await turnSections[0].text({ gameId: 'g-lock', turn: 2, input: actionA })
+  assert.equal(inj3, inj1)
+  assert.equal(damperShifts.length, 3)
+  await settledHooks[0]({ gameId: 'g-lock', turn: 2, textVersion: 'v2-3' })
+
+  // 4) 玩家改写同楼层行动内容（inputHash 改变）：允许重新掷骰并更新锁定
+  await new Promise(resolve => setTimeout(resolve, 2))
+  timelineHooks[0]({ gameId: 'g-lock' })
+  const actionB = '我退后两步蓄力用肩膀猛撞铁门合页'
+  await turnSections[0].text({ gameId: 'g-lock', turn: 2, input: actionB })
+  const editedRoll = structuredClone(states.get('g-lock:live-roll')?.roll)
+  assert.ok(editedRoll)
+  assert.equal(Boolean(editedRoll.reusedOnRegenerate), false, '改写行动文本后不应走旧锁复用')
+  assert.notEqual(editedRoll.rolledAt, firstRoll.rolledAt, '改写行动文本后必须重新投掷新真骰')
+  assert.equal(damperShifts.length, 4)
+  await settledHooks[0]({ gameId: 'g-lock', turn: 2, textVersion: 'v2-4' })
+  const wbAfterEdit = await handlers.get('fate-dice:workbench')({ gameId: 'g-lock' })
+  assert.equal(wbAfterEdit.summary.total, 1, '同楼层改写行动替换原记录后累计轮数仍为 1')
+
+  // 5) 玩家调手动重投（fate-dice:reroll-turn）：突破锁定重掷新骰，且后续重新生成复用手动重投后的新骰点
+  await new Promise(resolve => setTimeout(resolve, 2))
+  const rerollRes = await handlers.get('fate-dice:reroll-turn')({ gameId: 'g-lock', turn: 2 })
+  assert.equal(rerollRes.ok, true)
+  assert.ok(rerollRes.roll)
+  assert.notEqual(rerollRes.roll.rolledAt, editedRoll.rolledAt, '手动重投必须生成全新真骰结果')
+  assert.equal(damperShifts.length, 5)
+
+  timelineHooks[0]({ gameId: 'g-lock' })
+  const injAfterManualReroll = await turnSections[0].text({ gameId: 'g-lock', turn: 2, input: actionB })
+  const lockedToManualRoll = states.get('g-lock:live-roll')?.roll
+  assert.equal(injAfterManualReroll, rerollRes.injection, '手动重投后再点重新生成，应复用手动重投出的新骰点')
+  assert.equal(lockedToManualRoll.rolledAt, rerollRes.roll.rolledAt)
+  assert.equal(lockedToManualRoll.reusedOnRegenerate, true)
+  assert.equal(damperShifts.length, 6, '手动重投后的重新生成同样要重新同步阻尼器配额')
+})

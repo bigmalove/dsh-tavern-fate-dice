@@ -35,6 +35,7 @@ const FD_STORAGE_KEYS = {
 const FD_RPC = {
   status: 'fate-dice:status',
   readTurn: 'fate-dice:read-turn',
+  rerollTurn: 'fate-dice:reroll-turn',
   workbench: 'fate-dice:workbench',
   freeRoll: 'fate-dice:free-roll',
   saveSettings: 'fate-dice:save-global-settings',
@@ -1566,6 +1567,7 @@ function LiveRollBanner(props) {
   const isSkipped = Boolean(event && event.kind === 'skipped')
   const isFree = Boolean(event && event.kind === 'free')
   const roll = isFree ? null : (event && event.roll) || null
+  const isReused = Boolean((event && event.reused) || (roll && roll.reusedOnRegenerate))
   const freeResult = isFree ? (event && event.result) || null : null
   const hidden = Boolean(roll && roll.hidden && !revealed)
   const eventId = event ? event.id : null
@@ -1587,6 +1589,14 @@ function LiveRollBanner(props) {
         if (typeof onDismiss === 'function') onDismiss()
       }, 6000)
       return () => clearTimeout(closer)
+    }
+    /* 重新生成复用本轮已锁定的首次真骰结果：直接展示原骰面，不再假播滚动随机点数 */
+    if (isReused) {
+      setRolling(false)
+      const hider = setTimeout(() => {
+        if (typeof onDismiss === 'function') onDismiss()
+      }, 3600)
+      return () => clearTimeout(hider)
     }
     const reduced = fdSafe(() => typeof window !== 'undefined' && Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches), false)
     if (animation === 'none' || reduced) {
@@ -1667,8 +1677,8 @@ function LiveRollBanner(props) {
     : isFree
       ? `骰面 [${(freeResult.dice || []).join(', ')}]${freeResult.bonus ? (freeResult.bonus > 0 ? ' +' : ' ') + freeResult.bonus : ''} · 轻触收起`
       : hidden
-        ? '结果已暗中注入本轮裁定（轻触偷看）'
-        : `${formatRollSummary(roll, true)} · 轻触收起`
+        ? (isReused ? '已复用本轮首次暗骰结果（轻触偷看）' : '结果已暗中注入本轮裁定（轻触偷看）')
+        : (isReused ? `已锁定复用首次真骰 · ${formatRollSummary(roll, true)}` : `${formatRollSummary(roll, true)} · 轻触收起`)
 
   return h('div', {
     className: 'fd-root',
@@ -1703,6 +1713,9 @@ function LiveRollBanner(props) {
             : hidden
               ? '暗骰 · 点按揭晓'
               : `${roll.tierLabel || ''} · ${roll.total}`)
+        : null,
+      !rolling && isReused
+        ? h('span', { className: 'fd-event-pill', title: '同一楼层输入未变，重新生成已强制复用首次已结算的真骰结果' }, '🔒 锁骰复用')
         : null,
       !rolling ? fdDamperChip(roll) : null),
     h('div', { className: 'fd-live-sub' }, subText))))
@@ -1796,6 +1809,8 @@ function TurnRollCapsule(props) {
   const [record, setRecord] = useState(undefined)
   const [open, setOpen] = useState(false)
   const [peeked, setPeeked] = useState(false)
+  const [rerolling, setRerolling] = useState(false)
+  const [rerollHint, setRerollHint] = useState('')
 
   useEffect(() => {
     if (!gameId || !turn) {
@@ -1805,6 +1820,7 @@ function TurnRollCapsule(props) {
     let alive = true
     setRecord(undefined)
     setPeeked(false)
+    setRerollHint('')
     fdCall(ui, FD_RPC.readTurn, { gameId, turn }).then(res => {
       if (!alive) return
       const data = res && res.ok ? res.data : null
@@ -1822,6 +1838,24 @@ function TurnRollCapsule(props) {
   const tier = covered ? 'hidden' : fdTierOf(roll.tier)
   const summary = formatRollSummary(roll, peeked)
 
+  const manualReroll = () => {
+    if (rerolling || !gameId || !turn) return
+    setRerolling(true)
+    setRerollHint('')
+    fdCall(ui, FD_RPC.rerollTurn, { gameId, turn })
+      .then(res => {
+        const nextRoll = res && res.ok && res.data && res.data.roll ? res.data.roll : null
+        if (nextRoll) {
+          setRecord(prev => ({ ...(prev || {}), roll: nextRoll }))
+          setRerollHint('已手动重投真骰并同步配额，点酒馆「重新生成」即可按新点数重写正文')
+        } else {
+          setRerollHint((res && res.data && res.data.error) || (res && res.error) || '重投未生成新骰点')
+        }
+      })
+      .catch(() => setRerollHint('手动重投失败'))
+      .finally(() => setRerolling(false))
+  }
+
   return h(Fragment, null,
     h('div', { className: 'fd-root', style: { padding: '0 0 2px' } },
       h('div', { className: 'fd-turn-capsule', 'data-tier': tier },
@@ -1838,10 +1872,24 @@ function TurnRollCapsule(props) {
         h('span', { className: 'fd-turn-head-left' },
           h('span', { 'aria-hidden': 'true' }, covered ? '🎴' : '🎲'),
           h('span', { className: 'fd-turn-summary' }, summary),
+          roll.reusedOnRegenerate ? h('span', { className: 'fd-event-pill', title: '重新生成已复用本轮首次真骰结果' }, '🔒 锁骰') : null,
           roll.damper ? h('span', { className: 'fd-event-pill' }, '⛓ 阻尼') : null),
         h('span', { className: 'fd-tier-pill', 'data-tier': tier },
           covered ? '点按揭晓' : (roll.tierLabel || '结果'))),
-        open ? fdBuildTurnDetails(record, peeked) : null)),
+        open
+          ? h(Fragment, null,
+            fdBuildTurnDetails(record, peeked),
+            !covered
+              ? h('div', { className: 'fd-btn-row', style: { padding: '4px 10px 8px' } },
+                h(FdBtn, {
+                  small: true,
+                  disabled: rerolling,
+                  title: '突破防刷骰锁定，强制重新投掷本轮真骰',
+                  onClick: manualReroll
+                }, rerolling ? '重投中…' : '🎲 手动重投本轮'),
+                rerollHint ? h('span', { className: 'fd-hint' }, rerollHint) : h('span', { className: 'fd-hint' }, '直接重新生成正文将自动复用原骰点'))
+              : null)
+          : null)),
     children || null)
 }
 
