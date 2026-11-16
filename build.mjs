@@ -39,6 +39,10 @@ function wrapSource(bodies) {
     '    }',
     '    const h = React.createElement',
     '    const { Fragment, useEffect, useMemo, useRef, useState } = React',
+    '    let ReactDOM = null',
+    '    let ReactDOMClient = null',
+    "    try { ReactDOM = require('react-dom') } catch {}",
+    "    try { ReactDOMClient = require('react-dom/client') } catch {}",
     ''
   ].join('\n')
 

@@ -723,6 +723,127 @@ const CSS_TEXT = `
   word-break: break-all;
 }
 
+/* ---------- 楼层顶栏并列检定胶囊（对齐叙事阻尼器 StoryFloorDamperPill / Panel） ---------- */
+.fd-floor-head-slot {
+  display: inline-flex;
+  align-items: center;
+}
+.fd-floor-pill {
+  --fd-pill-color: #3f9d68;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--fd-pill-color) 34%, var(--dsw-alias-border-l2, rgba(128,128,142,0.28)));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fd-pill-color) 10%, transparent);
+  color: var(--dsw-alias-label-secondary, inherit);
+  font: inherit;
+  font-size: 11px;
+  line-height: 18px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.fd-floor-pill:hover {
+  background: color-mix(in srgb, var(--fd-pill-color) 18%, transparent);
+  border-color: color-mix(in srgb, var(--fd-pill-color) 52%, var(--dsw-alias-border-l2, rgba(128,128,142,0.36)));
+  color: var(--dsw-alias-label-primary, inherit);
+}
+.fd-floor-pill[data-expanded="true"] {
+  background: color-mix(in srgb, var(--fd-pill-color) 20%, transparent);
+  border-color: color-mix(in srgb, var(--fd-pill-color) 60%, var(--dsw-alias-border-l2, rgba(128,128,142,0.42)));
+  color: var(--dsw-alias-label-primary, inherit);
+}
+.fd-floor-pill[data-tone="critical"] { --fd-pill-color: #26a269; }
+.fd-floor-pill[data-tone="success"] { --fd-pill-color: #3f9d68; }
+.fd-floor-pill[data-tone="costly"] { --fd-pill-color: #d4712a; }
+.fd-floor-pill[data-tone="failure"] { --fd-pill-color: #d05842; }
+.fd-floor-pill[data-tone="fumble"] { --fd-pill-color: #cf4343; }
+.fd-floor-pill[data-tone="hidden"] { --fd-pill-color: #6e7787; }
+.fd-floor-pill[data-tone="skipped"] {
+  --fd-pill-color: #8a8f98;
+  border-style: dashed;
+  color: var(--dsw-alias-label-tertiary, inherit);
+}
+.fd-floor-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--fd-pill-color);
+  flex: none;
+}
+.fd-floor-pill[data-tone="skipped"] .fd-floor-dot {
+  background: transparent;
+  box-sizing: border-box;
+  border: 1.5px solid var(--fd-pill-color);
+}
+.fd-floor-panel-slot {
+  flex: 0 0 100%;
+  min-width: 0;
+}
+.fd-floor-panel-slot:empty {
+  display: none;
+}
+.fd-floor-panel {
+  --fd-pill-color: #3f9d68;
+  display: grid;
+  gap: 8px;
+  max-width: min(100%, 760px);
+  box-sizing: border-box;
+  margin: 4px 0 6px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--fd-pill-color) 30%, var(--dsw-alias-border-l2, rgba(128,128,142,0.28)));
+  border-left: 3px solid var(--fd-pill-color);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, rgba(128,128,142,0.06));
+  color: var(--dsw-alias-label-secondary, inherit);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.fd-floor-panel[data-tone="critical"] { --fd-pill-color: #26a269; }
+.fd-floor-panel[data-tone="success"] { --fd-pill-color: #3f9d68; }
+.fd-floor-panel[data-tone="costly"] { --fd-pill-color: #d4712a; }
+.fd-floor-panel[data-tone="failure"] { --fd-pill-color: #d05842; }
+.fd-floor-panel[data-tone="fumble"] { --fd-pill-color: #cf4343; }
+.fd-floor-panel[data-tone="hidden"] { --fd-pill-color: #6e7787; }
+.fd-floor-panel[data-tone="skipped"] { --fd-pill-color: #8a8f98; }
+.fd-floor-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+.fd-floor-panel-title {
+  font-weight: 650;
+  color: var(--dsw-alias-label-primary, inherit);
+}
+.fd-floor-panel-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.fd-floor-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(128,128,142,0.12);
+  border: 1px solid rgba(128,128,142,0.22);
+}
+.fd-floor-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding-top: 2px;
+}
+
 @keyframes fd-tumble {
   0% { transform: translateY(-18px) rotateX(0deg) rotateZ(-200deg) scale(0.72); opacity: 0.25; }
   55% { transform: translateY(3px) rotateX(330deg) rotateZ(18deg) scale(1.1); opacity: 1; }

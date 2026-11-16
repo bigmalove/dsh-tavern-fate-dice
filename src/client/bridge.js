@@ -5,6 +5,40 @@
 
 function fdNoop() {}
 
+let fdCurrentGameId = ''
+const fdGameIdListeners = new Set()
+
+function fdDetectUrlGameId() {
+  return fdSafe(() => {
+    if (typeof window === 'undefined' || !window.location) return ''
+    const search = String(window.location.search || '')
+    const qMatch = /[?&](?:sessionId|gameId)=([^&#]+)/.exec(search)
+    if (qMatch && qMatch[1]) return decodeURIComponent(qMatch[1])
+    const pathname = String(window.location.pathname || '')
+    const pMatch = /\/(?:sessions?|chats?|play|c)\/([a-zA-Z0-9_.:-]{6,})/.exec(pathname)
+    return pMatch && pMatch[1] ? decodeURIComponent(pMatch[1]) : ''
+  }, '')
+}
+
+function fdNoteActiveGameId(gameId) {
+  const next = typeof gameId === 'string' ? gameId.trim() : ''
+  if (!next || next === '__fate_dice_global__' || next === fdCurrentGameId) return
+  fdCurrentGameId = next
+  fdGameIdListeners.forEach(fn => {
+    try { fn(next) } catch {}
+  })
+}
+
+function fdGetActiveGameId() {
+  return fdCurrentGameId || fdDetectUrlGameId() || ''
+}
+
+function fdSubscribeActiveGameId(listener) {
+  if (typeof listener !== 'function') return fdNoop
+  fdGameIdListeners.add(listener)
+  return () => { fdGameIdListeners.delete(listener) }
+}
+
 function fdSafe(fn, fallback) {
   try {
     return fn()

@@ -1069,3 +1069,124 @@ test('楼层胶囊默认挂载与两阶段结算保护：默认通过 attach + r
   assert.match(clientCode, /registerMediaRenderer/)
   assert.match(clientCode, /dsh-tavern-fate-dice\/roll-capsule/)
 })
+
+test('楼层顶栏胶囊（与叙事阻尼器胶囊并排）：正在生成期间即可实时读回本轮检定并在顶栏渲染胶囊，点开显示命运点与重投按钮', async () => {
+  const turnSections = []
+  const settledHooks = []
+  const handlers = new Map()
+  const gameDataMap = new Map()
+  const turnDataMap = new Map()
+
+  applyFateDicePlugin({
+    tavern: {
+      capabilities: { decisionJudge: 1, narrativeDamper: 1 },
+      damperTurnQuestions() { return () => {} },
+      turnSection(def) { turnSections.push(def); return () => {} },
+      settlementSection() { return () => {} },
+      settlementTool() { return () => {} },
+      onTurnSettled(fn) { settledHooks.push(fn); return () => {} },
+      handle(name, fn) { handlers.set(name, fn) },
+      async savePluginData() {},
+      async readPluginData() { return null },
+      async saveGameData({ gameId, data }) { gameDataMap.set(gameId, structuredClone(data)) },
+      async readGameData({ gameId }) { return structuredClone(gameDataMap.get(gameId) || null) },
+      async saveTurnData({ gameId, turn, textVersion, data }) {
+        turnDataMap.set(`${gameId}:${turn}`, { turn, textVersion, data: structuredClone(data) })
+        return { turn, textVersion }
+      },
+      async readTurnData({ gameId, turn }) { return structuredClone(turnDataMap.get(`${gameId}:${turn}`) || null) },
+      async getTurn() { return { turn: 1, text: '书房里摆放着古老魔导书。', variables: {} } },
+      async publishState() {},
+      async getDamperTurnContext({ turn }) {
+        return {
+          active: true,
+          turn,
+          explicitSceneShift: false,
+          ruling: { rulingTier: 'resist_pushback', deltaBudget: 'frozen', leverageScore: 0 },
+          answers: {
+            fd_needs_check: { type: 'noul', probability: 0.92 },
+            fd_difficulty: { type: 'choice', choice: 'extreme' },
+            fd_capability: { type: 'score', score: 0 },
+            fd_domain: { type: 'choice', choice: 'general_arcana' }
+          }
+        }
+      },
+      async applyDamperDiceShift() {
+        return { applied: true, ruling: { rulingTier: 'resist_pushback', deltaBudget: 'frozen' } }
+      }
+    }
+  })
+
+  await handlers.get('fate-dice:save-global-settings')({ settings: { rule: 'd10' } })
+
+  // 触发第 5 轮发前检定（尚未调用 onTurnSettled，模拟「第 4 楼 · 正在生成」流式期间）
+  await turnSections[0].text({ gameId: 'g-head-pill', turn: 5, input: '学习魔法' })
+
+  // 即使前端在流式首帧只拿到了 floor=4（streaming:true）甚至未传 gameId，也能通过活跃会话与 pending 立即读回本轮真骰结果
+  const liveRead = await handlers.get('fate-dice:read-turn')({ gameId: '', turn: 4, streaming: true })
+  assert.ok(liveRead?.roll, '正在生成期间必须能立即读回本轮真骰结果')
+  assert.equal(liveRead.turn, 5)
+  assert.equal(liveRead.streaming, true)
+  assert.equal(liveRead.fate.points, 2)
+
+  // 验证前端 StoryFloorDiceItem 与 fdExtractFloorTurn 胶囊渲染树
+  const clientCode = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+  let loadedModule = null
+  let stateQueue = []
+  const fakeReact = {
+    Fragment: Symbol('Fragment'),
+    createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+    useState: init => {
+      if (stateQueue.length) return [stateQueue.shift(), () => {}]
+      return [typeof init === 'function' ? init() : init, () => {}]
+    },
+    useEffect: () => {},
+    useMemo: fn => fn(),
+    useRef: val => ({ current: val })
+  }
+  const fakeReactDOM = {
+    createPortal: (node, container) => ({ portal: true, container, node })
+  }
+  const sandbox = {
+    window: { __ModuleLoader__: { load(def) { loadedModule = def } }, localStorage: { getItem: () => null, setItem: () => {} } },
+    document: { head: { appendChild() {} }, body: null, getElementById: () => null, createElement: () => ({ id: '', textContent: '', style: {} }) },
+    console
+  }
+  vm.runInNewContext(clientCode, sandbox, { filename: 'client.js' })
+  const exported = loadedModule.factory(mod => {
+    if (mod === 'react') return fakeReact
+    if (mod === 'react-dom') return fakeReactDOM
+    throw new Error('unexpected require: ' + mod)
+  })
+
+  // 验证 data-legacy-turn 优先于 data-floor（解决删楼回退后第 4 楼实际对应 turn 5 的映射）
+  const mockArticle = {
+    getAttribute(attr) {
+      if (attr === 'data-floor') return '4'
+      if (attr === 'data-legacy-turn') return '5'
+      return null
+    }
+  }
+  assert.equal(exported.__test.fdExtractFloorTurn(mockArticle), 5)
+
+  // 结算后读回 settled 状态，展开顶栏面板可见「✦ 命运点 2/3」「✦ 逆命重投」「🔥 孤注一掷」
+  await settledHooks[0]({ gameId: 'g-head-pill', turn: 5, textVersion: 'v5' })
+  const settledRead = await handlers.get('fate-dice:read-turn')({ gameId: 'g-head-pill', turn: 5 })
+
+  // 预充组件内部 state：[record, expanded, peeked, rerolling, rerollHint]
+  stateQueue = [settledRead, true, false, false, '']
+  const tree = exported.__test.StoryFloorDiceItem({
+    ui: {},
+    gameId: 'g-head-pill',
+    turn: 5,
+    streaming: false,
+    headSlot: { slot: 'head' },
+    panelSlot: { slot: 'panel' }
+  })
+
+  const serialized = JSON.stringify(tree)
+  assert.match(serialized, /真骰 · 通用·技艺/)
+  assert.match(serialized, /✦ 命运点 2\/3/)
+  assert.match(serialized, /✦ 逆命重投/)
+  assert.match(serialized, /🔥 孤注一掷/)
+})

@@ -5,7 +5,34 @@
 
 function FateDicePanel(props) {
   const { ui, gameId } = props || {}
+  if (gameId) fdNoteActiveGameId(gameId)
   return h(WorkbenchPanel, { ui, gameId })
+}
+
+function fdMountFloorHeaderRoot(ui) {
+  if (typeof document === 'undefined' || !document.body || typeof document.createElement !== 'function') return fdNoop
+  const createRootFn = (ReactDOMClient && typeof ReactDOMClient.createRoot === 'function' && ReactDOMClient.createRoot)
+    || (ReactDOM && typeof ReactDOM.createRoot === 'function' && ReactDOM.createRoot)
+    || null
+  if (!createRootFn) return fdNoop
+  let hostEl = null
+  let root = null
+  try {
+    const existing = typeof document.getElementById === 'function' ? document.getElementById('dsh-fate-dice-floor-root') : null
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing)
+    hostEl = document.createElement('div')
+    hostEl.id = 'dsh-fate-dice-floor-root'
+    hostEl.style.display = 'none'
+    document.body.appendChild(hostEl)
+    root = createRootFn(hostEl)
+    root.render(h(FloorHeaderManager, { ui }))
+  } catch {
+    return fdNoop
+  }
+  return () => {
+    try { if (root && typeof root.unmount === 'function') root.unmount() } catch {}
+    try { if (hostEl && hostEl.parentNode) hostEl.parentNode.removeChild(hostEl) } catch {}
+  }
 }
 
 function fdRegisterSafely(ctx, label, factory) {
@@ -27,6 +54,25 @@ function apply(ctx) {
   const ui = ctx && ctx.tavernUi
   if (!ui) return
   fdEnsureStyleInjected()
+
+  // 0) 会话活跃感知 + 楼层顶栏（与叙事阻尼器胶囊并排）常驻渲染桥
+  if (typeof ui.onPlayEvent === 'function') {
+    fdRegisterSafely(ctx, 'fate-dice: play event tracker', () => ui.onPlayEvent(ev => {
+      if (ev && ev.gameId) fdNoteActiveGameId(ev.gameId)
+    }))
+  }
+  if (typeof ui.registerMessageAction === 'function') {
+    fdRegisterSafely(ctx, 'fate-dice: session probe', () => ui.registerMessageAction({
+      id: 'fate-dice-session-probe',
+      label: '检定状态',
+      when: ({ gameId } = {}) => {
+        if (gameId) fdNoteActiveGameId(gameId)
+        return false
+      },
+      run: () => {}
+    }))
+  }
+  fdRegisterSafely(ctx, 'fate-dice: floor header pill', () => fdMountFloorHeaderRoot(ui))
 
   // 1) 右侧栏「插件」卡片区：常驻双页签极简工作台（桌面与手机竖屏单列自适应）
   fdRegisterSafely(ctx, 'fate-dice: workbench panel', () => ui.registerPanel({
@@ -72,4 +118,4 @@ exports.name = FD_PLUGIN_ID
 exports.inject = ['tavernUi']
 exports.apply = apply
 exports.WorkbenchPanel = WorkbenchPanel
-exports.__test = { DieGlyph, formatRollSummary, LiveRollBanner, TurnRollCapsule, WorkbenchPanel, DecisionModelGuideBanner, FdHelp, SettingsTab }
+exports.__test = { DieGlyph, formatRollSummary, LiveRollBanner, TurnRollCapsule, StoryFloorDiceItem, fdExtractFloorTurn, WorkbenchPanel, DecisionModelGuideBanner, FdHelp, SettingsTab }

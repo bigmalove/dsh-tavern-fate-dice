@@ -481,12 +481,393 @@ function TurnRollCapsule(props) {
     children || null)
 }
 
+const fdMountedHeaderTurns = new Set()
+const fdHeaderMountListeners = new Set()
+
+function fdNotifyHeaderTurns() {
+  fdHeaderMountListeners.forEach(fn => {
+    try { fn() } catch {}
+  })
+}
+
 function MediaTurnRollCapsule(props) {
   const { ui, gameId, turn, item } = props || {}
   const resolvedTurn = fdNumber(turn || (item && item.data && item.data.turn), 0)
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const bump = () => setTick(v => v + 1)
+    fdHeaderMountListeners.add(bump)
+    return () => { fdHeaderMountListeners.delete(bump) }
+  }, [])
   if (!gameId || !resolvedTurn) return null
-  if (fdMountedTurnViews.has(`${gameId}:${resolvedTurn}`)) return null
+  fdNoteActiveGameId(gameId)
+  const key = `${gameId}:${resolvedTurn}`
+  if (fdMountedTurnViews.has(key) || fdMountedHeaderTurns.has(key)) return null
   return h(TurnRollCapsule, { ui, gameId, turn: resolvedTurn })
+}
+
+function fdFormatCompactDice(roll) {
+  if (!roll) return ''
+  if (roll.rule === 'd100') {
+    return `${roll.total}/${roll.target === undefined ? 100 : roll.target}`
+  }
+  const totalMod = fdNumber(roll.totalModifier ?? ((Number(roll.skillBonus) || 0) + (Number(roll.modifier) || 0)), 0)
+  const modStr = totalMod ? (totalMod > 0 ? `+${totalMod}` : String(totalMod)) : ''
+  if (Array.isArray(roll.dice) && roll.dice.length > 1) {
+    return `[${roll.dice.join('+')}]${modStr}=${roll.total}`
+  }
+  const raw = Array.isArray(roll.dice) && roll.dice.length === 1 ? roll.dice[0] : (roll.rawTotal ?? roll.total)
+  return modStr ? `${raw}${modStr}=${roll.total}` : String(roll.total)
+}
+
+function StoryFloorDiceItem(props) {
+  const { ui, gameId, turn, streaming, headSlot, panelSlot } = props || {}
+  const [record, setRecord] = useState(null)
+  const [expanded, setExpanded] = useState(false)
+  const [peeked, setPeeked] = useState(false)
+  const [rerolling, setRerolling] = useState(false)
+  const [rerollHint, setRerollHint] = useState('')
+
+  useEffect(() => {
+    if (!turn) return undefined
+    let alive = true
+    const load = () => {
+      fdCall(ui, FD_RPC.readTurn, {
+        gameId: gameId || '',
+        turn,
+        streaming: Boolean(streaming)
+      }).then(res => {
+        if (!alive) return
+        const data = res && res.ok ? res.data : null
+        setRecord(data && typeof data === 'object' ? data : null)
+      })
+    }
+    load()
+    const watchKey = gameId || fdGetActiveGameId()
+    const offCheck = watchKey ? fdWatch(ui, watchKey, 'turn-check', () => { if (alive) load() }) : fdNoop
+    const offSync = watchKey ? fdWatch(ui, watchKey, 'workbench-sync', () => { if (alive) load() }) : fdNoop
+    const offLive = watchKey ? fdWatch(ui, watchKey, 'live-roll', () => { if (alive) load() }) : fdNoop
+    return () => {
+      alive = false
+      offCheck()
+      offSync()
+      offLive()
+    }
+  }, [gameId, turn, streaming])
+
+  const effectiveTurn = fdNumber((record && record.turn) || turn, 0)
+  const hasVisibleContent = Boolean(record && (record.roll || record.setupRequiredReason || (record.judged && record.judged.shouldRoll === false)))
+
+  useEffect(() => {
+    const activeId = gameId || fdGetActiveGameId()
+    if (!hasVisibleContent || !activeId || !effectiveTurn) return undefined
+    const key = `${activeId}:${effectiveTurn}`
+    fdMountedHeaderTurns.add(key)
+    fdNotifyHeaderTurns()
+    return () => {
+      fdMountedHeaderTurns.delete(key)
+      fdNotifyHeaderTurns()
+    }
+  }, [hasVisibleContent, gameId, effectiveTurn])
+
+  if (!hasVisibleContent || !ReactDOM || typeof ReactDOM.createPortal !== 'function' || !headSlot) return null
+
+  const roll = record.roll || null
+  const judged = record.judged || null
+  const setupReason = record.setupRequiredReason || ''
+  const fate = fdNormalizeFate(record.fate)
+  const covered = Boolean(roll && roll.hidden && !peeked)
+  const isStreaming = Boolean(streaming || record.streaming)
+
+  let tone = 'skipped'
+  let pillText = '骰子 · 免检定'
+  let tooltip = '点击展开命运之骰本轮详情'
+
+  if (roll) {
+    tone = covered ? 'hidden' : fdTierOf(roll.tier)
+    if (covered) {
+      pillText = `暗骰 · ${roll.check || '感知'} · 点按偷看`
+      tooltip = '感知/洞察暗骰（点击揭晓并展开详情）'
+    } else {
+      const suffix = roll.rerollMeta && roll.rerollMeta.mode === 'push'
+        ? ' · 孤注'
+        : (roll.rerollMeta && roll.rerollMeta.mode === 'fate'
+          ? ' · 逆命'
+          : (roll.reusedOnRegenerate ? ' · 锁骰' : ''))
+      pillText = `真骰 · ${roll.check || '检定'} ${fdFormatCompactDice(roll)} · ${roll.tierLabel || ''}${suffix}`
+      tooltip = `${roll.rule || '2d6'} ${roll.check || '检定'}（难度：${roll.difficultyLabel || '普通'}）· 命运点 ${fate.points}/${fate.max}（点击展开详情与重投）`
+    }
+  } else if (setupReason) {
+    tone = 'skipped'
+    pillText = '真骰 · 待配决策模型'
+    tooltip = '尚未配置决策模型 API Key（点击查看指引）'
+  } else if (judged && judged.shouldRoll === false) {
+    tone = 'skipped'
+    const prob = Number(judged.needProbability)
+    const probPart = judged.damperSync && judged.damperSync.skipped === 'scene-shift'
+      ? '场景放行'
+      : (Number.isFinite(prob) ? `免检定 ${Math.round(prob * 100)}%` : '免检定')
+    pillText = `真骰 · ${probPart}`
+    tooltip = `${judged.reason || '本轮行动无显著不确定性，免于投骰'}（点击展开详情）`
+  }
+
+  const rerollState = record.rerollState && typeof record.rerollState === 'object'
+    ? record.rerollState
+    : { allowed: false, reason: '本轮无重投项' }
+
+  const runManualReroll = mode => {
+    if (rerolling || !effectiveTurn) return
+    setRerolling(true)
+    setRerollHint('')
+    fdCall(ui, FD_RPC.rerollTurn, { gameId: gameId || '', turn: effectiveTurn, mode: mode || 'auto' })
+      .then(res => {
+        const data = res && res.ok ? res.data : null
+        const nextRoll = data && data.ok !== false && data.roll ? data.roll : null
+        if (nextRoll) {
+          setRecord(prev => ({
+            ...(prev || {}),
+            roll: nextRoll,
+            fate: data.fate || (prev && prev.fate) || fate,
+            rerollState: data.rerollState || { allowed: false, reason: '本轮已重投锁定（每轮限 1 次）' }
+          }))
+          setRerollHint(data.mode === 'push'
+            ? '已孤注一掷并同步阻尼配额！点击下方「重新生成正文」即可按新结果与代价改写剧情'
+            : '已消耗 1 点命运点逆命重投！点击下方「重新生成正文」即可按新点数改写剧情')
+        } else {
+          if (data && data.rerollState) {
+            setRecord(prev => ({ ...(prev || {}), fate: data.fate || (prev && prev.fate), rerollState: data.rerollState }))
+          }
+          setRerollHint((data && data.error) || (res && res.error) || '当前条件不允许重投')
+        }
+      })
+      .catch(() => setRerollHint('手动重投失败'))
+      .finally(() => setRerolling(false))
+  }
+
+  const pillNode = h('button', {
+    type: 'button',
+    className: 'fd-floor-pill',
+    'data-tone': tone,
+    'data-expanded': expanded ? 'true' : undefined,
+    'aria-expanded': Boolean(expanded),
+    title: tooltip,
+    onClick: e => {
+      if (e && typeof e.stopPropagation === 'function') e.stopPropagation()
+      if (covered && !peeked) {
+        setPeeked(true)
+        setExpanded(true)
+      } else {
+        setExpanded(prev => !prev)
+      }
+    }
+  },
+  h('span', { className: 'fd-floor-dot', 'aria-hidden': 'true' }),
+  h('span', null, pillText))
+
+  const panelNode = expanded && panelSlot
+    ? ReactDOM.createPortal(
+      h('section', {
+        className: 'fd-root fd-floor-panel',
+        'data-tone': tone,
+        'aria-label': '命运之骰本轮裁定详情'
+      },
+      h('div', { className: 'fd-floor-panel-head' },
+        h('strong', { className: 'fd-floor-panel-title' },
+          roll
+            ? `命运之骰裁定 · ${roll.check || '行动'}检定（${covered ? '暗骰已揭晓' : (roll.tierLabel || '判定')}）`
+            : (setupReason ? '命运之骰 · 待配置决策模型' : '命运之骰 · 本轮免检定')),
+        h('div', { className: 'fd-floor-panel-tags' },
+          roll ? h('span', { className: 'fd-floor-tag' }, String(roll.rule || '2d6')) : null,
+          roll && roll.difficultyLabel ? h('span', { className: 'fd-floor-tag' }, `难度：${roll.difficultyLabel}`) : null,
+          roll && roll.damper ? h('span', { className: 'fd-floor-tag' }, `⛓ ${roll.damper.quotaLabel || '阻尼联动'}`) : null,
+          h('span', { className: 'fd-floor-tag' }, `✦ 命运点 ${fate.points}/${fate.max}`))),
+      roll
+        ? fdBuildTurnDetails(record, true)
+        : h('div', { className: 'fd-hint' },
+          setupReason
+            ? '请前往酒馆「设置 › 叙事阻尼器」填写决策模型与 API Key，配置后即可自动定难并投掷真骰。'
+            : ((judged && judged.reason) || '本轮行动无显著不确定性，免于投骰。')),
+      roll
+        ? h('div', { className: 'fd-floor-panel-actions' },
+          isStreaming
+            ? h('span', { className: 'fd-hint' }, '⏳ 正文正在按上述真骰结果生成；待本轮生成落盘后，可在此执行逆命重投或孤注一掷')
+            : rerollState.allowed
+              ? h(Fragment, null,
+                rerollState.canFate
+                  ? h(FdBtn, {
+                    small: true,
+                    primary: true,
+                    disabled: rerolling,
+                    title: '消耗 1 点命运点，无额外恶化惩罚重投本轮真骰（每轮限 1 次）',
+                    onClick: () => runManualReroll('fate')
+                  }, rerolling ? '重投中…' : `✦ 逆命重投 (-1 点 · 余 ${fdNumber(rerollState.fatePoints, fate.points)}/${fdNumber(rerollState.fateMax, fate.max)})`)
+                  : null,
+                h(FdBtn, {
+                  small: true,
+                  danger: true,
+                  disabled: rerolling,
+                  title: '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
+                  onClick: () => runManualReroll('push')
+                }, rerolling ? '搏命中…' : (rerollState.canFate ? '🔥 孤注一掷' : '🔥 孤注一掷（败则大失败 · 成亦带伤）')),
+                h('span', { className: 'fd-hint' }, rerollHint || '直接点「重新生成正文」将强制复用原骰点'))
+              : h('span', { className: 'fd-hint' }, rerollHint || `🔒 ${rerollState.reason || '本轮骰点已锁定'}`))
+        : null),
+      panelSlot
+    )
+    : null
+
+  return h(Fragment, null, ReactDOM.createPortal(pillNode, headSlot), panelNode)
+}
+
+function fdExtractFloorTurn(article) {
+  if (!article || typeof article.getAttribute !== 'function') return 0
+  const legacy = fdNumber(article.getAttribute('data-legacy-turn'), 0)
+  if (legacy > 0) return legacy
+  const rowKey = String(article.getAttribute('data-row-key') || '')
+  const rkMatch = /^turn:(\d+)$/.exec(rowKey)
+  if (rkMatch) {
+    const rkTurn = fdNumber(rkMatch[1], 0)
+    if (rkTurn > 0) return rkTurn
+  }
+  const chatTurn = fdNumber(article.getAttribute('data-chat-turn'), 0)
+  if (chatTurn > 0) return chatTurn
+  return fdNumber(article.getAttribute('data-floor'), 0)
+}
+
+function FloorHeaderManager(props) {
+  const { ui } = props || {}
+  const [gameId, setGameId] = useState(() => fdGetActiveGameId())
+  const [targets, setTargets] = useState([])
+  const slotsMapRef = useRef(new Map())
+
+  useEffect(() => {
+    const off = fdSubscribeActiveGameId(next => setGameId(next))
+    if (!fdGetActiveGameId()) {
+      fdCall(ui, FD_RPC.status, {}).then(res => {
+        const active = res && res.ok && res.data && (res.data.activeGameId || res.data.gameId)
+        if (active) fdNoteActiveGameId(String(active))
+      })
+    }
+    return off
+  }, [ui])
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || !document.body || typeof MutationObserver !== 'function') return undefined
+    let rafId = 0
+    let disposed = false
+
+    const scan = () => {
+      rafId = 0
+      if (disposed) return
+      const urlId = fdDetectUrlGameId()
+      if (urlId) fdNoteActiveGameId(urlId)
+
+      const map = slotsMapRef.current
+      const seenArticles = new Set()
+      const nextTargets = []
+      const articles = document.querySelectorAll('article.dsh-tavern-story-floor')
+
+      for (let i = 0; i < articles.length; i++) {
+        const article = articles[i]
+        if (article.hasAttribute('data-greeting') || article.hasAttribute('data-story-held')) continue
+        const head = article.querySelector(':scope > .dsh-tavern-story-floor-head')
+        if (!head) continue
+        const turn = fdExtractFloorTurn(article)
+        const streaming = article.classList.contains('dsh-tavern-story-streaming')
+        if (turn <= 0 && !streaming) continue
+
+        seenArticles.add(article)
+        let entry = map.get(article)
+        if (!entry || entry.head !== head) {
+          const headSlot = document.createElement('span')
+          headSlot.className = 'fd-floor-head-slot'
+          const panelSlot = document.createElement('div')
+          panelSlot.className = 'fd-floor-panel-slot'
+          head.appendChild(headSlot)
+          head.appendChild(panelSlot)
+          entry = {
+            id: fdUid('floor'),
+            head,
+            headSlot,
+            panelSlot,
+            turn,
+            streaming
+          }
+          map.set(article, entry)
+        } else {
+          entry.turn = turn
+          entry.streaming = streaming
+          if (entry.headSlot.parentNode !== head) head.appendChild(entry.headSlot)
+          if (entry.panelSlot.parentNode !== head) head.appendChild(entry.panelSlot)
+          else if (head.lastElementChild !== entry.panelSlot) {
+            head.appendChild(entry.headSlot)
+            head.appendChild(entry.panelSlot)
+          }
+        }
+        nextTargets.push(entry)
+      }
+
+      map.forEach((entry, article) => {
+        if (!seenArticles.has(article)) {
+          try { if (entry.headSlot.parentNode) entry.headSlot.parentNode.removeChild(entry.headSlot) } catch {}
+          try { if (entry.panelSlot.parentNode) entry.panelSlot.parentNode.removeChild(entry.panelSlot) } catch {}
+          map.delete(article)
+        }
+      })
+
+      setTargets(prev => {
+        if (
+          prev.length === nextTargets.length
+          && prev.every((item, idx) => item.id === nextTargets[idx].id && item.turn === nextTargets[idx].turn && item.streaming === nextTargets[idx].streaming)
+        ) {
+          return prev
+        }
+        return nextTargets.map(item => ({ ...item }))
+      })
+    }
+
+    const schedule = () => {
+      if (rafId || disposed) return
+      rafId = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(scan) : setTimeout(scan, 16)
+    }
+
+    scan()
+    const observer = new MutationObserver(mutations => {
+      for (let i = 0; i < mutations.length; i++) {
+        const t = mutations[i].target
+        if (t && t.classList && (t.classList.contains('fd-floor-head-slot') || t.classList.contains('fd-floor-panel-slot'))) continue
+        schedule()
+        break
+      }
+    })
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-legacy-turn', 'data-chat-turn', 'data-row-key', 'data-story-held', 'class']
+    })
+
+    return () => {
+      disposed = true
+      observer.disconnect()
+      if (rafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId)
+      slotsMapRef.current.forEach(entry => {
+        try { if (entry.headSlot.parentNode) entry.headSlot.parentNode.removeChild(entry.headSlot) } catch {}
+        try { if (entry.panelSlot.parentNode) entry.panelSlot.parentNode.removeChild(entry.panelSlot) } catch {}
+      })
+      slotsMapRef.current.clear()
+    }
+  }, [])
+
+  return h(Fragment, null, targets.map(target => h(StoryFloorDiceItem, {
+    key: target.id,
+    ui,
+    gameId,
+    turn: target.turn,
+    streaming: target.streaming,
+    headSlot: target.headSlot,
+    panelSlot: target.panelSlot
+  })))
 }
 
 function StatusDiceSection(props) {

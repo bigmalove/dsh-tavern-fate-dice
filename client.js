@@ -16,6 +16,10 @@ window.__ModuleLoader__.load({
     }
     const h = React.createElement
     const { Fragment, useEffect, useMemo, useRef, useState } = React
+    let ReactDOM = null
+    let ReactDOMClient = null
+    try { ReactDOM = require('react-dom') } catch {}
+    try { ReactDOMClient = require('react-dom/client') } catch {}
 /* ===== src/client/presets.js ===== */
 /* ------------------------------------------------------------------ *
  * presets.js —— 常量、默认设置与纯函数工具
@@ -820,6 +824,127 @@ const CSS_TEXT = `
   word-break: break-all;
 }
 
+/* ---------- 楼层顶栏并列检定胶囊（对齐叙事阻尼器 StoryFloorDamperPill / Panel） ---------- */
+.fd-floor-head-slot {
+  display: inline-flex;
+  align-items: center;
+}
+.fd-floor-pill {
+  --fd-pill-color: #3f9d68;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--fd-pill-color) 34%, var(--dsw-alias-border-l2, rgba(128,128,142,0.28)));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fd-pill-color) 10%, transparent);
+  color: var(--dsw-alias-label-secondary, inherit);
+  font: inherit;
+  font-size: 11px;
+  line-height: 18px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.fd-floor-pill:hover {
+  background: color-mix(in srgb, var(--fd-pill-color) 18%, transparent);
+  border-color: color-mix(in srgb, var(--fd-pill-color) 52%, var(--dsw-alias-border-l2, rgba(128,128,142,0.36)));
+  color: var(--dsw-alias-label-primary, inherit);
+}
+.fd-floor-pill[data-expanded="true"] {
+  background: color-mix(in srgb, var(--fd-pill-color) 20%, transparent);
+  border-color: color-mix(in srgb, var(--fd-pill-color) 60%, var(--dsw-alias-border-l2, rgba(128,128,142,0.42)));
+  color: var(--dsw-alias-label-primary, inherit);
+}
+.fd-floor-pill[data-tone="critical"] { --fd-pill-color: #26a269; }
+.fd-floor-pill[data-tone="success"] { --fd-pill-color: #3f9d68; }
+.fd-floor-pill[data-tone="costly"] { --fd-pill-color: #d4712a; }
+.fd-floor-pill[data-tone="failure"] { --fd-pill-color: #d05842; }
+.fd-floor-pill[data-tone="fumble"] { --fd-pill-color: #cf4343; }
+.fd-floor-pill[data-tone="hidden"] { --fd-pill-color: #6e7787; }
+.fd-floor-pill[data-tone="skipped"] {
+  --fd-pill-color: #8a8f98;
+  border-style: dashed;
+  color: var(--dsw-alias-label-tertiary, inherit);
+}
+.fd-floor-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--fd-pill-color);
+  flex: none;
+}
+.fd-floor-pill[data-tone="skipped"] .fd-floor-dot {
+  background: transparent;
+  box-sizing: border-box;
+  border: 1.5px solid var(--fd-pill-color);
+}
+.fd-floor-panel-slot {
+  flex: 0 0 100%;
+  min-width: 0;
+}
+.fd-floor-panel-slot:empty {
+  display: none;
+}
+.fd-floor-panel {
+  --fd-pill-color: #3f9d68;
+  display: grid;
+  gap: 8px;
+  max-width: min(100%, 760px);
+  box-sizing: border-box;
+  margin: 4px 0 6px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--fd-pill-color) 30%, var(--dsw-alias-border-l2, rgba(128,128,142,0.28)));
+  border-left: 3px solid var(--fd-pill-color);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, rgba(128,128,142,0.06));
+  color: var(--dsw-alias-label-secondary, inherit);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.fd-floor-panel[data-tone="critical"] { --fd-pill-color: #26a269; }
+.fd-floor-panel[data-tone="success"] { --fd-pill-color: #3f9d68; }
+.fd-floor-panel[data-tone="costly"] { --fd-pill-color: #d4712a; }
+.fd-floor-panel[data-tone="failure"] { --fd-pill-color: #d05842; }
+.fd-floor-panel[data-tone="fumble"] { --fd-pill-color: #cf4343; }
+.fd-floor-panel[data-tone="hidden"] { --fd-pill-color: #6e7787; }
+.fd-floor-panel[data-tone="skipped"] { --fd-pill-color: #8a8f98; }
+.fd-floor-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+.fd-floor-panel-title {
+  font-weight: 650;
+  color: var(--dsw-alias-label-primary, inherit);
+}
+.fd-floor-panel-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.fd-floor-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(128,128,142,0.12);
+  border: 1px solid rgba(128,128,142,0.22);
+}
+.fd-floor-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding-top: 2px;
+}
+
 @keyframes fd-tumble {
   0% { transform: translateY(-18px) rotateX(0deg) rotateZ(-200deg) scale(0.72); opacity: 0.25; }
   55% { transform: translateY(3px) rotateX(330deg) rotateZ(18deg) scale(1.1); opacity: 1; }
@@ -860,6 +985,40 @@ const CSS_TEXT = `
  * ------------------------------------------------------------------ */
 
 function fdNoop() {}
+
+let fdCurrentGameId = ''
+const fdGameIdListeners = new Set()
+
+function fdDetectUrlGameId() {
+  return fdSafe(() => {
+    if (typeof window === 'undefined' || !window.location) return ''
+    const search = String(window.location.search || '')
+    const qMatch = /[?&](?:sessionId|gameId)=([^&#]+)/.exec(search)
+    if (qMatch && qMatch[1]) return decodeURIComponent(qMatch[1])
+    const pathname = String(window.location.pathname || '')
+    const pMatch = /\/(?:sessions?|chats?|play|c)\/([a-zA-Z0-9_.:-]{6,})/.exec(pathname)
+    return pMatch && pMatch[1] ? decodeURIComponent(pMatch[1]) : ''
+  }, '')
+}
+
+function fdNoteActiveGameId(gameId) {
+  const next = typeof gameId === 'string' ? gameId.trim() : ''
+  if (!next || next === '__fate_dice_global__' || next === fdCurrentGameId) return
+  fdCurrentGameId = next
+  fdGameIdListeners.forEach(fn => {
+    try { fn(next) } catch {}
+  })
+}
+
+function fdGetActiveGameId() {
+  return fdCurrentGameId || fdDetectUrlGameId() || ''
+}
+
+function fdSubscribeActiveGameId(listener) {
+  if (typeof listener !== 'function') return fdNoop
+  fdGameIdListeners.add(listener)
+  return () => { fdGameIdListeners.delete(listener) }
+}
 
 function fdSafe(fn, fallback) {
   try {
@@ -1992,12 +2151,393 @@ function TurnRollCapsule(props) {
     children || null)
 }
 
+const fdMountedHeaderTurns = new Set()
+const fdHeaderMountListeners = new Set()
+
+function fdNotifyHeaderTurns() {
+  fdHeaderMountListeners.forEach(fn => {
+    try { fn() } catch {}
+  })
+}
+
 function MediaTurnRollCapsule(props) {
   const { ui, gameId, turn, item } = props || {}
   const resolvedTurn = fdNumber(turn || (item && item.data && item.data.turn), 0)
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const bump = () => setTick(v => v + 1)
+    fdHeaderMountListeners.add(bump)
+    return () => { fdHeaderMountListeners.delete(bump) }
+  }, [])
   if (!gameId || !resolvedTurn) return null
-  if (fdMountedTurnViews.has(`${gameId}:${resolvedTurn}`)) return null
+  fdNoteActiveGameId(gameId)
+  const key = `${gameId}:${resolvedTurn}`
+  if (fdMountedTurnViews.has(key) || fdMountedHeaderTurns.has(key)) return null
   return h(TurnRollCapsule, { ui, gameId, turn: resolvedTurn })
+}
+
+function fdFormatCompactDice(roll) {
+  if (!roll) return ''
+  if (roll.rule === 'd100') {
+    return `${roll.total}/${roll.target === undefined ? 100 : roll.target}`
+  }
+  const totalMod = fdNumber(roll.totalModifier ?? ((Number(roll.skillBonus) || 0) + (Number(roll.modifier) || 0)), 0)
+  const modStr = totalMod ? (totalMod > 0 ? `+${totalMod}` : String(totalMod)) : ''
+  if (Array.isArray(roll.dice) && roll.dice.length > 1) {
+    return `[${roll.dice.join('+')}]${modStr}=${roll.total}`
+  }
+  const raw = Array.isArray(roll.dice) && roll.dice.length === 1 ? roll.dice[0] : (roll.rawTotal ?? roll.total)
+  return modStr ? `${raw}${modStr}=${roll.total}` : String(roll.total)
+}
+
+function StoryFloorDiceItem(props) {
+  const { ui, gameId, turn, streaming, headSlot, panelSlot } = props || {}
+  const [record, setRecord] = useState(null)
+  const [expanded, setExpanded] = useState(false)
+  const [peeked, setPeeked] = useState(false)
+  const [rerolling, setRerolling] = useState(false)
+  const [rerollHint, setRerollHint] = useState('')
+
+  useEffect(() => {
+    if (!turn) return undefined
+    let alive = true
+    const load = () => {
+      fdCall(ui, FD_RPC.readTurn, {
+        gameId: gameId || '',
+        turn,
+        streaming: Boolean(streaming)
+      }).then(res => {
+        if (!alive) return
+        const data = res && res.ok ? res.data : null
+        setRecord(data && typeof data === 'object' ? data : null)
+      })
+    }
+    load()
+    const watchKey = gameId || fdGetActiveGameId()
+    const offCheck = watchKey ? fdWatch(ui, watchKey, 'turn-check', () => { if (alive) load() }) : fdNoop
+    const offSync = watchKey ? fdWatch(ui, watchKey, 'workbench-sync', () => { if (alive) load() }) : fdNoop
+    const offLive = watchKey ? fdWatch(ui, watchKey, 'live-roll', () => { if (alive) load() }) : fdNoop
+    return () => {
+      alive = false
+      offCheck()
+      offSync()
+      offLive()
+    }
+  }, [gameId, turn, streaming])
+
+  const effectiveTurn = fdNumber((record && record.turn) || turn, 0)
+  const hasVisibleContent = Boolean(record && (record.roll || record.setupRequiredReason || (record.judged && record.judged.shouldRoll === false)))
+
+  useEffect(() => {
+    const activeId = gameId || fdGetActiveGameId()
+    if (!hasVisibleContent || !activeId || !effectiveTurn) return undefined
+    const key = `${activeId}:${effectiveTurn}`
+    fdMountedHeaderTurns.add(key)
+    fdNotifyHeaderTurns()
+    return () => {
+      fdMountedHeaderTurns.delete(key)
+      fdNotifyHeaderTurns()
+    }
+  }, [hasVisibleContent, gameId, effectiveTurn])
+
+  if (!hasVisibleContent || !ReactDOM || typeof ReactDOM.createPortal !== 'function' || !headSlot) return null
+
+  const roll = record.roll || null
+  const judged = record.judged || null
+  const setupReason = record.setupRequiredReason || ''
+  const fate = fdNormalizeFate(record.fate)
+  const covered = Boolean(roll && roll.hidden && !peeked)
+  const isStreaming = Boolean(streaming || record.streaming)
+
+  let tone = 'skipped'
+  let pillText = '骰子 · 免检定'
+  let tooltip = '点击展开命运之骰本轮详情'
+
+  if (roll) {
+    tone = covered ? 'hidden' : fdTierOf(roll.tier)
+    if (covered) {
+      pillText = `暗骰 · ${roll.check || '感知'} · 点按偷看`
+      tooltip = '感知/洞察暗骰（点击揭晓并展开详情）'
+    } else {
+      const suffix = roll.rerollMeta && roll.rerollMeta.mode === 'push'
+        ? ' · 孤注'
+        : (roll.rerollMeta && roll.rerollMeta.mode === 'fate'
+          ? ' · 逆命'
+          : (roll.reusedOnRegenerate ? ' · 锁骰' : ''))
+      pillText = `真骰 · ${roll.check || '检定'} ${fdFormatCompactDice(roll)} · ${roll.tierLabel || ''}${suffix}`
+      tooltip = `${roll.rule || '2d6'} ${roll.check || '检定'}（难度：${roll.difficultyLabel || '普通'}）· 命运点 ${fate.points}/${fate.max}（点击展开详情与重投）`
+    }
+  } else if (setupReason) {
+    tone = 'skipped'
+    pillText = '真骰 · 待配决策模型'
+    tooltip = '尚未配置决策模型 API Key（点击查看指引）'
+  } else if (judged && judged.shouldRoll === false) {
+    tone = 'skipped'
+    const prob = Number(judged.needProbability)
+    const probPart = judged.damperSync && judged.damperSync.skipped === 'scene-shift'
+      ? '场景放行'
+      : (Number.isFinite(prob) ? `免检定 ${Math.round(prob * 100)}%` : '免检定')
+    pillText = `真骰 · ${probPart}`
+    tooltip = `${judged.reason || '本轮行动无显著不确定性，免于投骰'}（点击展开详情）`
+  }
+
+  const rerollState = record.rerollState && typeof record.rerollState === 'object'
+    ? record.rerollState
+    : { allowed: false, reason: '本轮无重投项' }
+
+  const runManualReroll = mode => {
+    if (rerolling || !effectiveTurn) return
+    setRerolling(true)
+    setRerollHint('')
+    fdCall(ui, FD_RPC.rerollTurn, { gameId: gameId || '', turn: effectiveTurn, mode: mode || 'auto' })
+      .then(res => {
+        const data = res && res.ok ? res.data : null
+        const nextRoll = data && data.ok !== false && data.roll ? data.roll : null
+        if (nextRoll) {
+          setRecord(prev => ({
+            ...(prev || {}),
+            roll: nextRoll,
+            fate: data.fate || (prev && prev.fate) || fate,
+            rerollState: data.rerollState || { allowed: false, reason: '本轮已重投锁定（每轮限 1 次）' }
+          }))
+          setRerollHint(data.mode === 'push'
+            ? '已孤注一掷并同步阻尼配额！点击下方「重新生成正文」即可按新结果与代价改写剧情'
+            : '已消耗 1 点命运点逆命重投！点击下方「重新生成正文」即可按新点数改写剧情')
+        } else {
+          if (data && data.rerollState) {
+            setRecord(prev => ({ ...(prev || {}), fate: data.fate || (prev && prev.fate), rerollState: data.rerollState }))
+          }
+          setRerollHint((data && data.error) || (res && res.error) || '当前条件不允许重投')
+        }
+      })
+      .catch(() => setRerollHint('手动重投失败'))
+      .finally(() => setRerolling(false))
+  }
+
+  const pillNode = h('button', {
+    type: 'button',
+    className: 'fd-floor-pill',
+    'data-tone': tone,
+    'data-expanded': expanded ? 'true' : undefined,
+    'aria-expanded': Boolean(expanded),
+    title: tooltip,
+    onClick: e => {
+      if (e && typeof e.stopPropagation === 'function') e.stopPropagation()
+      if (covered && !peeked) {
+        setPeeked(true)
+        setExpanded(true)
+      } else {
+        setExpanded(prev => !prev)
+      }
+    }
+  },
+  h('span', { className: 'fd-floor-dot', 'aria-hidden': 'true' }),
+  h('span', null, pillText))
+
+  const panelNode = expanded && panelSlot
+    ? ReactDOM.createPortal(
+      h('section', {
+        className: 'fd-root fd-floor-panel',
+        'data-tone': tone,
+        'aria-label': '命运之骰本轮裁定详情'
+      },
+      h('div', { className: 'fd-floor-panel-head' },
+        h('strong', { className: 'fd-floor-panel-title' },
+          roll
+            ? `命运之骰裁定 · ${roll.check || '行动'}检定（${covered ? '暗骰已揭晓' : (roll.tierLabel || '判定')}）`
+            : (setupReason ? '命运之骰 · 待配置决策模型' : '命运之骰 · 本轮免检定')),
+        h('div', { className: 'fd-floor-panel-tags' },
+          roll ? h('span', { className: 'fd-floor-tag' }, String(roll.rule || '2d6')) : null,
+          roll && roll.difficultyLabel ? h('span', { className: 'fd-floor-tag' }, `难度：${roll.difficultyLabel}`) : null,
+          roll && roll.damper ? h('span', { className: 'fd-floor-tag' }, `⛓ ${roll.damper.quotaLabel || '阻尼联动'}`) : null,
+          h('span', { className: 'fd-floor-tag' }, `✦ 命运点 ${fate.points}/${fate.max}`))),
+      roll
+        ? fdBuildTurnDetails(record, true)
+        : h('div', { className: 'fd-hint' },
+          setupReason
+            ? '请前往酒馆「设置 › 叙事阻尼器」填写决策模型与 API Key，配置后即可自动定难并投掷真骰。'
+            : ((judged && judged.reason) || '本轮行动无显著不确定性，免于投骰。')),
+      roll
+        ? h('div', { className: 'fd-floor-panel-actions' },
+          isStreaming
+            ? h('span', { className: 'fd-hint' }, '⏳ 正文正在按上述真骰结果生成；待本轮生成落盘后，可在此执行逆命重投或孤注一掷')
+            : rerollState.allowed
+              ? h(Fragment, null,
+                rerollState.canFate
+                  ? h(FdBtn, {
+                    small: true,
+                    primary: true,
+                    disabled: rerolling,
+                    title: '消耗 1 点命运点，无额外恶化惩罚重投本轮真骰（每轮限 1 次）',
+                    onClick: () => runManualReroll('fate')
+                  }, rerolling ? '重投中…' : `✦ 逆命重投 (-1 点 · 余 ${fdNumber(rerollState.fatePoints, fate.points)}/${fdNumber(rerollState.fateMax, fate.max)})`)
+                  : null,
+                h(FdBtn, {
+                  small: true,
+                  danger: true,
+                  disabled: rerolling,
+                  title: '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
+                  onClick: () => runManualReroll('push')
+                }, rerolling ? '搏命中…' : (rerollState.canFate ? '🔥 孤注一掷' : '🔥 孤注一掷（败则大失败 · 成亦带伤）')),
+                h('span', { className: 'fd-hint' }, rerollHint || '直接点「重新生成正文」将强制复用原骰点'))
+              : h('span', { className: 'fd-hint' }, rerollHint || `🔒 ${rerollState.reason || '本轮骰点已锁定'}`))
+        : null),
+      panelSlot
+    )
+    : null
+
+  return h(Fragment, null, ReactDOM.createPortal(pillNode, headSlot), panelNode)
+}
+
+function fdExtractFloorTurn(article) {
+  if (!article || typeof article.getAttribute !== 'function') return 0
+  const legacy = fdNumber(article.getAttribute('data-legacy-turn'), 0)
+  if (legacy > 0) return legacy
+  const rowKey = String(article.getAttribute('data-row-key') || '')
+  const rkMatch = /^turn:(\d+)$/.exec(rowKey)
+  if (rkMatch) {
+    const rkTurn = fdNumber(rkMatch[1], 0)
+    if (rkTurn > 0) return rkTurn
+  }
+  const chatTurn = fdNumber(article.getAttribute('data-chat-turn'), 0)
+  if (chatTurn > 0) return chatTurn
+  return fdNumber(article.getAttribute('data-floor'), 0)
+}
+
+function FloorHeaderManager(props) {
+  const { ui } = props || {}
+  const [gameId, setGameId] = useState(() => fdGetActiveGameId())
+  const [targets, setTargets] = useState([])
+  const slotsMapRef = useRef(new Map())
+
+  useEffect(() => {
+    const off = fdSubscribeActiveGameId(next => setGameId(next))
+    if (!fdGetActiveGameId()) {
+      fdCall(ui, FD_RPC.status, {}).then(res => {
+        const active = res && res.ok && res.data && (res.data.activeGameId || res.data.gameId)
+        if (active) fdNoteActiveGameId(String(active))
+      })
+    }
+    return off
+  }, [ui])
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || !document.body || typeof MutationObserver !== 'function') return undefined
+    let rafId = 0
+    let disposed = false
+
+    const scan = () => {
+      rafId = 0
+      if (disposed) return
+      const urlId = fdDetectUrlGameId()
+      if (urlId) fdNoteActiveGameId(urlId)
+
+      const map = slotsMapRef.current
+      const seenArticles = new Set()
+      const nextTargets = []
+      const articles = document.querySelectorAll('article.dsh-tavern-story-floor')
+
+      for (let i = 0; i < articles.length; i++) {
+        const article = articles[i]
+        if (article.hasAttribute('data-greeting') || article.hasAttribute('data-story-held')) continue
+        const head = article.querySelector(':scope > .dsh-tavern-story-floor-head')
+        if (!head) continue
+        const turn = fdExtractFloorTurn(article)
+        const streaming = article.classList.contains('dsh-tavern-story-streaming')
+        if (turn <= 0 && !streaming) continue
+
+        seenArticles.add(article)
+        let entry = map.get(article)
+        if (!entry || entry.head !== head) {
+          const headSlot = document.createElement('span')
+          headSlot.className = 'fd-floor-head-slot'
+          const panelSlot = document.createElement('div')
+          panelSlot.className = 'fd-floor-panel-slot'
+          head.appendChild(headSlot)
+          head.appendChild(panelSlot)
+          entry = {
+            id: fdUid('floor'),
+            head,
+            headSlot,
+            panelSlot,
+            turn,
+            streaming
+          }
+          map.set(article, entry)
+        } else {
+          entry.turn = turn
+          entry.streaming = streaming
+          if (entry.headSlot.parentNode !== head) head.appendChild(entry.headSlot)
+          if (entry.panelSlot.parentNode !== head) head.appendChild(entry.panelSlot)
+          else if (head.lastElementChild !== entry.panelSlot) {
+            head.appendChild(entry.headSlot)
+            head.appendChild(entry.panelSlot)
+          }
+        }
+        nextTargets.push(entry)
+      }
+
+      map.forEach((entry, article) => {
+        if (!seenArticles.has(article)) {
+          try { if (entry.headSlot.parentNode) entry.headSlot.parentNode.removeChild(entry.headSlot) } catch {}
+          try { if (entry.panelSlot.parentNode) entry.panelSlot.parentNode.removeChild(entry.panelSlot) } catch {}
+          map.delete(article)
+        }
+      })
+
+      setTargets(prev => {
+        if (
+          prev.length === nextTargets.length
+          && prev.every((item, idx) => item.id === nextTargets[idx].id && item.turn === nextTargets[idx].turn && item.streaming === nextTargets[idx].streaming)
+        ) {
+          return prev
+        }
+        return nextTargets.map(item => ({ ...item }))
+      })
+    }
+
+    const schedule = () => {
+      if (rafId || disposed) return
+      rafId = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(scan) : setTimeout(scan, 16)
+    }
+
+    scan()
+    const observer = new MutationObserver(mutations => {
+      for (let i = 0; i < mutations.length; i++) {
+        const t = mutations[i].target
+        if (t && t.classList && (t.classList.contains('fd-floor-head-slot') || t.classList.contains('fd-floor-panel-slot'))) continue
+        schedule()
+        break
+      }
+    })
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-legacy-turn', 'data-chat-turn', 'data-row-key', 'data-story-held', 'class']
+    })
+
+    return () => {
+      disposed = true
+      observer.disconnect()
+      if (rafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId)
+      slotsMapRef.current.forEach(entry => {
+        try { if (entry.headSlot.parentNode) entry.headSlot.parentNode.removeChild(entry.headSlot) } catch {}
+        try { if (entry.panelSlot.parentNode) entry.panelSlot.parentNode.removeChild(entry.panelSlot) } catch {}
+      })
+      slotsMapRef.current.clear()
+    }
+  }, [])
+
+  return h(Fragment, null, targets.map(target => h(StoryFloorDiceItem, {
+    key: target.id,
+    ui,
+    gameId,
+    turn: target.turn,
+    streaming: target.streaming,
+    headSlot: target.headSlot,
+    panelSlot: target.panelSlot
+  })))
 }
 
 function StatusDiceSection(props) {
@@ -2814,7 +3354,34 @@ function SettingsTab(props) {
 
 function FateDicePanel(props) {
   const { ui, gameId } = props || {}
+  if (gameId) fdNoteActiveGameId(gameId)
   return h(WorkbenchPanel, { ui, gameId })
+}
+
+function fdMountFloorHeaderRoot(ui) {
+  if (typeof document === 'undefined' || !document.body || typeof document.createElement !== 'function') return fdNoop
+  const createRootFn = (ReactDOMClient && typeof ReactDOMClient.createRoot === 'function' && ReactDOMClient.createRoot)
+    || (ReactDOM && typeof ReactDOM.createRoot === 'function' && ReactDOM.createRoot)
+    || null
+  if (!createRootFn) return fdNoop
+  let hostEl = null
+  let root = null
+  try {
+    const existing = typeof document.getElementById === 'function' ? document.getElementById('dsh-fate-dice-floor-root') : null
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing)
+    hostEl = document.createElement('div')
+    hostEl.id = 'dsh-fate-dice-floor-root'
+    hostEl.style.display = 'none'
+    document.body.appendChild(hostEl)
+    root = createRootFn(hostEl)
+    root.render(h(FloorHeaderManager, { ui }))
+  } catch {
+    return fdNoop
+  }
+  return () => {
+    try { if (root && typeof root.unmount === 'function') root.unmount() } catch {}
+    try { if (hostEl && hostEl.parentNode) hostEl.parentNode.removeChild(hostEl) } catch {}
+  }
 }
 
 function fdRegisterSafely(ctx, label, factory) {
@@ -2836,6 +3403,25 @@ function apply(ctx) {
   const ui = ctx && ctx.tavernUi
   if (!ui) return
   fdEnsureStyleInjected()
+
+  // 0) 会话活跃感知 + 楼层顶栏（与叙事阻尼器胶囊并排）常驻渲染桥
+  if (typeof ui.onPlayEvent === 'function') {
+    fdRegisterSafely(ctx, 'fate-dice: play event tracker', () => ui.onPlayEvent(ev => {
+      if (ev && ev.gameId) fdNoteActiveGameId(ev.gameId)
+    }))
+  }
+  if (typeof ui.registerMessageAction === 'function') {
+    fdRegisterSafely(ctx, 'fate-dice: session probe', () => ui.registerMessageAction({
+      id: 'fate-dice-session-probe',
+      label: '检定状态',
+      when: ({ gameId } = {}) => {
+        if (gameId) fdNoteActiveGameId(gameId)
+        return false
+      },
+      run: () => {}
+    }))
+  }
+  fdRegisterSafely(ctx, 'fate-dice: floor header pill', () => fdMountFloorHeaderRoot(ui))
 
   // 1) 右侧栏「插件」卡片区：常驻双页签极简工作台（桌面与手机竖屏单列自适应）
   fdRegisterSafely(ctx, 'fate-dice: workbench panel', () => ui.registerPanel({
@@ -2881,7 +3467,7 @@ exports.name = FD_PLUGIN_ID
 exports.inject = ['tavernUi']
 exports.apply = apply
 exports.WorkbenchPanel = WorkbenchPanel
-exports.__test = { DieGlyph, formatRollSummary, LiveRollBanner, TurnRollCapsule, WorkbenchPanel, DecisionModelGuideBanner, FdHelp, SettingsTab }
+exports.__test = { DieGlyph, formatRollSummary, LiveRollBanner, TurnRollCapsule, StoryFloorDiceItem, fdExtractFloorTurn, WorkbenchPanel, DecisionModelGuideBanner, FdHelp, SettingsTab }
     return module.exports
   }
 })
