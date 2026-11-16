@@ -42,13 +42,21 @@ function apply(ctx) {
     render: ({ sessionId, gameId } = {}) => h(ComposerLiveDock, { ui, sessionId: sessionId || gameId, gameId })
   }))
 
-  // 3) 楼层折叠胶囊：无检定时原样返回 children（零包裹）
+  // 3) 楼层自动挂载胶囊（默认「内置」正文样式无需手切即可在每层正文下方看到检定与重投按钮）
+  if (typeof ui.registerMediaRenderer === 'function') {
+    fdRegisterSafely(ctx, 'fate-dice: roll capsule media', () => ui.registerMediaRenderer(
+      'dsh-tavern-fate-dice/roll-capsule',
+      ({ gameId, turn, item } = {}) => h(MediaTurnRollCapsule, { ui, gameId, turn, item })
+    ))
+  }
+
+  // 4) 楼层可选视图胶囊：无检定时原样返回 children（与自动媒体胶囊互斥防重）
   fdRegisterSafely(ctx, 'fate-dice: turn view', () => ui.registerTurnView({
     id: 'fate-dice-turn',
     label: '检定胶囊',
     render: ({ gameId, turn, settled, greeting, children } = {}) => {
       if (!settled || greeting || !turn) return children || null
-      return h(TurnRollCapsule, { ui, gameId, turn, children })
+      return h(TurnRollCapsule, { ui, gameId, turn, children, fromTurnView: true })
     }
   }))
 

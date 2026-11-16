@@ -986,3 +986,86 @@ test('手动重投四重硬限制与「✦ 命运点 + 🔥 孤注一掷」代�
   const wbAfterRegen = await handlers.get('fate-dice:workbench')({ gameId: 'g-fate' })
   assert.equal(wbAfterRegen.fate.points, 1, '重新生成锁骰复用绝不能重复刷出命运点')
 })
+
+test('楼层胶囊默认挂载与两阶段结算保护：默认通过 attach + registerMediaRenderer 自动显示胶囊，且后台画像二次结算不冲空已存骰点', async () => {
+  const turnSections = []
+  const settledHooks = []
+  const settlementTools = []
+  const handlers = new Map()
+  const attachedItems = []
+  const turnDataMap = new Map()
+  const gameDataMap = new Map()
+
+  applyFateDicePlugin({
+    tavern: {
+      capabilities: { decisionJudge: 1, narrativeDamper: 1 },
+      damperTurnQuestions() { return () => {} },
+      turnSection(def) { turnSections.push(def); return () => {} },
+      settlementSection() { return () => {} },
+      settlementTool(def) { settlementTools.push(def); return () => {} },
+      onTurnSettled(fn) { settledHooks.push(fn); return () => {} },
+      handle(name, fn) { handlers.set(name, fn) },
+      async savePluginData() {},
+      async readPluginData() { return null },
+      async saveGameData({ gameId, data }) { gameDataMap.set(gameId, structuredClone(data)) },
+      async readGameData({ gameId }) { return structuredClone(gameDataMap.get(gameId) || null) },
+      async saveTurnData({ gameId, turn, textVersion, data }) {
+        turnDataMap.set(`${gameId}:${turn}`, { turn, textVersion, data: structuredClone(data) })
+        return { turn, textVersion }
+      },
+      async readTurnData({ gameId, turn }) { return structuredClone(turnDataMap.get(`${gameId}:${turn}`) || null) },
+      async attach(payload) {
+        attachedItems.push(payload)
+        return { id: `m-${attachedItems.length}` }
+      },
+      async getTurn() { return { turn: 1, text: '试炼场中魔力涌动。', variables: {} } },
+      async publishState() {},
+      async getDamperTurnContext({ turn }) {
+        return {
+          active: true,
+          turn,
+          explicitSceneShift: false,
+          ruling: { rulingTier: 'costly_advance', deltaBudget: 'step', leverageScore: 1.0 },
+          answers: {
+            fd_needs_check: { type: 'noul', probability: 0.9 },
+            fd_difficulty: { type: 'choice', choice: 'hard' },
+            fd_capability: { type: 'score', score: 1 },
+            fd_domain: { type: 'choice', choice: 'general_arcana' }
+          }
+        }
+      },
+      async applyDamperDiceShift() {
+        return { applied: true, ruling: { rulingTier: 'costly_advance', deltaBudget: 'step' } }
+      }
+    }
+  })
+
+  // 第一阶段：前台正文流结束触发首次 onTurnSettled
+  await turnSections[0].text({ gameId: 'g-two-phase', turn: 5, input: '我尝试引导魔力点燃符文' })
+  await settledHooks[0]({ gameId: 'g-two-phase', turn: 5, textVersion: 'ver-5-fg' })
+  assert.equal(attachedItems.length, 1, '有检定结果时应自动挂载楼层 roll-capsule 媒体项')
+  assert.equal(attachedItems[0].item.kind, 'dsh-tavern-fate-dice/roll-capsule')
+  assert.ok(turnDataMap.get('g-two-phase:5')?.data?.roll, '前台结算后 turnData 必须存有 roll')
+
+  // 第二阶段：后台结算模型跑完 fate_dice_profile_sync，宿主二次触发同楼层 onTurnSettled
+  await settlementTools[0].execute({
+    gameId: 'g-two-phase',
+    turn: 5,
+    arguments: {
+      characterName: '艾瑟加德',
+      archetype: '初窥门径的学徒',
+      traits: [{ name: '基础冥想', tier: 1, source: '正文', reason: '初次尝试聚魔' }]
+    }
+  })
+  await settledHooks[0]({ gameId: 'g-two-phase', turn: 5, textVersion: 'ver-5-fg' })
+  assert.ok(turnDataMap.get('g-two-phase:5')?.data?.roll, '后台画像二次结算绝不能把 turnData.roll 冲成 null')
+  assert.equal(attachedItems.length, 1, '同一 textVersion 二次结算不得重复 attach 胶囊')
+
+  const readBack = await handlers.get('fate-dice:read-turn')({ gameId: 'g-two-phase', turn: 5 })
+  assert.ok(readBack?.roll, 'read-turn 仍可稳定读回第 5 轮检定结果')
+
+  // 校验 client.js 已注册 registerMediaRenderer('dsh-tavern-fate-dice/roll-capsule')
+  const clientCode = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(clientCode, /registerMediaRenderer/)
+  assert.match(clientCode, /dsh-tavern-fate-dice\/roll-capsule/)
+})

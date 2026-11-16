@@ -137,6 +137,24 @@ function ChecksTab(props) {
       view.source === 'local' ? h(FdBadge, { tone: 'off' }, '🖥 本地配置模式') : null),
     h(DecisionModelGuideBanner, { view, onRecheck, checking }),
 
+    /* ---------------- 0.5 当前最新回合检定与逆命重投（常驻可点，历史存档立即可用） ---------------- */
+    hasGame && (fdNumber(view.lastTurn, 0) > 0 || (recent[0] && recent[0].turn > 0))
+      ? h(FdSection, {
+        title: '🎯 最新回合检定与重投',
+        note: `第 ${Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0))} 轮 · ✦ 命运点 ${fate.points}/${fate.max}`,
+        help: [
+          '展示当前最新一轮的检定结果与重投操作（历史已结算存档打开面板即可操作，无需切换酒馆正文样式）。',
+          '若最新一轮检定结果为代价成功 / 失败 / 大失败且非暗骰，可在此直接点击「✦ 逆命重投」（消耗 1 点命运点）或「🔥 孤注一掷」（不耗命运点，但败则恶化大失败、成亦带挂彩透支代价），重投后再点酒馆「重新生成正文」即可按新骰点改写剧情。'
+        ].join('\n')
+      },
+      h(TurnRollCapsule, {
+        ui,
+        gameId,
+        turn: Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0)),
+        defaultOpen: true
+      }))
+      : null,
+
     /* ---------------- 1. 自动行动检定 ---------------- */
     h(FdSection, {
       title: '⚡ 自动行动检定',

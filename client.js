@@ -1127,6 +1127,7 @@ function fdEmptyWorkbench() {
     damper: { available: false, linkage: cachedSettings.damperLinkage },
     judgeStatus: { available: false },
     fate: { points: 2, max: 3, failCount: 0 },
+    lastTurn: 0,
     summary: { total: 0, counts: {}, recent: [] },
     stats: { total: 0, good: 0, bad: 0 },
     recent: [],
@@ -1159,6 +1160,8 @@ function fdMergeWorkbench(base, raw) {
   }
   if (payload.judgeStatus) view.judgeStatus = payload.judgeStatus
   if (payload.fate) view.fate = fdNormalizeFate(payload.fate)
+  if (payload.lastTurn !== undefined) view.lastTurn = Math.max(0, fdNumber(payload.lastTurn, view.lastTurn || 0))
+  else if (payload.turn !== undefined && fdNumber(payload.turn, 0) > 0) view.lastTurn = Math.max(view.lastTurn || 0, fdNumber(payload.turn, 0))
   if (payload.summary) {
     const summary = payload.summary
     const counts = summary.counts && typeof summary.counts === 'object' ? summary.counts : {}
@@ -1836,13 +1839,24 @@ function fdBuildTurnDetails(record, peeked) {
   return h('dl', { className: 'fd-turn-details' }, rows)
 }
 
+const fdMountedTurnViews = new Set()
+
 function TurnRollCapsule(props) {
-  const { ui, gameId, turn, children } = props || {}
+  const { ui, gameId, turn, children, defaultOpen, fromTurnView } = props || {}
   const [record, setRecord] = useState(undefined)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(Boolean(defaultOpen))
   const [peeked, setPeeked] = useState(false)
   const [rerolling, setRerolling] = useState(false)
   const [rerollHint, setRerollHint] = useState('')
+
+  useEffect(() => {
+    if (!fromTurnView || !gameId || !turn) return undefined
+    const key = `${gameId}:${turn}`
+    fdMountedTurnViews.add(key)
+    return () => {
+      fdMountedTurnViews.delete(key)
+    }
+  }, [fromTurnView, gameId, turn])
 
   useEffect(() => {
     if (!gameId || !turn) {
@@ -1850,16 +1864,23 @@ function TurnRollCapsule(props) {
       return undefined
     }
     let alive = true
+    const reload = () => {
+      fdCall(ui, FD_RPC.readTurn, { gameId, turn }).then(res => {
+        if (!alive) return
+        const data = res && res.ok ? res.data : null
+        setRecord(data && typeof data === 'object' ? data : null)
+      })
+    }
     setRecord(undefined)
     setPeeked(false)
     setRerollHint('')
-    fdCall(ui, FD_RPC.readTurn, { gameId, turn }).then(res => {
-      if (!alive) return
-      const data = res && res.ok ? res.data : null
-      setRecord(data && typeof data === 'object' ? data : null)
+    reload()
+    const offSync = fdWatch(ui, gameId, 'workbench-sync', () => {
+      if (alive) reload()
     })
     return () => {
       alive = false
+      offSync()
     }
   }, [gameId, turn])
 
@@ -1969,6 +1990,14 @@ function TurnRollCapsule(props) {
               : null)
           : null)),
     children || null)
+}
+
+function MediaTurnRollCapsule(props) {
+  const { ui, gameId, turn, item } = props || {}
+  const resolvedTurn = fdNumber(turn || (item && item.data && item.data.turn), 0)
+  if (!gameId || !resolvedTurn) return null
+  if (fdMountedTurnViews.has(`${gameId}:${resolvedTurn}`)) return null
+  return h(TurnRollCapsule, { ui, gameId, turn: resolvedTurn })
 }
 
 function StatusDiceSection(props) {
@@ -2471,6 +2500,24 @@ function ChecksTab(props) {
       view.source === 'local' ? h(FdBadge, { tone: 'off' }, '🖥 本地配置模式') : null),
     h(DecisionModelGuideBanner, { view, onRecheck, checking }),
 
+    /* ---------------- 0.5 当前最新回合检定与逆命重投（常驻可点，历史存档立即可用） ---------------- */
+    hasGame && (fdNumber(view.lastTurn, 0) > 0 || (recent[0] && recent[0].turn > 0))
+      ? h(FdSection, {
+        title: '🎯 最新回合检定与重投',
+        note: `第 ${Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0))} 轮 · ✦ 命运点 ${fate.points}/${fate.max}`,
+        help: [
+          '展示当前最新一轮的检定结果与重投操作（历史已结算存档打开面板即可操作，无需切换酒馆正文样式）。',
+          '若最新一轮检定结果为代价成功 / 失败 / 大失败且非暗骰，可在此直接点击「✦ 逆命重投」（消耗 1 点命运点）或「🔥 孤注一掷」（不耗命运点，但败则恶化大失败、成亦带挂彩透支代价），重投后再点酒馆「重新生成正文」即可按新骰点改写剧情。'
+        ].join('\n')
+      },
+      h(TurnRollCapsule, {
+        ui,
+        gameId,
+        turn: Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0)),
+        defaultOpen: true
+      }))
+      : null,
+
     /* ---------------- 1. 自动行动检定 ---------------- */
     h(FdSection, {
       title: '⚡ 自动行动检定',
@@ -2804,13 +2851,21 @@ function apply(ctx) {
     render: ({ sessionId, gameId } = {}) => h(ComposerLiveDock, { ui, sessionId: sessionId || gameId, gameId })
   }))
 
-  // 3) 楼层折叠胶囊：无检定时原样返回 children（零包裹）
+  // 3) 楼层自动挂载胶囊（默认「内置」正文样式无需手切即可在每层正文下方看到检定与重投按钮）
+  if (typeof ui.registerMediaRenderer === 'function') {
+    fdRegisterSafely(ctx, 'fate-dice: roll capsule media', () => ui.registerMediaRenderer(
+      'dsh-tavern-fate-dice/roll-capsule',
+      ({ gameId, turn, item } = {}) => h(MediaTurnRollCapsule, { ui, gameId, turn, item })
+    ))
+  }
+
+  // 4) 楼层可选视图胶囊：无检定时原样返回 children（与自动媒体胶囊互斥防重）
   fdRegisterSafely(ctx, 'fate-dice: turn view', () => ui.registerTurnView({
     id: 'fate-dice-turn',
     label: '检定胶囊',
     render: ({ gameId, turn, settled, greeting, children } = {}) => {
       if (!settled || greeting || !turn) return children || null
-      return h(TurnRollCapsule, { ui, gameId, turn, children })
+      return h(TurnRollCapsule, { ui, gameId, turn, children, fromTurnView: true })
     }
   }))
 

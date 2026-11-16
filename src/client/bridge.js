@@ -271,6 +271,7 @@ function fdEmptyWorkbench() {
     damper: { available: false, linkage: cachedSettings.damperLinkage },
     judgeStatus: { available: false },
     fate: { points: 2, max: 3, failCount: 0 },
+    lastTurn: 0,
     summary: { total: 0, counts: {}, recent: [] },
     stats: { total: 0, good: 0, bad: 0 },
     recent: [],
@@ -303,6 +304,8 @@ function fdMergeWorkbench(base, raw) {
   }
   if (payload.judgeStatus) view.judgeStatus = payload.judgeStatus
   if (payload.fate) view.fate = fdNormalizeFate(payload.fate)
+  if (payload.lastTurn !== undefined) view.lastTurn = Math.max(0, fdNumber(payload.lastTurn, view.lastTurn || 0))
+  else if (payload.turn !== undefined && fdNumber(payload.turn, 0) > 0) view.lastTurn = Math.max(view.lastTurn || 0, fdNumber(payload.turn, 0))
   if (payload.summary) {
     const summary = payload.summary
     const counts = summary.counts && typeof summary.counts === 'object' ? summary.counts : {}

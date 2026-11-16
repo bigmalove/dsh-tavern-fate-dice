@@ -328,13 +328,24 @@ function fdBuildTurnDetails(record, peeked) {
   return h('dl', { className: 'fd-turn-details' }, rows)
 }
 
+const fdMountedTurnViews = new Set()
+
 function TurnRollCapsule(props) {
-  const { ui, gameId, turn, children } = props || {}
+  const { ui, gameId, turn, children, defaultOpen, fromTurnView } = props || {}
   const [record, setRecord] = useState(undefined)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(Boolean(defaultOpen))
   const [peeked, setPeeked] = useState(false)
   const [rerolling, setRerolling] = useState(false)
   const [rerollHint, setRerollHint] = useState('')
+
+  useEffect(() => {
+    if (!fromTurnView || !gameId || !turn) return undefined
+    const key = `${gameId}:${turn}`
+    fdMountedTurnViews.add(key)
+    return () => {
+      fdMountedTurnViews.delete(key)
+    }
+  }, [fromTurnView, gameId, turn])
 
   useEffect(() => {
     if (!gameId || !turn) {
@@ -342,16 +353,23 @@ function TurnRollCapsule(props) {
       return undefined
     }
     let alive = true
+    const reload = () => {
+      fdCall(ui, FD_RPC.readTurn, { gameId, turn }).then(res => {
+        if (!alive) return
+        const data = res && res.ok ? res.data : null
+        setRecord(data && typeof data === 'object' ? data : null)
+      })
+    }
     setRecord(undefined)
     setPeeked(false)
     setRerollHint('')
-    fdCall(ui, FD_RPC.readTurn, { gameId, turn }).then(res => {
-      if (!alive) return
-      const data = res && res.ok ? res.data : null
-      setRecord(data && typeof data === 'object' ? data : null)
+    reload()
+    const offSync = fdWatch(ui, gameId, 'workbench-sync', () => {
+      if (alive) reload()
     })
     return () => {
       alive = false
+      offSync()
     }
   }, [gameId, turn])
 
@@ -461,6 +479,14 @@ function TurnRollCapsule(props) {
               : null)
           : null)),
     children || null)
+}
+
+function MediaTurnRollCapsule(props) {
+  const { ui, gameId, turn, item } = props || {}
+  const resolvedTurn = fdNumber(turn || (item && item.data && item.data.turn), 0)
+  if (!gameId || !resolvedTurn) return null
+  if (fdMountedTurnViews.has(`${gameId}:${resolvedTurn}`)) return null
+  return h(TurnRollCapsule, { ui, gameId, turn: resolvedTurn })
 }
 
 function StatusDiceSection(props) {
