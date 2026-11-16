@@ -40,3 +40,9 @@ test('浏览器侧按 dsh.client 契约声明且 client.js 与源码保持同步
   assert.match(code, /window\.__ModuleLoader__\.load\(\{/)
   assert.match(code, /id:\s*['"]dsh-tavern-fate-dice['"]/)
 })
+
+test('版本线一致：package.json 与 lib/index.js 的 PLUGIN_VERSION 必须同步', async () => {
+  const pkg = JSON.parse(await read('package.json'))
+  const { PLUGIN_VERSION } = await import('../lib/index.js')
+  assert.equal(PLUGIN_VERSION, pkg.version, '发版前必须同时修改 package.json 与 lib/index.js 的 PLUGIN_VERSION')
+})
