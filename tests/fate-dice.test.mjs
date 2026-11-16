@@ -559,3 +559,127 @@ test('低不确定性回合：默认不掷骰但必须给出「本轮无需检�
   assert.ok(forced.roll && typeof forced.roll.total === 'number')
   assert.match(String(forced.roll.reason || ''), /每轮必检定/)
 })
+
+/* 设置项的「即时生效」契约：改一次 → 立刻落盘 → 再次读取必须读回同一值。
+   曾经的表现是打开「每轮必检定」后又被自动关闭，本质是改动只在本地草稿里、没落盘，
+   下一次工作台读取就用旧值把界面打回默认。 */
+function mountPluginWithData({ pluginData: initial = null, readThrows = false, gameData = null } = {}) {
+  const handlers = new Map()
+  const writes = []
+  let pluginData = initial ? structuredClone(initial) : null
+  applyFateDicePlugin({
+    inject(deps, cb) { if (Array.isArray(deps) && deps.includes('llm')) cb({ llm: null }) },
+    tavern: {
+      capabilities: {},
+      turnSection() { return () => {} },
+      damperTurnQuestions() { return () => {} },
+      onTurnSettled() { return () => {} },
+      handle(name, fn) { handlers.set(name, fn) },
+      async savePluginData({ data }) { pluginData = structuredClone(data); writes.push(structuredClone(data)) },
+      async readPluginData() {
+        if (readThrows) throw new Error('宿主插件数据读取失败')
+        return pluginData ? structuredClone(pluginData) : null
+      },
+      async saveGameData() {},
+      async readGameData() { return gameData ? structuredClone(gameData) : null },
+      async getTurn() { return { turn: 1, text: '', variables: {} } },
+      async publishState() {},
+      async decisionJudgeStatus() { return { available: false, reason: 'NOT_CONFIGURED' } }
+    }
+  })
+  return { handlers, writes, snapshot: () => (pluginData ? structuredClone(pluginData) : null) }
+}
+
+test('检定设置即时生效：改一项就落盘，再读工作台必须读回改后的值（无需保存按钮）', async () => {
+  const { handlers, snapshot } = mountPluginWithData()
+
+  const saved = await handlers.get('fate-dice:save-global-settings')({ settings: { alwaysRoll: true } })
+  assert.equal(saved.ok, true)
+  assert.equal(saved.settings.alwaysRoll, true, '保存结果必须回传生效后的设置')
+  assert.equal(snapshot().settings.alwaysRoll, true, '「每轮必检定」必须立刻写进插件数据')
+  assert.equal(snapshot().version, 3, '落盘结构必须是当前版本')
+
+  const view = await handlers.get('fate-dice:workbench')({})
+  assert.equal(view.settings.alwaysRoll, true, '再次读取必须读回开启状态，否则界面会自己关回去')
+  assert.equal(view.settings.allowHidden, true)
+  assert.equal(view.settings.damperLinkage, true)
+
+  // 关回去同样立刻生效
+  const off = await handlers.get('fate-dice:save-global-settings')({ settings: { alwaysRoll: false } })
+  assert.equal(off.settings.alwaysRoll, false)
+  assert.equal((await handlers.get('fate-dice:workbench')({})).settings.alwaysRoll, false)
+})
+
+test('全局设置不被本局历史 config 覆盖：本局残留 alwaysRoll:false 也不能把全局开关打回关闭', async () => {
+  const { handlers, snapshot } = mountPluginWithData({
+    gameData: { config: { autoCheck: true, alwaysRoll: false, sensitivity: 'rare' }, summary: { total: 0, counts: {}, recent: [] } }
+  })
+  await handlers.get('fate-dice:save-global-settings')({ settings: { alwaysRoll: true, sensitivity: 'normal' } })
+  const view = await handlers.get('fate-dice:workbench')({ gameId: 'g-1' })
+  assert.equal(view.settings.alwaysRoll, true, '全局开关不能被本局残留值覆盖')
+  assert.equal(view.settings.sensitivity, 'normal', '全局灵敏度不能被本局残留值覆盖')
+  assert.equal(view.autoCheck, true, '本局仍可覆盖自动检定开关')
+  assert.equal(snapshot().settings.alwaysRoll, true)
+})
+
+test('插件数据读取异常时不得用默认值覆盖已存设置（避免开关被静默冲回默认）', async () => {
+  const { handlers, writes } = mountPluginWithData({ readThrows: true })
+  const view = await handlers.get('fate-dice:workbench')({})
+  assert.equal(view.settings.alwaysRoll, false)
+  assert.equal(writes.length, 0, '读取失败时不允许写盘覆盖用户已有设置')
+})
+
+test('检定设置页：拨动「每轮必检定」当场走持久化（无草稿、无保存按钮）', async () => {
+  const clientCode = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+  let loadedModule = null
+  const fakeReact = {
+    Fragment: Symbol('Fragment'),
+    createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+    useState: init => [typeof init === 'function' ? init() : init, () => {}],
+    useEffect: () => {},
+    useMemo: fn => fn(),
+    useRef: val => ({ current: val })
+  }
+  const sandbox = {
+    window: { __ModuleLoader__: { load(def) { loadedModule = def } }, localStorage: { getItem: () => null, setItem: () => {} } },
+    document: { head: { appendChild() {} }, getElementById: () => null, createElement: () => ({ id: '', textContent: '', style: {} }) },
+    console
+  }
+  vm.runInNewContext(clientCode, sandbox, { filename: 'client.js' })
+  const exported = loadedModule.factory(mod => {
+    if (mod === 'react') return fakeReact
+    throw new Error('unexpected require: ' + mod)
+  })
+
+  const calls = []
+  const actions = { persistSettings: next => { calls.push(next); return Promise.resolve(next) } }
+  const tree = exported.__test.SettingsTab({
+    view: { settings: { sensitivity: 'normal', alwaysRoll: false, toneBias: 'balanced', autoHidden: true, damperLinkage: true, allowHeuristicFallback: false, animation: 'bounce' } },
+    actions,
+    notify: () => {}
+  })
+
+  const findSwitch = (node, label) => {
+    if (!node || typeof node !== 'object') return null
+    if (node.props && node.props.label === label && typeof node.props.onChange === 'function') return node
+    for (const child of node.children || []) {
+      const hit = findSwitch(child, label)
+      if (hit) return hit
+    }
+    return null
+  }
+
+  const alwaysRollSwitch = findSwitch(tree, '每轮必检定')
+  assert.ok(alwaysRollSwitch, '设置页必须渲染「每轮必检定」开关')
+  assert.equal(alwaysRollSwitch.props.on, false)
+
+  alwaysRollSwitch.props.onChange(true)
+  assert.equal(calls.length, 1, '拨动开关必须立刻触发一次持久化，不能等保存按钮')
+  assert.equal(calls[0].alwaysRoll, true)
+  assert.equal(calls[0].sensitivity, 'normal', '其余设置项必须随同保留，不能被冲掉')
+  assert.equal(calls[0].autoHidden, true)
+
+  const flat = JSON.stringify(tree)
+  assert.equal(flat.includes('保存设置'), false, '不得再出现「保存设置」按钮文案')
+  assert.ok(flat.includes('即时生效'), '必须向用户说明改动即时生效')
+})

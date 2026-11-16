@@ -2052,6 +2052,11 @@ function WorkbenchPanel(props) {
   const [checking, setChecking] = useState(false)
   const [toast, setToast] = useState('')
   const toastTimer = useRef(null)
+  /* 最新视图 + 用户是否已手动改过设置：首屏异步加载回包时不得把用户刚拨的开关打回 */
+  const viewRef = useRef(view)
+  viewRef.current = view
+  const touchedRef = useRef(false)
+  const persistChain = useRef(null)
 
   const notify = text => {
     setToast(String(text || ''))
@@ -2062,7 +2067,16 @@ function WorkbenchPanel(props) {
   useEffect(() => {
     let alive = true
     fdLoadWorkbench(ui, gameId).then(data => {
-      if (alive) setView(data)
+      if (!alive || !data) return
+      /* 首次加载可能与用户的拨动并发：已经手动改过设置时，保留本地视图里的设置项，
+         只接受宿主回包的其余字段，避免出现「打开了又自动关闭」的回弹 */
+      setView(prev => {
+        const base = prev || fdEmptyWorkbench()
+        if (!touchedRef.current) return data
+        const merged = fdNormalizeSettings({ ...(data.settings || {}), ...(base.settings || {}) })
+        viewRef.current = { ...data, settings: merged, damper: { ...(data.damper || base.damper), linkage: merged.damperLinkage } }
+        return viewRef.current
+      })
     })
     const offSync = fdWatch(ui, gameId, 'workbench-sync', payload => {
       if (!alive || !payload) return
@@ -2096,13 +2110,37 @@ function WorkbenchPanel(props) {
       .finally(() => setChecking(false))
   }
 
+  /* 设置项即时生效：先乐观写视图（开关立刻翻），再串行落盘（本地缓存 + 宿主） */
   const persistSettings = nextSettings => {
-    const merged = fdNormalizeSettings({ ...view.settings, ...nextSettings })
+    const base = (viewRef.current && viewRef.current.settings) || FD_DEFAULT_SETTINGS
+    const merged = fdNormalizeSettings({ ...base, ...(nextSettings || {}) })
+    touchedRef.current = true
+    viewRef.current = {
+      ...(viewRef.current || fdEmptyWorkbench()),
+      settings: merged,
+      damper: { ...((viewRef.current || {}).damper || {}), linkage: merged.damperLinkage }
+    }
     patch(prev => ({ settings: merged, damper: { ...prev.damper, linkage: merged.damperLinkage } }))
-    return fdPersistSettings(ui, merged).then(res => {
-      notify(fdToastResult(res, '全局设置已保存在本地'))
-      return merged
-    })
+
+    const run = () => fdPersistSettings(ui, merged)
+      .then(res => {
+        if (!res || res.ok !== true) notify(fdToastResult(res, '改动已保存在本地浏览器'))
+        /* 宿主回包带权威设置时以宿主为准（例如宿主侧做了兜底归一化） */
+        const hostSettings = res && res.ok && res.data && res.data.settings
+        if (hostSettings && typeof hostSettings === 'object') {
+          const synced = fdNormalizeSettings({ ...merged, ...hostSettings })
+          viewRef.current = { ...(viewRef.current || fdEmptyWorkbench()), settings: synced }
+          patch(prev => ({ settings: synced }))
+        }
+        return merged
+      })
+      .catch(() => {
+        notify('改动已保存在本地浏览器')
+        return merged
+      })
+
+    persistChain.current = (persistChain.current || Promise.resolve()).then(run, run)
+    return persistChain.current
   }
 
   const setAutoCheck = next => {
@@ -2476,31 +2514,25 @@ function ChecksTab(props) {
 /* ===== src/client/tab-settings.js ===== */
 /* ------------------------------------------------------------------ *
  * tab-settings.js —— 页签 2「检定设置」：干净清爽的 7 项检定参数
- * 每一项均带 ? 就地展开详细说明；底部单一「保存设置」主按钮。
+ * 每一项都即时生效并自动保存（无草稿、无保存按钮），? 就地展开详细说明。
  * ------------------------------------------------------------------ */
 
 function SettingsTab(props) {
   const { view, actions } = props || {}
-  const settings = view.settings || FD_DEFAULT_SETTINGS
-  const [draft, setDraft] = useState(settings)
-
-  useEffect(() => {
-    setDraft(settings)
-  }, [settings.sensitivity, settings.alwaysRoll, settings.toneBias, settings.autoHidden, settings.damperLinkage, settings.allowHeuristicFallback, settings.animation])
-
-  const patchDraft = patch => setDraft({ ...draft, ...patch })
-
-  const saveSettings = () => {
+  const settings = (view && view.settings) || FD_DEFAULT_SETTINGS
+  /* 单一事实源：控件值直接来自 view.settings；改动立刻写回并落盘 */
+  const apply = patch => {
     if (!actions || typeof actions.persistSettings !== 'function') return
-    actions.persistSettings(draft)
+    actions.persistSettings({ ...settings, ...(patch || {}) })
   }
 
   return h(Fragment, null,
     h(FdSection, {
       title: '⚙️ 检定设置',
-      note: '保存后对全部对话生效',
+      note: '改动即时生效 · 自动保存',
       help: [
-        '这一屏是全局检定设置：改的是草稿，只有点底部「保存设置」才落盘并对所有对话生效。',
+        '这一屏是全局检定设置：每改一项就立即生效并对全部对话生效，不需要再点保存。',
+        '改动会同时写进酒馆的插件数据与本地缓存，重开面板、切换对话都保持你改后的值。',
         '参数分三类：① 触发与难度（触发灵敏度、叙事基调修正）；② 表现层（掷骰动画、感知自动暗骰）；③ 联动与兜底（叙事阻尼器双向联动、无决策模型时本地关键词兜底）。',
         '每项标题右侧的 ? 可展开详细说明，收起后界面保持清爽单列布局。'
       ].join('\n')
@@ -2514,7 +2546,7 @@ function SettingsTab(props) {
           '谨慎：只有高风险关键节点（生死、暴露、重大抉择）才触发，正文更连贯、骰子更稀有，适合重叙事的沉浸式长文。'
         ].join('\n')
       },
-      h(FdSelect, { value: draft.sensitivity, options: FD_SENSITIVITY_OPTIONS, onChange: value => patchDraft({ sensitivity: value }) })),
+      h(FdSelect, { value: settings.sensitivity, options: FD_SENSITIVITY_OPTIONS, onChange: value => apply({ sensitivity: value }) })),
 
       h(FdRow, {
         plain: true,
@@ -2522,11 +2554,12 @@ function SettingsTab(props) {
         sub: '默认关闭：AI 判为日常动作时不掷骰',
         help: [
           '开启后，只要你在聊天框发送行动，本轮就一定投一次真骰，不再受「触发概率」门槛限制——适合想看骰子驱动每一段剧情的玩法。',
+          '拨动开关即刻生效并自动保存，无需点任何保存按钮；下次打开面板仍是开启状态。',
           '关闭（默认）时按「触发灵敏度」的门槛判定：模型认为这次行动没有真实不确定性（纯寒暄、内省、必定成功的日常动作）就跳过投骰，正文照常生成，只在输入框上方留一行「本轮无需检定」的浅提示。',
           '两种情况即使开启本开关也不会投骰：① 本轮被判定为场景切换过渡；② 叙事阻尼器判定为越权结果宣告且没有动作尝试。'
         ].join('\n')
       },
-      h(FdSwitch, { on: Boolean(draft.alwaysRoll), label: '每轮必检定', onChange: next => patchDraft({ alwaysRoll: next }) })),
+      h(FdSwitch, { on: Boolean(settings.alwaysRoll), label: '每轮必检定', onChange: next => apply({ alwaysRoll: next }) })),
 
       h(FdField, {
         label: '叙事基调修正',
@@ -2537,7 +2570,7 @@ function SettingsTab(props) {
           '严苛（-1 险境）：目标值整体收紧，同样的能力在险境里更容易翻车，适合恐怖、悬疑、末日生存这类需要压迫感的题材。'
         ].join('\n')
       },
-      h(FdSelect, { value: draft.toneBias, options: FD_TONE_OPTIONS, onChange: value => patchDraft({ toneBias: value }) })),
+      h(FdSelect, { value: settings.toneBias, options: FD_TONE_OPTIONS, onChange: value => apply({ toneBias: value }) })),
 
       h(FdField, {
         label: '掷骰动画',
@@ -2549,7 +2582,7 @@ function SettingsTab(props) {
           '三种档位都在「首字等待期」非阻塞播放——动画不会拖慢正文出字，也遵循系统的「减弱动态效果」设置；关掉系统动效后会退化成静态呈现。'
         ].join('\n')
       },
-      h(FdSelect, { value: draft.animation, options: FD_ANIMATION_OPTIONS, onChange: value => patchDraft({ animation: value }) })),
+      h(FdSelect, { value: settings.animation, options: FD_ANIMATION_OPTIONS, onChange: value => apply({ animation: value }) })),
 
       h(FdRow, {
         plain: true,
@@ -2561,7 +2594,7 @@ function SettingsTab(props) {
           '关闭后这些检定照常明骰，成功/失败结论与点数都会出现在正文。单条能力的明骰/暗骰由 AI 在生成角色能力画像时自动标注（带「暗骰」标记），无需手动逐个勾选。'
         ].join('\n')
       },
-      h(FdSwitch, { on: Boolean(draft.autoHidden), label: '感知类动作自动暗骰', onChange: next => patchDraft({ autoHidden: next }) })),
+      h(FdSwitch, { on: Boolean(settings.autoHidden), label: '感知类动作自动暗骰', onChange: next => apply({ autoHidden: next }) })),
 
       h(FdRow, {
         plain: true,
@@ -2574,7 +2607,7 @@ function SettingsTab(props) {
           '阻尼器未安装或未配置时，读取与回写都自动跳过，检定本身照常进行。'
         ].join('\n')
       },
-      h(FdSwitch, { on: Boolean(draft.damperLinkage), label: '叙事阻尼器双向联动', onChange: next => patchDraft({ damperLinkage: next }) })),
+      h(FdSwitch, { on: Boolean(settings.damperLinkage), label: '叙事阻尼器双向联动', onChange: next => apply({ damperLinkage: next }) })),
 
       h(FdRow, {
         plain: true,
@@ -2586,11 +2619,9 @@ function SettingsTab(props) {
           '本地兜底的判定明显不如决策模型精细（不懂上下文、不辨语气、容易把「假装要打」当成「打」），只适合试玩、离线演示或临时救急；一旦配好 API Key 建议关回默认。'
         ].join('\n')
       },
-      h(FdSwitch, { on: Boolean(draft.allowHeuristicFallback), label: '无决策模型时使用本地关键词兜底', onChange: next => patchDraft({ allowHeuristicFallback: next }) }))),
+      h(FdSwitch, { on: Boolean(settings.allowHeuristicFallback), label: '无决策模型时使用本地关键词兜底', onChange: next => apply({ allowHeuristicFallback: next }) }))),
 
-    h('div', { className: 'fd-btn-row' },
-      h(FdBtn, { primary: true, onClick: saveSettings }, '保存设置')),
-    h('div', { className: 'fd-hint' }, '保存后立即对全部对话生效；未保存的改动不会写入本地存储。'))
+    h('div', { className: 'fd-hint' }, '以上改动即时生效并自动保存，无需手动提交；面板重新打开或切换对话都会保留。'))
 }
 
 /* ===== src/client/main.js ===== */
@@ -2660,7 +2691,7 @@ exports.name = FD_PLUGIN_ID
 exports.inject = ['tavernUi']
 exports.apply = apply
 exports.WorkbenchPanel = WorkbenchPanel
-exports.__test = { DieGlyph, formatRollSummary, LiveRollBanner, TurnRollCapsule, WorkbenchPanel, DecisionModelGuideBanner, FdHelp }
+exports.__test = { DieGlyph, formatRollSummary, LiveRollBanner, TurnRollCapsule, WorkbenchPanel, DecisionModelGuideBanner, FdHelp, SettingsTab }
     return module.exports
   }
 })

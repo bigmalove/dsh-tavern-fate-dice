@@ -140,6 +140,11 @@ function WorkbenchPanel(props) {
   const [checking, setChecking] = useState(false)
   const [toast, setToast] = useState('')
   const toastTimer = useRef(null)
+  /* 最新视图 + 用户是否已手动改过设置：首屏异步加载回包时不得把用户刚拨的开关打回 */
+  const viewRef = useRef(view)
+  viewRef.current = view
+  const touchedRef = useRef(false)
+  const persistChain = useRef(null)
 
   const notify = text => {
     setToast(String(text || ''))
@@ -150,7 +155,16 @@ function WorkbenchPanel(props) {
   useEffect(() => {
     let alive = true
     fdLoadWorkbench(ui, gameId).then(data => {
-      if (alive) setView(data)
+      if (!alive || !data) return
+      /* 首次加载可能与用户的拨动并发：已经手动改过设置时，保留本地视图里的设置项，
+         只接受宿主回包的其余字段，避免出现「打开了又自动关闭」的回弹 */
+      setView(prev => {
+        const base = prev || fdEmptyWorkbench()
+        if (!touchedRef.current) return data
+        const merged = fdNormalizeSettings({ ...(data.settings || {}), ...(base.settings || {}) })
+        viewRef.current = { ...data, settings: merged, damper: { ...(data.damper || base.damper), linkage: merged.damperLinkage } }
+        return viewRef.current
+      })
     })
     const offSync = fdWatch(ui, gameId, 'workbench-sync', payload => {
       if (!alive || !payload) return
@@ -184,13 +198,37 @@ function WorkbenchPanel(props) {
       .finally(() => setChecking(false))
   }
 
+  /* 设置项即时生效：先乐观写视图（开关立刻翻），再串行落盘（本地缓存 + 宿主） */
   const persistSettings = nextSettings => {
-    const merged = fdNormalizeSettings({ ...view.settings, ...nextSettings })
+    const base = (viewRef.current && viewRef.current.settings) || FD_DEFAULT_SETTINGS
+    const merged = fdNormalizeSettings({ ...base, ...(nextSettings || {}) })
+    touchedRef.current = true
+    viewRef.current = {
+      ...(viewRef.current || fdEmptyWorkbench()),
+      settings: merged,
+      damper: { ...((viewRef.current || {}).damper || {}), linkage: merged.damperLinkage }
+    }
     patch(prev => ({ settings: merged, damper: { ...prev.damper, linkage: merged.damperLinkage } }))
-    return fdPersistSettings(ui, merged).then(res => {
-      notify(fdToastResult(res, '全局设置已保存在本地'))
-      return merged
-    })
+
+    const run = () => fdPersistSettings(ui, merged)
+      .then(res => {
+        if (!res || res.ok !== true) notify(fdToastResult(res, '改动已保存在本地浏览器'))
+        /* 宿主回包带权威设置时以宿主为准（例如宿主侧做了兜底归一化） */
+        const hostSettings = res && res.ok && res.data && res.data.settings
+        if (hostSettings && typeof hostSettings === 'object') {
+          const synced = fdNormalizeSettings({ ...merged, ...hostSettings })
+          viewRef.current = { ...(viewRef.current || fdEmptyWorkbench()), settings: synced }
+          patch(prev => ({ settings: synced }))
+        }
+        return merged
+      })
+      .catch(() => {
+        notify('改动已保存在本地浏览器')
+        return merged
+      })
+
+    persistChain.current = (persistChain.current || Promise.resolve()).then(run, run)
+    return persistChain.current
   }
 
   const setAutoCheck = next => {
