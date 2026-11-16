@@ -1268,3 +1268,99 @@ test('楼层顶栏胶囊（与叙事阻尼器胶囊并排）：正在生成期�
   assert.match(panelText, /🔥 孤注一掷/)
   unmount2()
 })
+
+test('回归验证：历史免检定楼层开启「每轮必检定」后点「重新生成正文」（settled:true 预检帧 + regenerate 时间线早于后台结算 + 后续跳号新轮）全程必投骰且正常落盘', async () => {
+  const turnSections = []
+  const settledHooks = []
+  const timelineHooks = []
+  const handlers = new Map()
+  const gameDataMap = new Map()
+  const turnDataMap = new Map()
+  let pluginData = null
+  let currentTurnState = { turn: 0, settled: false, generating: true, greeting: false }
+
+  applyFateDicePlugin({
+    tavern: {
+      capabilities: { decisionJudge: 1, narrativeDamper: 1 },
+      damperTurnQuestions() { return () => {} },
+      turnSection(def) { turnSections.push(def); return () => {} },
+      settlementSection() { return () => {} },
+      settlementTool() { return () => {} },
+      onTurnSettled(fn) { settledHooks.push(fn); return () => {} },
+      onTimelineChanged(fn) { timelineHooks.push(fn); return () => {} },
+      handle(name, fn) { handlers.set(name, fn) },
+      async savePluginData({ data }) { pluginData = structuredClone(data) },
+      async readPluginData() { return pluginData ? structuredClone(pluginData) : null },
+      async saveGameData({ gameId, data }) { gameDataMap.set(gameId, structuredClone(data)) },
+      async readGameData({ gameId }) { return structuredClone(gameDataMap.get(gameId) || null) },
+      async saveTurnData({ gameId, turn, textVersion, data }) {
+        turnDataMap.set(`${gameId}:${turn}`, { turn, textVersion, data: structuredClone(data) })
+        return { turn, textVersion }
+      },
+      async readTurnData({ gameId, turn }) { return structuredClone(turnDataMap.get(`${gameId}:${turn}`) || null) },
+      async getTurnState() { return structuredClone(currentTurnState) },
+      async getTurn() { return { turn: 3, text: '你接过瓷碟咬了一口蜂蜜蛋糕。', variables: {} } },
+      async publishState() {},
+      async getDamperTurnContext({ turn }) {
+        return {
+          active: true,
+          turn,
+          explicitSceneShift: false,
+          ruling: { rulingTier: 'allow_advance', deltaBudget: 'step', leverageScore: 1.2 },
+          answers: {
+            fd_needs_check: { type: 'noul', probability: 0.05 },
+            fd_difficulty: { type: 'choice', choice: 'easy' },
+            fd_capability: { type: 'score', score: 2 },
+            fd_domain: { type: 'choice', choice: 'general_social' }
+          }
+        }
+      },
+      async applyDamperDiceShift() {
+        return { applied: true, ruling: { rulingTier: 'allow_advance', deltaBudget: 'step' } }
+      }
+    }
+  })
+
+  const inputFloor3 = '安雅蹲身替我拍净衣摆浮沙，我顺势抬手揉了揉她的发顶，她喉间立刻滚起满足的呼噜，尾巴卷上你的手腕。'
+
+  // 1) 首次发送（未开每轮必检定）：5% < 积极阈值 35%，免检定落盘
+  await handlers.get('fate-dice:save-global-settings')({ settings: { sensitivity: 'strict', alwaysRoll: false } })
+  currentTurnState = { turn: 0, settled: false, generating: true, greeting: false }
+  const firstInj = await turnSections[0].text({ gameId: 'g-regen-always', turn: 4, input: inputFloor3 })
+  assert.equal(firstInj, '')
+  await settledHooks[0]({ gameId: 'g-regen-always', turn: 4, textVersion: 'v4-skip' })
+  const skippedRead = await handlers.get('fate-dice:read-turn')({ gameId: 'g-regen-always', turn: 4 })
+  assert.equal(skippedRead.roll, null)
+  assert.equal(skippedRead.judged.shouldRoll, false)
+
+  // 2) 用户打开「每轮必检定」，对第 3 楼（storyTurn=4）点击「重新生成正文」：
+  //    真实宿主在 prepareRegenerationFrameCache 阶段：getTurnState 返回 { turn: 4, settled: true, generating: false }，turnSection 传入 candidateTurn=16
+  await handlers.get('fate-dice:save-global-settings')({ settings: { alwaysRoll: true } })
+  currentTurnState = { turn: 4, settled: true, generating: false, greeting: false }
+  const regenInput = `${inputFloor3}\n\n<turn_extra_request>\n写细腻一点\n</turn_extra_request>`
+  const regenInj = await turnSections[0].text({ gameId: 'g-regen-always', turn: 16, input: regenInput })
+  assert.match(regenInj, /本轮客观检定已由系统真骰裁定/, '开启每轮必检定后重新生成必须强制投出真骰')
+
+  // 流式期间前端按 turn=4 读取，必须立即看到新真骰而非旧的 5% 免检定
+  const streamingRead = await handlers.get('fate-dice:read-turn')({ gameId: 'g-regen-always', turn: 4, streaming: true })
+  assert.ok(streamingRead?.roll, '重新生成流式期间按原楼层 turn=4 必须读到新真骰')
+  assert.match(String(streamingRead.roll.reason || ''), /每轮必检定/)
+  assert.equal(streamingRead.roll.attempt, inputFloor3, '重新生成附加标签不得污染检定动作文本')
+
+  // 真实宿主 regenBody 返回后立即触发 timelineChanged('regenerate')，此时后台结算尚未完成，不得误删 pending
+  timelineHooks[0]({ gameId: 'g-regen-always', kind: 'regenerate', turn: 4 })
+
+  // 随后后台结算完成触发 onTurnSettled(turn=4)，必须成功落盘覆盖旧的免检定记录
+  await settledHooks[0]({ gameId: 'g-regen-always', turn: 4, textVersion: 'v4-rolled' })
+  const settledRead = await handlers.get('fate-dice:read-turn')({ gameId: 'g-regen-always', turn: 4 })
+  assert.ok(settledRead?.roll, '重新生成结算完成后第 3 楼（turn=4）必须持久保存真骰结果，不再显示免检定')
+  assert.equal(settledRead.roll.rolledAt, streamingRead.roll.rolledAt)
+
+  // 3) 重新生成导致原生轮号跳到 18 后，玩家继续发送新一轮行动：turn=18 必须对齐落盘，不因 4+1=5 错位丢失
+  currentTurnState = { turn: 4, settled: true, generating: true, greeting: false }
+  const nextInj = await turnSections[0].text({ gameId: 'g-regen-always', turn: 18, input: '练习基础剑法' })
+  assert.match(nextInj, /本轮客观检定已由系统真骰裁定/)
+  await settledHooks[0]({ gameId: 'g-regen-always', turn: 18, textVersion: 'v18-1' })
+  const turn18Read = await handlers.get('fate-dice:read-turn')({ gameId: 'g-regen-always', turn: 18 })
+  assert.ok(turn18Read?.roll, '跳号后的新楼层（turn=18）结算必须正常落盘')
+})
