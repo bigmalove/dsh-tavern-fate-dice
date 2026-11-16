@@ -160,8 +160,8 @@ function ChecksTab(props) {
             h('span', { className: 'fd-fate-num' }, `${fate.points} / ${fate.max}`)),
           h('span', { className: 'fd-fate-status' },
             fate.points > 0
-              ? `✨ 可发动 ${fate.points} 次无惩罚「✦ 逆命重投」（也可省点选孤注一掷）`
-              : '🔥 命运点已耗尽：本轮若需重投，只能发动高风险「孤注一掷」')),
+              ? `✨ 可用 ${fate.points} 次无惩罚逆命重投 · 请在下方「当前最新回合操作」点击按钮触发`
+              : '🔥 命运点已耗尽：本轮若需重投，请在下方点击高风险「孤注一掷」')),
         h('div', { className: 'fd-fate-charge' },
           h('div', { className: 'fd-fate-charge-head' },
             h('span', null, '厄运回充进度'),
@@ -173,37 +173,30 @@ function ChecksTab(props) {
             }))),
           h('span', { className: 'fd-hint' }, '不重投认栽：1 次大失败 或 累计 2 次失败 → 自动 +1 ✦'))),
 
-      /* 常驻三栏规则卡片：无需点 ? 也能一眼读懂 */
-      h('div', { className: 'fd-fate-rules' },
-        h('div', { className: 'fd-fate-rule-card' },
-          h('div', { className: 'fd-fate-rule-head' },
-            h('span', null, '✦ 逆命重投（-1 点）'),
-            h(FdBadge, { tone: 'ok' }, '无惩罚改命')),
-          h('div', { className: 'fd-fate-rule-desc' }, '消耗 1 点命运点重新投掷本轮真骰，不附加恶化或挂彩惩罚。重投后点酒馆「重新生成正文」即可按新点数改写剧情。')),
-        h('div', { className: 'fd-fate-rule-card' },
-          h('div', { className: 'fd-fate-rule-head' },
-            h('span', null, '🔥 孤注一掷（0 点）'),
-            h(FdBadge, { tone: 'warn' }, '成王败寇')),
-          h('div', { className: 'fd-fate-rule-desc' }, '不耗命运点强搏 1 次：若仍失败将强制恶化为【大失败】；就算翻盘也封顶普通【成功】且正文必写挂彩/透支代价。')),
-        h('div', { className: 'fd-fate-rule-card' },
-          h('div', { className: 'fd-fate-rule-head' },
-            h('span', null, '🔒 锁骰防刷四铁律'),
-            h(FdBadge, { tone: 'off' }, '每轮限 1 次')),
-          h('div', { className: 'fd-fate-rule-desc' }, '不改行动直接点重新生成必锁原骰；仅【最新楼层 · 非暗骰 · 首次未成功】开放 1 次重投，认栽吃瘪才能攒回命运点。'))),
-
-      /* 当前最新一轮检定胶囊与重投按钮 */
+      /* 当前最新一轮检定胶囊与高对比实心重投按钮（紧贴命运点槽下方，操作区置顶） */
       hasGame && (fdNumber(view.lastTurn, 0) > 0 || (recent[0] && recent[0].turn > 0))
         ? h('div', { className: 'fd-fate-latest-box' },
-          h('span', { className: 'fd-fate-latest-title' },
-            `🎯 当前最新回合操作（第 ${Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0))} 轮）`),
+          h('div', { className: 'fd-fate-latest-head' },
+            h('span', { className: 'fd-fate-latest-title' },
+              `🎯 当前最新回合操作（第 ${Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0))} 轮）`)),
           h(TurnRollCapsule, {
             ui,
             gameId,
             turn: Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0)),
             defaultOpen: true,
-            emptyFallback: h('div', { className: 'fd-hint' }, '当前最新回合为免检定（或无待重投骰点）；发出下一条触发检定的行动后，可在此或楼层顶栏直接重投。')
+            emptyFallback: h('div', { className: 'fd-hint' }, '当前最新回合为免检定（或无待重投骰点）；发出下一条触发检定的行动后，可在此或楼层顶栏直接点击按钮重投。')
           }))
-        : h('div', { className: 'fd-hint' }, hasGame ? '发送一条行动消息触发检定后，可在此或楼层顶栏直接查看骰面并执行重投。' : '进入对话后将在此展示本局命运点与最新回合重投操作。')),
+        : h('div', { className: 'fd-fate-latest-box' },
+          h('span', { className: 'fd-fate-latest-title' }, '🎯 当前最新回合操作'),
+          h('div', { className: 'fd-hint' }, hasGame
+            ? '发送一条行动消息触发检定后，若未达成功，将在此出现「✦ 逆命重投 / 🔥 孤注一掷」操作按钮。'
+            : '进入对话后将在此展示最新回合检定结果与重投操作按钮。')),
+
+      /* 静态规则附注：纯文本左竖线引注，彻底去除易误认为按钮的三宫格卡片外观 */
+      h('div', { className: 'fd-fate-footnote', role: 'note' },
+        h('span', { className: 'fd-fate-footnote-title' }, '📖 锁骰与重投规则说明'),
+        h('p', { className: 'fd-fate-footnote-item' }, '• 锁骰防刷：未改行动直接点「重新生成正文」必锁原骰；仅【最新楼层 · 非暗骰 · 首次未成功】开放 1 次重投，认栽吃瘪才能攒回命运点。'),
+        h('p', { className: 'fd-fate-footnote-item' }, '• 两种改命：耗 1 点命运点可无惩罚「逆命重投」；0 点「孤注一掷」若败强制恶化为大失败，就算翻盘也封顶普通成功且正文必写挂彩代价。'))),
 
     /* ---------------- 1. 自动行动检定 ---------------- */
     h(FdSection, {

@@ -210,24 +210,34 @@ const CSS_TEXT = `
   color: inherit;
   font: inherit;
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 650;
   cursor: pointer;
   touch-action: manipulation;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  transition: filter 0.15s ease;
+  box-shadow: 0 1px 2px rgba(24, 24, 32, 0.08);
+  transition: transform 0.14s ease, filter 0.15s ease, box-shadow 0.15s ease;
 }
-.fd-btn:hover:not(:disabled) { filter: brightness(1.06); }
+.fd-btn:hover:not(:disabled) {
+  transform: translateY(-0.5px);
+  filter: brightness(1.06);
+  box-shadow: 0 2px 6px rgba(24, 24, 32, 0.13);
+}
+.fd-btn:active:not(:disabled) { transform: translateY(0.5px); }
 .fd-btn.is-primary {
-  background: var(--fd-accent-soft);
-  border-color: color-mix(in oklab, var(--fd-accent) 55%, transparent);
+  background: color-mix(in oklab, var(--fd-accent) 26%, var(--fd-fill-strong));
+  border-color: color-mix(in oklab, var(--fd-accent) 68%, transparent);
   color: inherit;
 }
-.fd-btn.is-danger { color: var(--fd-bad); border-color: color-mix(in oklab, var(--fd-bad) 40%, transparent); }
-.fd-btn.is-sm { min-height: 28px; padding: 2px 9px; font-size: 11.5px; border-radius: 8px; }
-.fd-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.fd-btn.is-danger {
+  background: color-mix(in oklab, var(--fd-bad) 14%, var(--fd-fill-strong));
+  color: var(--fd-bad);
+  border-color: color-mix(in oklab, var(--fd-bad) 52%, transparent);
+}
+.fd-btn.is-sm { min-height: 29px; padding: 3px 10px; font-size: 11.5px; border-radius: 8px; }
+.fd-btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; transform: none; }
 .fd-btn-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 
 .fd-chip {
@@ -1020,44 +1030,198 @@ const CSS_TEXT = `
   background: #d4712a;
   border-color: rgba(212, 113, 42, 0.65);
 }
-.fd-fate-rules {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
-  gap: 8px;
-}
-.fd-fate-rule-card {
+.fd-fate-latest-box {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 9px 11px;
-  border-radius: 10px;
-  background: var(--fd-fill);
-  border: 1px solid var(--fd-line-soft);
+  gap: 7px;
+  padding: 10px 11px 9px;
+  border-radius: 11px;
+  background: color-mix(in srgb, currentColor 3.5%, transparent);
+  border: 1px solid var(--fd-line);
 }
-.fd-fate-rule-head {
+.fd-fate-latest-box .fd-turn-capsule {
+  margin-bottom: 0;
+}
+.fd-fate-latest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fd-fate-latest-title {
+  font-size: 12px;
+  font-weight: 750;
+  opacity: 0.92;
+}
+
+/* ---------- 醒目重投操作台与高对比实心双按钮 ---------- */
+.fd-reroll-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px 10px 10px;
+  padding: 10px 11px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #c88a22 9%, rgba(128, 128, 142, 0.06));
+  border: 1px solid color-mix(in srgb, #c88a22 36%, var(--fd-line));
+}
+.fd-reroll-bar.is-compact {
+  margin: 2px 0 0;
+  padding: 9px 10px;
+}
+.fd-reroll-prompt {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
-}
-.fd-fate-rule-desc {
+  flex-wrap: wrap;
   font-size: 11.5px;
-  line-height: 1.5;
-  opacity: 0.82;
+  font-weight: 700;
+  opacity: 0.9;
 }
-.fd-fate-latest-box {
+.fd-reroll-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+  gap: 8px;
+}
+.fd-reroll-btn {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--fd-line-soft);
+  align-items: stretch;
+  justify-content: center;
+  gap: 3px;
+  min-height: 52px;
+  padding: 9px 13px;
+  border-radius: 10px;
+  font: inherit;
+  text-align: left;
+  color: #ffffff;
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease;
 }
-.fd-fate-latest-title {
-  font-size: 11.5px;
+.fd-reroll-bar.is-compact .fd-reroll-btn {
+  min-height: 46px;
+  padding: 7px 11px;
+}
+.fd-reroll-btn.is-fate {
+  background: linear-gradient(180deg, #cc851f 0%, #aa6610 100%);
+  border: 1px solid #8c5108;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.30), 0 3px 10px rgba(170, 102, 16, 0.30);
+}
+.fd-reroll-btn.is-push {
+  background: linear-gradient(180deg, #c94c3d 0%, #a53426 100%);
+  border: 1px solid #88261a;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26), 0 3px 10px rgba(165, 52, 38, 0.28);
+}
+.fd-reroll-btn:hover:not(:disabled) {
+  transform: translateY(-1.5px);
+  filter: brightness(1.07);
+}
+.fd-reroll-btn.is-fate:hover:not(:disabled) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36), 0 6px 15px rgba(170, 102, 16, 0.40);
+}
+.fd-reroll-btn.is-push:hover:not(:disabled) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 6px 15px rgba(165, 52, 38, 0.38);
+}
+.fd-reroll-btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+  filter: brightness(0.96);
+}
+.fd-reroll-btn:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.fd-reroll-btn:disabled {
+  opacity: 0.58;
+  cursor: wait;
+  transform: none;
+  box-shadow: none;
+}
+.fd-reroll-btn-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fd-reroll-btn-title {
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+  color: #ffffff;
+}
+.fd-reroll-btn-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 700;
-  opacity: 0.84;
+  line-height: 1.45;
+  white-space: nowrap;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  color: #ffffff;
+}
+.fd-reroll-btn-sub {
+  font-size: 11px;
+  line-height: 1.35;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.90);
+}
+.fd-reroll-foot {
+  font-size: 11px;
+  line-height: 1.45;
+  opacity: 0.76;
+}
+.fd-reroll-done {
+  margin: 2px 10px 10px;
+  padding: 8px 11px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.5;
+  background: color-mix(in srgb, var(--fd-ok) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fd-ok) 45%, var(--fd-line));
+}
+.fd-reroll-done.is-compact {
+  margin: 2px 0 0;
+}
+.fd-reroll-status {
+  padding: 4px 11px 9px;
+  font-size: 11.5px;
+  opacity: 0.72;
+}
+.fd-reroll-status.is-compact {
+  padding: 2px 0 0;
+}
+
+/* ---------- 静态规则附注（纯文本竖线引注，彻底去除类按钮卡片外观） ---------- */
+.fd-fate-footnote {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 2px 2px 10px;
+  border-left: 2px solid var(--fd-line);
+  font-size: 11.5px;
+  line-height: 1.55;
+  opacity: 0.75;
+  cursor: default;
+}
+.fd-fate-footnote-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0.86;
+}
+.fd-fate-footnote-item {
+  margin: 0;
+  word-break: break-word;
 }
 
 @keyframes fd-tumble {

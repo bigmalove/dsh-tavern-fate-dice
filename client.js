@@ -311,24 +311,34 @@ const CSS_TEXT = `
   color: inherit;
   font: inherit;
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 650;
   cursor: pointer;
   touch-action: manipulation;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  transition: filter 0.15s ease;
+  box-shadow: 0 1px 2px rgba(24, 24, 32, 0.08);
+  transition: transform 0.14s ease, filter 0.15s ease, box-shadow 0.15s ease;
 }
-.fd-btn:hover:not(:disabled) { filter: brightness(1.06); }
+.fd-btn:hover:not(:disabled) {
+  transform: translateY(-0.5px);
+  filter: brightness(1.06);
+  box-shadow: 0 2px 6px rgba(24, 24, 32, 0.13);
+}
+.fd-btn:active:not(:disabled) { transform: translateY(0.5px); }
 .fd-btn.is-primary {
-  background: var(--fd-accent-soft);
-  border-color: color-mix(in oklab, var(--fd-accent) 55%, transparent);
+  background: color-mix(in oklab, var(--fd-accent) 26%, var(--fd-fill-strong));
+  border-color: color-mix(in oklab, var(--fd-accent) 68%, transparent);
   color: inherit;
 }
-.fd-btn.is-danger { color: var(--fd-bad); border-color: color-mix(in oklab, var(--fd-bad) 40%, transparent); }
-.fd-btn.is-sm { min-height: 28px; padding: 2px 9px; font-size: 11.5px; border-radius: 8px; }
-.fd-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.fd-btn.is-danger {
+  background: color-mix(in oklab, var(--fd-bad) 14%, var(--fd-fill-strong));
+  color: var(--fd-bad);
+  border-color: color-mix(in oklab, var(--fd-bad) 52%, transparent);
+}
+.fd-btn.is-sm { min-height: 29px; padding: 3px 10px; font-size: 11.5px; border-radius: 8px; }
+.fd-btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; transform: none; }
 .fd-btn-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 
 .fd-chip {
@@ -1121,44 +1131,198 @@ const CSS_TEXT = `
   background: #d4712a;
   border-color: rgba(212, 113, 42, 0.65);
 }
-.fd-fate-rules {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
-  gap: 8px;
-}
-.fd-fate-rule-card {
+.fd-fate-latest-box {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 9px 11px;
-  border-radius: 10px;
-  background: var(--fd-fill);
-  border: 1px solid var(--fd-line-soft);
+  gap: 7px;
+  padding: 10px 11px 9px;
+  border-radius: 11px;
+  background: color-mix(in srgb, currentColor 3.5%, transparent);
+  border: 1px solid var(--fd-line);
 }
-.fd-fate-rule-head {
+.fd-fate-latest-box .fd-turn-capsule {
+  margin-bottom: 0;
+}
+.fd-fate-latest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fd-fate-latest-title {
+  font-size: 12px;
+  font-weight: 750;
+  opacity: 0.92;
+}
+
+/* ---------- 醒目重投操作台与高对比实心双按钮 ---------- */
+.fd-reroll-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px 10px 10px;
+  padding: 10px 11px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #c88a22 9%, rgba(128, 128, 142, 0.06));
+  border: 1px solid color-mix(in srgb, #c88a22 36%, var(--fd-line));
+}
+.fd-reroll-bar.is-compact {
+  margin: 2px 0 0;
+  padding: 9px 10px;
+}
+.fd-reroll-prompt {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
-}
-.fd-fate-rule-desc {
+  flex-wrap: wrap;
   font-size: 11.5px;
-  line-height: 1.5;
-  opacity: 0.82;
+  font-weight: 700;
+  opacity: 0.9;
 }
-.fd-fate-latest-box {
+.fd-reroll-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+  gap: 8px;
+}
+.fd-reroll-btn {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--fd-line-soft);
+  align-items: stretch;
+  justify-content: center;
+  gap: 3px;
+  min-height: 52px;
+  padding: 9px 13px;
+  border-radius: 10px;
+  font: inherit;
+  text-align: left;
+  color: #ffffff;
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease;
 }
-.fd-fate-latest-title {
-  font-size: 11.5px;
+.fd-reroll-bar.is-compact .fd-reroll-btn {
+  min-height: 46px;
+  padding: 7px 11px;
+}
+.fd-reroll-btn.is-fate {
+  background: linear-gradient(180deg, #cc851f 0%, #aa6610 100%);
+  border: 1px solid #8c5108;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.30), 0 3px 10px rgba(170, 102, 16, 0.30);
+}
+.fd-reroll-btn.is-push {
+  background: linear-gradient(180deg, #c94c3d 0%, #a53426 100%);
+  border: 1px solid #88261a;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26), 0 3px 10px rgba(165, 52, 38, 0.28);
+}
+.fd-reroll-btn:hover:not(:disabled) {
+  transform: translateY(-1.5px);
+  filter: brightness(1.07);
+}
+.fd-reroll-btn.is-fate:hover:not(:disabled) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36), 0 6px 15px rgba(170, 102, 16, 0.40);
+}
+.fd-reroll-btn.is-push:hover:not(:disabled) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 6px 15px rgba(165, 52, 38, 0.38);
+}
+.fd-reroll-btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+  filter: brightness(0.96);
+}
+.fd-reroll-btn:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.fd-reroll-btn:disabled {
+  opacity: 0.58;
+  cursor: wait;
+  transform: none;
+  box-shadow: none;
+}
+.fd-reroll-btn-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fd-reroll-btn-title {
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+  color: #ffffff;
+}
+.fd-reroll-btn-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 700;
-  opacity: 0.84;
+  line-height: 1.45;
+  white-space: nowrap;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  color: #ffffff;
+}
+.fd-reroll-btn-sub {
+  font-size: 11px;
+  line-height: 1.35;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.90);
+}
+.fd-reroll-foot {
+  font-size: 11px;
+  line-height: 1.45;
+  opacity: 0.76;
+}
+.fd-reroll-done {
+  margin: 2px 10px 10px;
+  padding: 8px 11px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.5;
+  background: color-mix(in srgb, var(--fd-ok) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fd-ok) 45%, var(--fd-line));
+}
+.fd-reroll-done.is-compact {
+  margin: 2px 0 0;
+}
+.fd-reroll-status {
+  padding: 4px 11px 9px;
+  font-size: 11.5px;
+  opacity: 0.72;
+}
+.fd-reroll-status.is-compact {
+  padding: 2px 0 0;
+}
+
+/* ---------- 静态规则附注（纯文本竖线引注，彻底去除类按钮卡片外观） ---------- */
+.fd-fate-footnote {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 2px 2px 10px;
+  border-left: 2px solid var(--fd-line);
+  font-size: 11.5px;
+  line-height: 1.55;
+  opacity: 0.75;
+  cursor: default;
+}
+.fd-fate-footnote-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0.86;
+}
+.fd-fate-footnote-item {
+  margin: 0;
+  word-break: break-word;
 }
 
 @keyframes fd-tumble {
@@ -2347,29 +2511,15 @@ function ComposerDicePopover(props) {
           : null,
         h('dt', { className: 'fd-turn-dt' }, '难度理由'),
         h('dd', { className: 'fd-turn-dd' }, `${roll.difficultyLabel || '判定'} · ${roll.reason || 'AI 综合评定'}`)),
-      h('div', { className: 'fd-floor-panel-actions' },
-        isStreaming
-          ? h('span', { className: 'fd-hint' }, '⏳ 正文正在按上述真骰结果生成；生成完成后可在此执行逆命重投或孤注一掷')
-          : rerollState.allowed
-            ? h(Fragment, null,
-              rerollState.canFate
-                ? h(FdBtn, {
-                  small: true,
-                  primary: true,
-                  disabled: Boolean(rerolling),
-                  title: '消耗 1 点命运点，无恶化惩罚重掷本轮真骰（每轮限 1 次）',
-                  onClick: () => { if (typeof onReroll === 'function') onReroll('fate') }
-                }, rerolling ? '重投中…' : `✦ 逆命重投 (-1 点 · 余 ${fdNumber(rerollState.fatePoints, fate.points)}/${fdNumber(rerollState.fateMax, fate.max)})`)
-                : null,
-              h(FdBtn, {
-                small: true,
-                danger: true,
-                disabled: Boolean(rerolling),
-                title: '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
-                onClick: () => { if (typeof onReroll === 'function') onReroll('push') }
-              }, rerolling ? '搏命中…' : (rerollState.canFate ? '🔥 孤注一掷（省点硬搏）' : '🔥 孤注一掷（败则大失败 · 成亦带伤）')),
-              h('span', { className: 'fd-hint' }, rerollHint || '直接点「重新生成正文」将强制复用原骰点'))
-            : h('span', { className: 'fd-hint' }, rerollHint || `🔒 ${rerollState.reason || '本轮骰点已锁定'}`)))
+      h(FdRerollActionBox, {
+        rerollState,
+        fate,
+        rerolling,
+        rerollHint,
+        isStreaming,
+        compact: true,
+        onReroll
+      }))
     : h('div', { className: 'fd-hint' },
       setupReason
         ? '请前往酒馆「设置 › 叙事阻尼器」填写决策模型与 API Key，配好后即可自动定难并投掷真骰。'
@@ -2854,36 +3004,76 @@ function TurnRollCapsule(props) {
           ? h(Fragment, null,
             fdBuildTurnDetails(record, peeked),
             !covered
-              ? h('div', { className: 'fd-btn-row', style: { padding: '4px 10px 8px' } },
-                rerollState.allowed
-                  ? h(Fragment, null,
-                    rerollState.canFate
-                      ? h(FdBtn, {
-                        small: true,
-                        primary: true,
-                        disabled: rerolling,
-                        title: '消耗 1 点命运点，无额外恶化惩罚重投本轮真骰（每轮限 1 次）',
-                        onClick: () => manualReroll('fate')
-                      }, rerolling ? '重投中…' : `✦ 逆命重投 (-1 点 · 余 ${fdNumber(rerollState.fatePoints, fate.points)}/${fdNumber(rerollState.fateMax, fate.max)})`)
-                      : null,
-                    h(FdBtn, {
-                      small: true,
-                      danger: true,
-                      disabled: rerolling,
-                      title: '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
-                      onClick: () => manualReroll('push')
-                    }, rerolling ? '搏命中…' : (rerollState.canFate ? '🔥 孤注一掷' : '🔥 孤注一掷（败则大失败 · 成亦带伤）')))
-                  : null,
-                h('span', { className: 'fd-hint' },
-                  rerollHint || (rerollState.allowed
-                    ? '直接重新生成正文将自动复用原骰点'
-                    : `🔒 ${rerollState.reason || '本轮骰点已锁定'}`)))
+              ? h(FdRerollActionBox, {
+                rerollState,
+                fate,
+                rerolling,
+                rerollHint,
+                isStreaming: false,
+                compact: false,
+                onReroll: manualReroll
+              })
               : null)
           : null)),
     children || null)
 }
 
 const fdMountedHeaderTurns = new Set()
+
+function FdRerollActionBox(props) {
+  const { rerollState, fate, rerolling, rerollHint, isStreaming, compact, onReroll } = props || {}
+  const state = rerollState && typeof rerollState === 'object' ? rerollState : { allowed: false }
+  const safeFate = fdNormalizeFate(fate)
+  const compactCls = compact ? ' is-compact' : ''
+
+  if (isStreaming) {
+    return h('div', { className: 'fd-reroll-status' + compactCls },
+      '⏳ 正文正在按上述真骰结果生成；待本轮生成落盘后，可在此执行逆命重投或孤注一掷')
+  }
+
+  if (state.allowed) {
+    const remPoints = fdNumber(state.fatePoints, safeFate.points)
+    const maxPoints = fdNumber(state.fateMax, safeFate.max)
+    return h('div', { className: 'fd-reroll-bar' + compactCls },
+      h('div', { className: 'fd-reroll-prompt' },
+        h('span', null, '⚡ 点击下方按钮改命重投（每轮限 1 次）'),
+        h('span', { className: 'fd-hint' }, '重投后点酒馆「重新生成正文」生效')),
+      h('div', { className: 'fd-reroll-grid' },
+        state.canFate
+          ? h('button', {
+            type: 'button',
+            className: 'fd-reroll-btn is-fate',
+            disabled: Boolean(rerolling),
+            title: '消耗 1 点命运点，无恶化或挂彩惩罚重掷本轮真骰（每轮限 1 次）',
+            onClick: () => (typeof onReroll === 'function' ? onReroll('fate') : undefined)
+          },
+          h('span', { className: 'fd-reroll-btn-top' },
+            h('span', { className: 'fd-reroll-btn-title' }, rerolling ? '⏳ 重投中…' : '✦ 逆命重投'),
+            h('span', { className: 'fd-reroll-btn-tag' }, `-1 点 · 余 ${remPoints}/${maxPoints} ▸`)),
+          h('span', { className: 'fd-reroll-btn-sub' }, '无恶化与挂彩惩罚 · 稳妥重掷本轮真骰'))
+          : null,
+        h('button', {
+          type: 'button',
+          className: 'fd-reroll-btn is-push',
+          disabled: Boolean(rerolling),
+          title: '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
+          onClick: () => (typeof onReroll === 'function' ? onReroll('push') : undefined)
+        },
+        h('span', { className: 'fd-reroll-btn-top' },
+          h('span', { className: 'fd-reroll-btn-title' }, rerolling ? '⏳ 搏命中…' : '🔥 孤注一掷'),
+          h('span', { className: 'fd-reroll-btn-tag' }, '0 点 · 成王败寇 ▸')),
+        h('span', { className: 'fd-reroll-btn-sub' }, '败则强制恶化大失败 · 翻盘封顶成功并带伤'))),
+      h('div', { className: 'fd-reroll-foot' },
+        rerollHint || '直接点「重新生成正文」将自动复用原骰点；不重投认栽可攒回命运点'))
+  }
+
+  if (rerollHint) {
+    return h('div', { className: 'fd-reroll-done' + compactCls }, rerollHint)
+  }
+
+  return h('div', { className: 'fd-reroll-status' + compactCls },
+    `🔒 ${state.reason || '本轮骰点已锁定'}`)
+}
 const fdHeaderMountListeners = new Set()
 
 function fdNotifyHeaderTurns() {
@@ -3090,29 +3280,15 @@ function StoryFloorDiceItem(props) {
             ? '请前往酒馆「设置 › 叙事阻尼器」填写决策模型与 API Key，配置后即可自动定难并投掷真骰。'
             : ((judged && judged.reason) || '本轮行动无显著不确定性，免于投骰。')),
       roll
-        ? h('div', { className: 'fd-floor-panel-actions' },
-          isStreaming
-            ? h('span', { className: 'fd-hint' }, '⏳ 正文正在按上述真骰结果生成；待本轮生成落盘后，可在此执行逆命重投或孤注一掷')
-            : rerollState.allowed
-              ? h(Fragment, null,
-                rerollState.canFate
-                  ? h(FdBtn, {
-                    small: true,
-                    primary: true,
-                    disabled: rerolling,
-                    title: '消耗 1 点命运点，无额外恶化惩罚重投本轮真骰（每轮限 1 次）',
-                    onClick: () => runManualReroll('fate')
-                  }, rerolling ? '重投中…' : `✦ 逆命重投 (-1 点 · 余 ${fdNumber(rerollState.fatePoints, fate.points)}/${fdNumber(rerollState.fateMax, fate.max)})`)
-                  : null,
-                h(FdBtn, {
-                  small: true,
-                  danger: true,
-                  disabled: rerolling,
-                  title: '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
-                  onClick: () => runManualReroll('push')
-                }, rerolling ? '搏命中…' : (rerollState.canFate ? '🔥 孤注一掷' : '🔥 孤注一掷（败则大失败 · 成亦带伤）')),
-                h('span', { className: 'fd-hint' }, rerollHint || '直接点「重新生成正文」将强制复用原骰点'))
-              : h('span', { className: 'fd-hint' }, rerollHint || `🔒 ${rerollState.reason || '本轮骰点已锁定'}`))
+        ? h(FdRerollActionBox, {
+          rerollState,
+          fate,
+          rerolling,
+          rerollHint,
+          isStreaming,
+          compact: true,
+          onReroll: runManualReroll
+        })
         : null),
       panelSlot
     )
@@ -3421,14 +3597,20 @@ function fdMountImperativeFloorHeaders(ui) {
       addRow('难度理由', `${roll.difficultyLabel || '判定'} · ${roll.reason || 'AI 综合评定'}`)
       panel.appendChild(dl)
 
-      const actions = fdEl(doc, 'div', 'fd-floor-panel-actions')
       const rerollState = record.rerollState && typeof record.rerollState === 'object'
         ? record.rerollState
         : { allowed: false, reason: '本轮骰点已锁定' }
 
       if (isStreaming) {
-        actions.appendChild(fdEl(doc, 'span', 'fd-hint', '⏳ 正文正在按上述真骰结果生成；生成完成后可在此执行逆命重投或孤注一掷'))
+        panel.appendChild(fdEl(doc, 'div', 'fd-reroll-status is-compact', '⏳ 正文正在按上述真骰结果生成；生成完成后可在此执行逆命重投或孤注一掷'))
       } else if (rerollState.allowed) {
+        const bar = fdEl(doc, 'div', 'fd-reroll-bar is-compact')
+        const prompt = fdEl(doc, 'div', 'fd-reroll-prompt')
+        prompt.appendChild(fdEl(doc, 'span', '', '⚡ 点击下方按钮改命重投（每轮限 1 次）'))
+        prompt.appendChild(fdEl(doc, 'span', 'fd-hint', '重投后点酒馆「重新生成正文」生效'))
+        bar.appendChild(prompt)
+
+        const grid = fdEl(doc, 'div', 'fd-reroll-grid')
         const triggerReroll = mode => {
           if (entry.rerolling || !effectiveTurn) return
           entry.rerolling = true
@@ -3462,37 +3644,50 @@ function fdMountImperativeFloorHeaders(ui) {
             })
         }
 
-        if (rerollState.canFate) {
-          const fateBtn = fdEl(
-            doc,
-            'button',
-            'fd-btn is-primary is-sm',
-            entry.rerolling ? '重投中…' : `✦ 逆命重投 (-1 点 · 余 ${fdNumber(rerollState.fatePoints, fate.points)}/${fdNumber(rerollState.fateMax, fate.max)})`
-          )
-          fateBtn.type = 'button'
-          fateBtn.disabled = entry.rerolling
-          fateBtn.title = '消耗 1 点命运点，无恶化惩罚重掷本轮真骰（每轮限 1 次）'
-          fateBtn.addEventListener('click', () => triggerReroll('fate'))
-          actions.appendChild(fateBtn)
+        const buildRerollBtn = (cls, titleText, tagText, subText, tip, mode) => {
+          const btn = fdEl(doc, 'button', 'fd-reroll-btn ' + cls)
+          btn.type = 'button'
+          btn.disabled = entry.rerolling
+          btn.title = tip
+          const top = fdEl(doc, 'span', 'fd-reroll-btn-top')
+          top.appendChild(fdEl(doc, 'span', 'fd-reroll-btn-title', titleText))
+          top.appendChild(fdEl(doc, 'span', 'fd-reroll-btn-tag', tagText))
+          btn.appendChild(top)
+          btn.appendChild(fdEl(doc, 'span', 'fd-reroll-btn-sub', subText))
+          btn.addEventListener('click', () => triggerReroll(mode))
+          return btn
         }
 
-        const pushBtn = fdEl(
-          doc,
-          'button',
-          'fd-btn is-danger is-sm',
-          entry.rerolling ? '搏命中…' : (rerollState.canFate ? '🔥 孤注一掷（省点硬搏）' : '🔥 孤注一掷（败则大失败 · 成亦带伤）')
-        )
-        pushBtn.type = 'button'
-        pushBtn.disabled = entry.rerolling
-        pushBtn.title = '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价'
-        pushBtn.addEventListener('click', () => triggerReroll('push'))
-        actions.appendChild(pushBtn)
+        if (rerollState.canFate) {
+          const remPoints = fdNumber(rerollState.fatePoints, fate.points)
+          const maxPoints = fdNumber(rerollState.fateMax, fate.max)
+          grid.appendChild(buildRerollBtn(
+            'is-fate',
+            entry.rerolling ? '⏳ 重投中…' : '✦ 逆命重投',
+            `-1 点 · 余 ${remPoints}/${maxPoints} ▸`,
+            '无恶化与挂彩惩罚 · 稳妥重掷本轮真骰',
+            '消耗 1 点命运点，无恶化惩罚重掷本轮真骰（每轮限 1 次）',
+            'fate'
+          ))
+        }
 
-        actions.appendChild(fdEl(doc, 'span', 'fd-hint', entry.rerollHint || '直接点「重新生成正文」将强制复用原骰点'))
+        grid.appendChild(buildRerollBtn(
+          'is-push',
+          entry.rerolling ? '⏳ 搏命中…' : '🔥 孤注一掷',
+          '0 点 · 成王败寇 ▸',
+          '败则强制恶化大失败 · 翻盘封顶成功并带伤',
+          '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
+          'push'
+        ))
+
+        bar.appendChild(grid)
+        bar.appendChild(fdEl(doc, 'div', 'fd-reroll-foot', entry.rerollHint || '直接点「重新生成正文」将强制复用原骰点；不重投认栽可攒回命运点'))
+        panel.appendChild(bar)
+      } else if (entry.rerollHint) {
+        panel.appendChild(fdEl(doc, 'div', 'fd-reroll-done is-compact', entry.rerollHint))
       } else {
-        actions.appendChild(fdEl(doc, 'span', 'fd-hint', entry.rerollHint || `🔒 ${rerollState.reason || '本轮骰点已锁定'}`))
+        panel.appendChild(fdEl(doc, 'div', 'fd-reroll-status is-compact', `🔒 ${rerollState.reason || '本轮骰点已锁定'}`))
       }
-      panel.appendChild(actions)
     } else {
       panel.appendChild(fdEl(
         doc,
@@ -4221,8 +4416,8 @@ function ChecksTab(props) {
             h('span', { className: 'fd-fate-num' }, `${fate.points} / ${fate.max}`)),
           h('span', { className: 'fd-fate-status' },
             fate.points > 0
-              ? `✨ 可发动 ${fate.points} 次无惩罚「✦ 逆命重投」（也可省点选孤注一掷）`
-              : '🔥 命运点已耗尽：本轮若需重投，只能发动高风险「孤注一掷」')),
+              ? `✨ 可用 ${fate.points} 次无惩罚逆命重投 · 请在下方「当前最新回合操作」点击按钮触发`
+              : '🔥 命运点已耗尽：本轮若需重投，请在下方点击高风险「孤注一掷」')),
         h('div', { className: 'fd-fate-charge' },
           h('div', { className: 'fd-fate-charge-head' },
             h('span', null, '厄运回充进度'),
@@ -4234,37 +4429,30 @@ function ChecksTab(props) {
             }))),
           h('span', { className: 'fd-hint' }, '不重投认栽：1 次大失败 或 累计 2 次失败 → 自动 +1 ✦'))),
 
-      /* 常驻三栏规则卡片：无需点 ? 也能一眼读懂 */
-      h('div', { className: 'fd-fate-rules' },
-        h('div', { className: 'fd-fate-rule-card' },
-          h('div', { className: 'fd-fate-rule-head' },
-            h('span', null, '✦ 逆命重投（-1 点）'),
-            h(FdBadge, { tone: 'ok' }, '无惩罚改命')),
-          h('div', { className: 'fd-fate-rule-desc' }, '消耗 1 点命运点重新投掷本轮真骰，不附加恶化或挂彩惩罚。重投后点酒馆「重新生成正文」即可按新点数改写剧情。')),
-        h('div', { className: 'fd-fate-rule-card' },
-          h('div', { className: 'fd-fate-rule-head' },
-            h('span', null, '🔥 孤注一掷（0 点）'),
-            h(FdBadge, { tone: 'warn' }, '成王败寇')),
-          h('div', { className: 'fd-fate-rule-desc' }, '不耗命运点强搏 1 次：若仍失败将强制恶化为【大失败】；就算翻盘也封顶普通【成功】且正文必写挂彩/透支代价。')),
-        h('div', { className: 'fd-fate-rule-card' },
-          h('div', { className: 'fd-fate-rule-head' },
-            h('span', null, '🔒 锁骰防刷四铁律'),
-            h(FdBadge, { tone: 'off' }, '每轮限 1 次')),
-          h('div', { className: 'fd-fate-rule-desc' }, '不改行动直接点重新生成必锁原骰；仅【最新楼层 · 非暗骰 · 首次未成功】开放 1 次重投，认栽吃瘪才能攒回命运点。'))),
-
-      /* 当前最新一轮检定胶囊与重投按钮 */
+      /* 当前最新一轮检定胶囊与高对比实心重投按钮（紧贴命运点槽下方，操作区置顶） */
       hasGame && (fdNumber(view.lastTurn, 0) > 0 || (recent[0] && recent[0].turn > 0))
         ? h('div', { className: 'fd-fate-latest-box' },
-          h('span', { className: 'fd-fate-latest-title' },
-            `🎯 当前最新回合操作（第 ${Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0))} 轮）`),
+          h('div', { className: 'fd-fate-latest-head' },
+            h('span', { className: 'fd-fate-latest-title' },
+              `🎯 当前最新回合操作（第 ${Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0))} 轮）`)),
           h(TurnRollCapsule, {
             ui,
             gameId,
             turn: Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0)),
             defaultOpen: true,
-            emptyFallback: h('div', { className: 'fd-hint' }, '当前最新回合为免检定（或无待重投骰点）；发出下一条触发检定的行动后，可在此或楼层顶栏直接重投。')
+            emptyFallback: h('div', { className: 'fd-hint' }, '当前最新回合为免检定（或无待重投骰点）；发出下一条触发检定的行动后，可在此或楼层顶栏直接点击按钮重投。')
           }))
-        : h('div', { className: 'fd-hint' }, hasGame ? '发送一条行动消息触发检定后，可在此或楼层顶栏直接查看骰面并执行重投。' : '进入对话后将在此展示本局命运点与最新回合重投操作。')),
+        : h('div', { className: 'fd-fate-latest-box' },
+          h('span', { className: 'fd-fate-latest-title' }, '🎯 当前最新回合操作'),
+          h('div', { className: 'fd-hint' }, hasGame
+            ? '发送一条行动消息触发检定后，若未达成功，将在此出现「✦ 逆命重投 / 🔥 孤注一掷」操作按钮。'
+            : '进入对话后将在此展示最新回合检定结果与重投操作按钮。')),
+
+      /* 静态规则附注：纯文本左竖线引注，彻底去除易误认为按钮的三宫格卡片外观 */
+      h('div', { className: 'fd-fate-footnote', role: 'note' },
+        h('span', { className: 'fd-fate-footnote-title' }, '📖 锁骰与重投规则说明'),
+        h('p', { className: 'fd-fate-footnote-item' }, '• 锁骰防刷：未改行动直接点「重新生成正文」必锁原骰；仅【最新楼层 · 非暗骰 · 首次未成功】开放 1 次重投，认栽吃瘪才能攒回命运点。'),
+        h('p', { className: 'fd-fate-footnote-item' }, '• 两种改命：耗 1 点命运点可无惩罚「逆命重投」；0 点「孤注一掷」若败强制恶化为大失败，就算翻盘也封顶普通成功且正文必写挂彩代价。'))),
 
     /* ---------------- 1. 自动行动检定 ---------------- */
     h(FdSection, {
@@ -4649,7 +4837,7 @@ exports.name = FD_PLUGIN_ID
 exports.inject = ['tavernUi']
 exports.apply = apply
 exports.WorkbenchPanel = WorkbenchPanel
-exports.__test = { DieGlyph, formatRollSummary, LiveRollBanner, ComposerLiveDock, ComposerDicePopover, fdResolveFloorToneAndLabel, fdComputePopoverStyle, TurnRollCapsule, StoryFloorDiceItem, fdExtractFloorTurn, fdMountImperativeFloorHeaders, fdNoteActiveGameId, fdGetActiveGameId, WorkbenchPanel, DecisionModelGuideBanner, FdHelp, SettingsTab }
+exports.__test = { DieGlyph, formatRollSummary, LiveRollBanner, ComposerLiveDock, ComposerDicePopover, fdResolveFloorToneAndLabel, fdComputePopoverStyle, TurnRollCapsule, FdRerollActionBox, StoryFloorDiceItem, fdExtractFloorTurn, fdMountImperativeFloorHeaders, fdNoteActiveGameId, fdGetActiveGameId, WorkbenchPanel, ChecksTab, DecisionModelGuideBanner, FdHelp, SettingsTab }
     return module.exports
   }
 })

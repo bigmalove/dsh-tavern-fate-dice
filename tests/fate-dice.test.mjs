@@ -1805,9 +1805,12 @@ test('输入栏悬浮骰子胶囊与弹出裁定小窗：latest 读取、胶囊�
   }))
   const popStr = JSON.stringify(popTree)
   assert.match(popStr, /命运之骰裁定 · 通用 · 体魄检定（失败）/)
-  assert.match(popStr, /✦ 逆命重投 \(-1 点 · 余 2\/3\)/)
-  assert.match(popStr, /🔥 孤注一掷（省点硬搏）/)
-  assert.match(popStr, /直接点「重新生成正文」将强制复用原骰点/)
+  assert.match(popStr, /fd-reroll-btn is-fate/)
+  assert.match(popStr, /✦ 逆命重投/)
+  assert.match(popStr, /-1 点 · 余 2\/3/)
+  assert.match(popStr, /fd-reroll-btn is-push/)
+  assert.match(popStr, /🔥 孤注一掷/)
+  assert.match(popStr, /直接点「重新生成正文」将自动复用原骰点/)
 
   const popBtns = findNodes(popTree, n => n.type === 'button')
   const fateBtn = popBtns.find(b => JSON.stringify(b).includes('逆命重投'))
@@ -1820,4 +1823,88 @@ test('输入栏悬浮骰子胶囊与弹出裁定小窗：latest 读取、胶囊�
   assert.equal(rerollMode, 'push')
   closeBtn.props.onClick({ stopPropagation() {} })
   assert.equal(closed, true)
+})
+
+test('命运点工作台视觉层级与重投按钮显眼化：移除易误触的三宫格假按钮卡片，最新回合操作置顶并采用实心双轨重投按钮', async () => {
+  const clientCode = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+  assert.doesNotMatch(clientCode, /fd-fate-rule-card/, '不得再保留外观酷似可点击按钮的三宫格规则卡片')
+  assert.match(clientCode, /\.fd-reroll-btn\.is-fate\s*\{/)
+  assert.match(clientCode, /\.fd-reroll-btn\.is-push\s*\{/)
+  assert.match(clientCode, /\.fd-fate-footnote\s*\{/)
+
+  let loadedModule = null
+  const fakeReact = {
+    Fragment: Symbol('Fragment'),
+    createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+    useState: init => [typeof init === 'function' ? init() : init, () => {}],
+    useEffect: () => {},
+    useMemo: fn => fn(),
+    useRef: val => ({ current: val })
+  }
+  const sandbox = {
+    window: { __ModuleLoader__: { load(def) { loadedModule = def } }, localStorage: { getItem: () => null, setItem: () => {} } },
+    document: { head: { appendChild() {} }, getElementById: () => null, createElement: () => ({ id: '', textContent: '', style: {} }) },
+    console
+  }
+  vm.runInNewContext(clientCode, sandbox, { filename: 'client.js' })
+  const exported = loadedModule.factory(mod => {
+    if (mod === 'react') return fakeReact
+    throw new Error('unexpected require: ' + mod)
+  })
+
+  const expandShallow = node => {
+    if (!node || typeof node !== 'object') return node
+    if (Array.isArray(node)) return node.map(expandShallow)
+    if (typeof node.type === 'function') {
+      if (node.type === exported.__test.TurnRollCapsule) {
+        return { type: 'TurnRollCapsuleStub', props: node.props, children: [] }
+      }
+      return expandShallow(node.type({ ...(node.props || {}), children: node.children }))
+    }
+    return { type: String(node.type), props: node.props, children: (node.children || []).map(expandShallow) }
+  }
+
+  const checksTree = expandShallow(exported.__test.ChecksTab({
+    ui: { callHost: async () => ({}) },
+    gameId: 'g-ui-order',
+    hasGame: true,
+    view: {
+      judgeStatus: { available: true, provider: 'gemini' },
+      damper: { available: true, linkage: true },
+      fate: { points: 2, max: 3, failCount: 1 },
+      lastTurn: 18,
+      recent: [{ turn: 18, check: '通用·体魄', total: 4, tierLabel: '失败', rolledAt: 1 }]
+    }
+  }))
+  const checksStr = JSON.stringify(checksTree)
+  const heroIdx = checksStr.indexOf('fd-fate-hero')
+  const latestIdx = checksStr.indexOf('fd-fate-latest-box')
+  const footnoteIdx = checksStr.indexOf('fd-fate-footnote')
+  assert.ok(heroIdx > -1 && latestIdx > heroIdx, '最新回合操作区必须紧贴命运点槽下方')
+  assert.ok(footnoteIdx > latestIdx, '静态规则附注必须退居可交互的最新回合操作区之后')
+
+  const modes = []
+  const actionTree = expandShallow(exported.__test.FdRerollActionBox({
+    rerollState: { allowed: true, canFate: true, canPush: true, fatePoints: 2, fateMax: 3 },
+    fate: { points: 2, max: 3, failCount: 1 },
+    rerolling: false,
+    rerollHint: '',
+    isStreaming: false,
+    compact: false,
+    onReroll: m => modes.push(m)
+  }))
+  const actionStr = JSON.stringify(actionTree)
+  assert.match(actionStr, /fd-reroll-bar/)
+  assert.match(actionStr, /fd-reroll-btn is-fate/)
+  assert.match(actionStr, /fd-reroll-btn is-push/)
+
+  const doneTree = expandShallow(exported.__test.FdRerollActionBox({
+    rerollState: { allowed: false, reason: '本轮已重投锁定（每轮限 1 次）' },
+    fate: { points: 1, max: 3, failCount: 0 },
+    rerolling: false,
+    rerollHint: '✦ 已消耗 1 点命运点逆命重投！现在点击酒馆「重新生成正文」即可按新点数改写剧情',
+    isStreaming: false,
+    compact: false
+  }))
+  assert.match(JSON.stringify(doneTree), /fd-reroll-done/)
 })

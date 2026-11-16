@@ -435,29 +435,15 @@ function ComposerDicePopover(props) {
           : null,
         h('dt', { className: 'fd-turn-dt' }, '难度理由'),
         h('dd', { className: 'fd-turn-dd' }, `${roll.difficultyLabel || '判定'} · ${roll.reason || 'AI 综合评定'}`)),
-      h('div', { className: 'fd-floor-panel-actions' },
-        isStreaming
-          ? h('span', { className: 'fd-hint' }, '⏳ 正文正在按上述真骰结果生成；生成完成后可在此执行逆命重投或孤注一掷')
-          : rerollState.allowed
-            ? h(Fragment, null,
-              rerollState.canFate
-                ? h(FdBtn, {
-                  small: true,
-                  primary: true,
-                  disabled: Boolean(rerolling),
-                  title: '消耗 1 点命运点，无恶化惩罚重掷本轮真骰（每轮限 1 次）',
-                  onClick: () => { if (typeof onReroll === 'function') onReroll('fate') }
-                }, rerolling ? '重投中…' : `✦ 逆命重投 (-1 点 · 余 ${fdNumber(rerollState.fatePoints, fate.points)}/${fdNumber(rerollState.fateMax, fate.max)})`)
-                : null,
-              h(FdBtn, {
-                small: true,
-                danger: true,
-                disabled: Boolean(rerolling),
-                title: '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
-                onClick: () => { if (typeof onReroll === 'function') onReroll('push') }
-              }, rerolling ? '搏命中…' : (rerollState.canFate ? '🔥 孤注一掷（省点硬搏）' : '🔥 孤注一掷（败则大失败 · 成亦带伤）')),
-              h('span', { className: 'fd-hint' }, rerollHint || '直接点「重新生成正文」将强制复用原骰点'))
-            : h('span', { className: 'fd-hint' }, rerollHint || `🔒 ${rerollState.reason || '本轮骰点已锁定'}`)))
+      h(FdRerollActionBox, {
+        rerollState,
+        fate,
+        rerolling,
+        rerollHint,
+        isStreaming,
+        compact: true,
+        onReroll
+      }))
     : h('div', { className: 'fd-hint' },
       setupReason
         ? '请前往酒馆「设置 › 叙事阻尼器」填写决策模型与 API Key，配好后即可自动定难并投掷真骰。'
@@ -942,36 +928,76 @@ function TurnRollCapsule(props) {
           ? h(Fragment, null,
             fdBuildTurnDetails(record, peeked),
             !covered
-              ? h('div', { className: 'fd-btn-row', style: { padding: '4px 10px 8px' } },
-                rerollState.allowed
-                  ? h(Fragment, null,
-                    rerollState.canFate
-                      ? h(FdBtn, {
-                        small: true,
-                        primary: true,
-                        disabled: rerolling,
-                        title: '消耗 1 点命运点，无额外恶化惩罚重投本轮真骰（每轮限 1 次）',
-                        onClick: () => manualReroll('fate')
-                      }, rerolling ? '重投中…' : `✦ 逆命重投 (-1 点 · 余 ${fdNumber(rerollState.fatePoints, fate.points)}/${fdNumber(rerollState.fateMax, fate.max)})`)
-                      : null,
-                    h(FdBtn, {
-                      small: true,
-                      danger: true,
-                      disabled: rerolling,
-                      title: '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
-                      onClick: () => manualReroll('push')
-                    }, rerolling ? '搏命中…' : (rerollState.canFate ? '🔥 孤注一掷' : '🔥 孤注一掷（败则大失败 · 成亦带伤）')))
-                  : null,
-                h('span', { className: 'fd-hint' },
-                  rerollHint || (rerollState.allowed
-                    ? '直接重新生成正文将自动复用原骰点'
-                    : `🔒 ${rerollState.reason || '本轮骰点已锁定'}`)))
+              ? h(FdRerollActionBox, {
+                rerollState,
+                fate,
+                rerolling,
+                rerollHint,
+                isStreaming: false,
+                compact: false,
+                onReroll: manualReroll
+              })
               : null)
           : null)),
     children || null)
 }
 
 const fdMountedHeaderTurns = new Set()
+
+function FdRerollActionBox(props) {
+  const { rerollState, fate, rerolling, rerollHint, isStreaming, compact, onReroll } = props || {}
+  const state = rerollState && typeof rerollState === 'object' ? rerollState : { allowed: false }
+  const safeFate = fdNormalizeFate(fate)
+  const compactCls = compact ? ' is-compact' : ''
+
+  if (isStreaming) {
+    return h('div', { className: 'fd-reroll-status' + compactCls },
+      '⏳ 正文正在按上述真骰结果生成；待本轮生成落盘后，可在此执行逆命重投或孤注一掷')
+  }
+
+  if (state.allowed) {
+    const remPoints = fdNumber(state.fatePoints, safeFate.points)
+    const maxPoints = fdNumber(state.fateMax, safeFate.max)
+    return h('div', { className: 'fd-reroll-bar' + compactCls },
+      h('div', { className: 'fd-reroll-prompt' },
+        h('span', null, '⚡ 点击下方按钮改命重投（每轮限 1 次）'),
+        h('span', { className: 'fd-hint' }, '重投后点酒馆「重新生成正文」生效')),
+      h('div', { className: 'fd-reroll-grid' },
+        state.canFate
+          ? h('button', {
+            type: 'button',
+            className: 'fd-reroll-btn is-fate',
+            disabled: Boolean(rerolling),
+            title: '消耗 1 点命运点，无恶化或挂彩惩罚重掷本轮真骰（每轮限 1 次）',
+            onClick: () => (typeof onReroll === 'function' ? onReroll('fate') : undefined)
+          },
+          h('span', { className: 'fd-reroll-btn-top' },
+            h('span', { className: 'fd-reroll-btn-title' }, rerolling ? '⏳ 重投中…' : '✦ 逆命重投'),
+            h('span', { className: 'fd-reroll-btn-tag' }, `-1 点 · 余 ${remPoints}/${maxPoints} ▸`)),
+          h('span', { className: 'fd-reroll-btn-sub' }, '无恶化与挂彩惩罚 · 稳妥重掷本轮真骰'))
+          : null,
+        h('button', {
+          type: 'button',
+          className: 'fd-reroll-btn is-push',
+          disabled: Boolean(rerolling),
+          title: '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
+          onClick: () => (typeof onReroll === 'function' ? onReroll('push') : undefined)
+        },
+        h('span', { className: 'fd-reroll-btn-top' },
+          h('span', { className: 'fd-reroll-btn-title' }, rerolling ? '⏳ 搏命中…' : '🔥 孤注一掷'),
+          h('span', { className: 'fd-reroll-btn-tag' }, '0 点 · 成王败寇 ▸')),
+        h('span', { className: 'fd-reroll-btn-sub' }, '败则强制恶化大失败 · 翻盘封顶成功并带伤'))),
+      h('div', { className: 'fd-reroll-foot' },
+        rerollHint || '直接点「重新生成正文」将自动复用原骰点；不重投认栽可攒回命运点'))
+  }
+
+  if (rerollHint) {
+    return h('div', { className: 'fd-reroll-done' + compactCls }, rerollHint)
+  }
+
+  return h('div', { className: 'fd-reroll-status' + compactCls },
+    `🔒 ${state.reason || '本轮骰点已锁定'}`)
+}
 const fdHeaderMountListeners = new Set()
 
 function fdNotifyHeaderTurns() {
@@ -1178,29 +1204,15 @@ function StoryFloorDiceItem(props) {
             ? '请前往酒馆「设置 › 叙事阻尼器」填写决策模型与 API Key，配置后即可自动定难并投掷真骰。'
             : ((judged && judged.reason) || '本轮行动无显著不确定性，免于投骰。')),
       roll
-        ? h('div', { className: 'fd-floor-panel-actions' },
-          isStreaming
-            ? h('span', { className: 'fd-hint' }, '⏳ 正文正在按上述真骰结果生成；待本轮生成落盘后，可在此执行逆命重投或孤注一掷')
-            : rerollState.allowed
-              ? h(Fragment, null,
-                rerollState.canFate
-                  ? h(FdBtn, {
-                    small: true,
-                    primary: true,
-                    disabled: rerolling,
-                    title: '消耗 1 点命运点，无额外恶化惩罚重投本轮真骰（每轮限 1 次）',
-                    onClick: () => runManualReroll('fate')
-                  }, rerolling ? '重投中…' : `✦ 逆命重投 (-1 点 · 余 ${fdNumber(rerollState.fatePoints, fate.points)}/${fdNumber(rerollState.fateMax, fate.max)})`)
-                  : null,
-                h(FdBtn, {
-                  small: true,
-                  danger: true,
-                  disabled: rerolling,
-                  title: '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
-                  onClick: () => runManualReroll('push')
-                }, rerolling ? '搏命中…' : (rerollState.canFate ? '🔥 孤注一掷' : '🔥 孤注一掷（败则大失败 · 成亦带伤）')),
-                h('span', { className: 'fd-hint' }, rerollHint || '直接点「重新生成正文」将强制复用原骰点'))
-              : h('span', { className: 'fd-hint' }, rerollHint || `🔒 ${rerollState.reason || '本轮骰点已锁定'}`))
+        ? h(FdRerollActionBox, {
+          rerollState,
+          fate,
+          rerolling,
+          rerollHint,
+          isStreaming,
+          compact: true,
+          onReroll: runManualReroll
+        })
         : null),
       panelSlot
     )
@@ -1509,14 +1521,20 @@ function fdMountImperativeFloorHeaders(ui) {
       addRow('难度理由', `${roll.difficultyLabel || '判定'} · ${roll.reason || 'AI 综合评定'}`)
       panel.appendChild(dl)
 
-      const actions = fdEl(doc, 'div', 'fd-floor-panel-actions')
       const rerollState = record.rerollState && typeof record.rerollState === 'object'
         ? record.rerollState
         : { allowed: false, reason: '本轮骰点已锁定' }
 
       if (isStreaming) {
-        actions.appendChild(fdEl(doc, 'span', 'fd-hint', '⏳ 正文正在按上述真骰结果生成；生成完成后可在此执行逆命重投或孤注一掷'))
+        panel.appendChild(fdEl(doc, 'div', 'fd-reroll-status is-compact', '⏳ 正文正在按上述真骰结果生成；生成完成后可在此执行逆命重投或孤注一掷'))
       } else if (rerollState.allowed) {
+        const bar = fdEl(doc, 'div', 'fd-reroll-bar is-compact')
+        const prompt = fdEl(doc, 'div', 'fd-reroll-prompt')
+        prompt.appendChild(fdEl(doc, 'span', '', '⚡ 点击下方按钮改命重投（每轮限 1 次）'))
+        prompt.appendChild(fdEl(doc, 'span', 'fd-hint', '重投后点酒馆「重新生成正文」生效'))
+        bar.appendChild(prompt)
+
+        const grid = fdEl(doc, 'div', 'fd-reroll-grid')
         const triggerReroll = mode => {
           if (entry.rerolling || !effectiveTurn) return
           entry.rerolling = true
@@ -1550,37 +1568,50 @@ function fdMountImperativeFloorHeaders(ui) {
             })
         }
 
-        if (rerollState.canFate) {
-          const fateBtn = fdEl(
-            doc,
-            'button',
-            'fd-btn is-primary is-sm',
-            entry.rerolling ? '重投中…' : `✦ 逆命重投 (-1 点 · 余 ${fdNumber(rerollState.fatePoints, fate.points)}/${fdNumber(rerollState.fateMax, fate.max)})`
-          )
-          fateBtn.type = 'button'
-          fateBtn.disabled = entry.rerolling
-          fateBtn.title = '消耗 1 点命运点，无恶化惩罚重掷本轮真骰（每轮限 1 次）'
-          fateBtn.addEventListener('click', () => triggerReroll('fate'))
-          actions.appendChild(fateBtn)
+        const buildRerollBtn = (cls, titleText, tagText, subText, tip, mode) => {
+          const btn = fdEl(doc, 'button', 'fd-reroll-btn ' + cls)
+          btn.type = 'button'
+          btn.disabled = entry.rerolling
+          btn.title = tip
+          const top = fdEl(doc, 'span', 'fd-reroll-btn-top')
+          top.appendChild(fdEl(doc, 'span', 'fd-reroll-btn-title', titleText))
+          top.appendChild(fdEl(doc, 'span', 'fd-reroll-btn-tag', tagText))
+          btn.appendChild(top)
+          btn.appendChild(fdEl(doc, 'span', 'fd-reroll-btn-sub', subText))
+          btn.addEventListener('click', () => triggerReroll(mode))
+          return btn
         }
 
-        const pushBtn = fdEl(
-          doc,
-          'button',
-          'fd-btn is-danger is-sm',
-          entry.rerolling ? '搏命中…' : (rerollState.canFate ? '🔥 孤注一掷（省点硬搏）' : '🔥 孤注一掷（败则大失败 · 成亦带伤）')
-        )
-        pushBtn.type = 'button'
-        pushBtn.disabled = entry.rerolling
-        pushBtn.title = '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价'
-        pushBtn.addEventListener('click', () => triggerReroll('push'))
-        actions.appendChild(pushBtn)
+        if (rerollState.canFate) {
+          const remPoints = fdNumber(rerollState.fatePoints, fate.points)
+          const maxPoints = fdNumber(rerollState.fateMax, fate.max)
+          grid.appendChild(buildRerollBtn(
+            'is-fate',
+            entry.rerolling ? '⏳ 重投中…' : '✦ 逆命重投',
+            `-1 点 · 余 ${remPoints}/${maxPoints} ▸`,
+            '无恶化与挂彩惩罚 · 稳妥重掷本轮真骰',
+            '消耗 1 点命运点，无恶化惩罚重掷本轮真骰（每轮限 1 次）',
+            'fate'
+          ))
+        }
 
-        actions.appendChild(fdEl(doc, 'span', 'fd-hint', entry.rerollHint || '直接点「重新生成正文」将强制复用原骰点'))
+        grid.appendChild(buildRerollBtn(
+          'is-push',
+          entry.rerolling ? '⏳ 搏命中…' : '🔥 孤注一掷',
+          '0 点 · 成王败寇 ▸',
+          '败则强制恶化大失败 · 翻盘封顶成功并带伤',
+          '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
+          'push'
+        ))
+
+        bar.appendChild(grid)
+        bar.appendChild(fdEl(doc, 'div', 'fd-reroll-foot', entry.rerollHint || '直接点「重新生成正文」将强制复用原骰点；不重投认栽可攒回命运点'))
+        panel.appendChild(bar)
+      } else if (entry.rerollHint) {
+        panel.appendChild(fdEl(doc, 'div', 'fd-reroll-done is-compact', entry.rerollHint))
       } else {
-        actions.appendChild(fdEl(doc, 'span', 'fd-hint', entry.rerollHint || `🔒 ${rerollState.reason || '本轮骰点已锁定'}`))
+        panel.appendChild(fdEl(doc, 'div', 'fd-reroll-status is-compact', `🔒 ${rerollState.reason || '本轮骰点已锁定'}`))
       }
-      panel.appendChild(actions)
     } else {
       panel.appendChild(fdEl(
         doc,
