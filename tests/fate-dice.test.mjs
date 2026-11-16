@@ -1908,3 +1908,39 @@ test('命运点工作台视觉层级与重投按钮显眼化：移除易误触�
   }))
   assert.match(JSON.stringify(doneTree), /fd-reroll-done/)
 })
+
+test('移动端胶囊收成纯骰子图标：三处胶囊共用图标位，窄屏/触屏隐藏圆点与全文并保留可读语义', async () => {
+  const client = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+  const styles = await readFile(new URL('../src/client/styles.js', import.meta.url), 'utf8')
+
+  // 每个胶囊都必须同时具备 圆点 / 图标 / 文字 三个槽位，移动端才有东西可切换
+  const count = re => (client.match(re) || []).length
+  const reactDots = count(/className: 'fd-floor-dot'/g)
+  const domDots = count(/fdEl\(doc, 'span', 'fd-floor-dot'\)/g)
+  const reactIcons = count(/className: 'fd-floor-pill-icon'/g)
+  const domIcons = count(/fdEl\(doc, 'span', 'fd-floor-pill-icon'\)/g)
+  assert.equal(reactDots + domDots, 4, '楼层顶栏 / 轮次胶囊 / 输入栏胶囊 / 定难中占位四处都必须保留圆点槽位')
+  assert.equal(reactIcons + domIcons, reactDots + domDots, '每个 fd-floor-dot 旁边都必须有对应的 fd-floor-pill-icon 图标位')
+  assert.equal(count(/className: 'fd-floor-pill-text'/g) + count(/fdEl\(doc, 'span', 'fd-floor-pill-text'/g), 4,
+    '胶囊文案节点必须带 fd-floor-pill-text 类名供移动端隐藏')
+  assert.ok(!/fdEl\(doc, 'span', '', pillText\)/.test(client), '胶囊文案不得再使用无类名的裸 span')
+
+  // 桌面端不显示图标，移动端只显示图标
+  assert.match(styles, /\.fd-floor-pill-icon\s*\{[^}]*display:\s*none/, '图标默认必须隐藏，桌面端维持圆点 + 全文')
+  const mobile = styles.match(/@media[^{]*\(hover:\s*none\)[^{]*\{[\s\S]*?\n\}/)
+  assert.ok(mobile, '必须存在触屏（hover:none + pointer:coarse）分支，手机横屏与平板才能收起全文')
+  const block = mobile[0]
+  assert.match(block, /\.fd-floor-pill \.fd-floor-dot[\s\S]*?display:\s*none/, '移动端必须隐藏圆点')
+  assert.match(block, /\.fd-floor-pill \.fd-floor-pill-text\s*\{\s*display:\s*none/, '移动端必须隐藏胶囊全文')
+  assert.match(block, /\.fd-floor-pill \.fd-floor-pill-icon\s*\{\s*display:\s*block/, '移动端必须显示骰子图标')
+  assert.match(block, /\.fd-floor-pill\.fd-composer-pill[\s\S]*?width:\s*22px/, '输入栏胶囊在移动端同样收成 22px 圆形图标')
+
+  // 图标用 mask 绘制，随 --fd-pill-color 变色（成功率/失败率/暗骰等色调仍然可辨）
+  assert.match(styles, /-webkit-mask:\s*url\("data:image\/svg\+xml,/, '图标必须用内联 SVG mask 绘制，避免额外资源请求')
+  assert.match(styles, /background:\s*var\(--fd-pill-color\)/, '图标颜色必须跟随胶囊色调')
+
+  // 文本被隐藏后语义不能丢：胶囊必须带 aria-label
+  assert.ok((client.match(/'aria-label':\s*pillMeta\.pillText/g) || []).length >= 1, '输入栏胶囊须带 aria-label')
+  assert.ok((client.match(/'aria-label':\s*pillText/g) || []).length >= 1, '轮次胶囊须带 aria-label')
+  assert.ok((client.match(/setAttribute\('aria-label', pillText\)/g) || []).length >= 1, '楼层顶栏胶囊须带 aria-label')
+})

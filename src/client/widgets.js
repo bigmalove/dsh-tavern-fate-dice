@@ -748,10 +748,12 @@ function ComposerLiveDock(props) {
         'aria-expanded': open ? 'true' : 'false',
         'aria-haspopup': 'dialog',
         title: pillMeta.tooltip,
+        'aria-label': pillMeta.pillText,
         onClick: togglePopup
       },
       h('span', { className: 'fd-floor-dot', 'aria-hidden': 'true' }),
-      h('span', null, pillMeta.pillText))),
+      h('span', { className: 'fd-floor-pill-icon', 'aria-hidden': 'true' }),
+      h('span', { className: 'fd-floor-pill-text' }, pillMeta.pillText))),
     portaledPopover
   )
 }
@@ -1167,6 +1169,7 @@ function StoryFloorDiceItem(props) {
     'data-expanded': expanded ? 'true' : undefined,
     'aria-expanded': Boolean(expanded),
     title: tooltip,
+    'aria-label': pillText,
     onClick: e => {
       if (e && typeof e.stopPropagation === 'function') e.stopPropagation()
       if (covered && !peeked) {
@@ -1178,7 +1181,8 @@ function StoryFloorDiceItem(props) {
     }
   },
   h('span', { className: 'fd-floor-dot', 'aria-hidden': 'true' }),
-  h('span', null, pillText))
+  h('span', { className: 'fd-floor-pill-icon', 'aria-hidden': 'true' }),
+  h('span', { className: 'fd-floor-pill-text' }, pillText))
 
   const panelNode = expanded && panelSlot
     ? ReactDOM.createPortal(
@@ -1391,7 +1395,11 @@ function fdMountImperativeFloorHeaders(ui) {
       const dot = fdEl(doc, 'span', 'fd-floor-dot')
       dot.setAttribute('aria-hidden', 'true')
       pendingBtn.appendChild(dot)
-      pendingBtn.appendChild(fdEl(doc, 'span', '', '🎲 真骰定难中…'))
+      const pendingIcon = fdEl(doc, 'span', 'fd-floor-pill-icon')
+      pendingIcon.setAttribute('aria-hidden', 'true')
+      pendingBtn.appendChild(pendingIcon)
+      pendingBtn.setAttribute('aria-label', '真骰定难中…')
+      pendingBtn.appendChild(fdEl(doc, 'span', 'fd-floor-pill-text', '🎲 真骰定难中…'))
       headSlot.appendChild(pendingBtn)
       return
     }
@@ -1455,8 +1463,12 @@ function fdMountImperativeFloorHeaders(ui) {
     pillBtn.title = tooltip
     const dot = fdEl(doc, 'span', 'fd-floor-dot')
     dot.setAttribute('aria-hidden', 'true')
-    const txt = fdEl(doc, 'span', '', pillText)
+    const icon = fdEl(doc, 'span', 'fd-floor-pill-icon')
+    icon.setAttribute('aria-hidden', 'true')
+    const txt = fdEl(doc, 'span', 'fd-floor-pill-text', pillText)
+    pillBtn.setAttribute('aria-label', pillText)
     pillBtn.appendChild(dot)
+    pillBtn.appendChild(icon)
     pillBtn.appendChild(txt)
     pillBtn.addEventListener('click', e => {
       if (e && typeof e.stopPropagation === 'function') e.stopPropagation()

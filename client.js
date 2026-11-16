@@ -891,6 +891,17 @@ const CSS_TEXT = `
   box-sizing: border-box;
   border: 1.5px solid var(--fd-pill-color);
 }
+/* 骰子图标：桌面端不显示（显示圆点 + 全文），窄屏/触屏只留这一枚图标。
+ * 用 mask 而不是内联 SVG，三处胶囊（楼层顶栏 / 轮次胶囊 / 输入栏）共用同一套样式。 */
+.fd-floor-pill-icon {
+  display: none;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  background: var(--fd-pill-color);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23000' stroke-width='2' stroke-linejoin='round'%3E%3Crect x='3.4' y='3.4' width='17.2' height='17.2' rx='4.8'/%3E%3C/g%3E%3Cg fill='%23000'%3E%3Ccircle cx='8.4' cy='8.4' r='1.55'/%3E%3Ccircle cx='15.6' cy='8.4' r='1.55'/%3E%3Ccircle cx='12' cy='12' r='1.55'/%3E%3Ccircle cx='8.4' cy='15.6' r='1.55'/%3E%3Ccircle cx='15.6' cy='15.6' r='1.55'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23000' stroke-width='2' stroke-linejoin='round'%3E%3Crect x='3.4' y='3.4' width='17.2' height='17.2' rx='4.8'/%3E%3C/g%3E%3Cg fill='%23000'%3E%3Ccircle cx='8.4' cy='8.4' r='1.55'/%3E%3Ccircle cx='15.6' cy='8.4' r='1.55'/%3E%3Ccircle cx='12' cy='12' r='1.55'/%3E%3Ccircle cx='8.4' cy='15.6' r='1.55'/%3E%3Ccircle cx='15.6' cy='15.6' r='1.55'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+}
 .fd-floor-panel-slot {
   flex: 0 0 100%;
   min-width: 0;
@@ -1347,6 +1358,23 @@ const CSS_TEXT = `
   .fd-tab { flex: 1 1 auto; }
   .fd-live-sub { white-space: normal; }
   .fd-row { align-items: flex-start; }
+}
+/* 移动端裁定胶囊：正文太挤就只留一枚骰子图标（语义交给 title / aria-label） */
+@media (max-width: 720px), (hover: none) and (pointer: coarse) {
+  .fd-floor-pill,
+  .fd-floor-pill.fd-composer-pill {
+    gap: 0;
+    width: 22px;
+    min-width: 22px;
+    height: 22px;
+    min-height: 22px;
+    padding: 0;
+    max-width: none;
+    justify-content: center;
+  }
+  .fd-floor-pill .fd-floor-dot,
+  .fd-floor-pill .fd-floor-pill-text { display: none; }
+  .fd-floor-pill .fd-floor-pill-icon { display: block; }
 }
 @media (max-width: 420px) {
   .fd-tabbar { grid-template-columns: 1fr; }
@@ -2824,10 +2852,12 @@ function ComposerLiveDock(props) {
         'aria-expanded': open ? 'true' : 'false',
         'aria-haspopup': 'dialog',
         title: pillMeta.tooltip,
+        'aria-label': pillMeta.pillText,
         onClick: togglePopup
       },
       h('span', { className: 'fd-floor-dot', 'aria-hidden': 'true' }),
-      h('span', null, pillMeta.pillText))),
+      h('span', { className: 'fd-floor-pill-icon', 'aria-hidden': 'true' }),
+      h('span', { className: 'fd-floor-pill-text' }, pillMeta.pillText))),
     portaledPopover
   )
 }
@@ -3243,6 +3273,7 @@ function StoryFloorDiceItem(props) {
     'data-expanded': expanded ? 'true' : undefined,
     'aria-expanded': Boolean(expanded),
     title: tooltip,
+    'aria-label': pillText,
     onClick: e => {
       if (e && typeof e.stopPropagation === 'function') e.stopPropagation()
       if (covered && !peeked) {
@@ -3254,7 +3285,8 @@ function StoryFloorDiceItem(props) {
     }
   },
   h('span', { className: 'fd-floor-dot', 'aria-hidden': 'true' }),
-  h('span', null, pillText))
+  h('span', { className: 'fd-floor-pill-icon', 'aria-hidden': 'true' }),
+  h('span', { className: 'fd-floor-pill-text' }, pillText))
 
   const panelNode = expanded && panelSlot
     ? ReactDOM.createPortal(
@@ -3467,7 +3499,11 @@ function fdMountImperativeFloorHeaders(ui) {
       const dot = fdEl(doc, 'span', 'fd-floor-dot')
       dot.setAttribute('aria-hidden', 'true')
       pendingBtn.appendChild(dot)
-      pendingBtn.appendChild(fdEl(doc, 'span', '', '🎲 真骰定难中…'))
+      const pendingIcon = fdEl(doc, 'span', 'fd-floor-pill-icon')
+      pendingIcon.setAttribute('aria-hidden', 'true')
+      pendingBtn.appendChild(pendingIcon)
+      pendingBtn.setAttribute('aria-label', '真骰定难中…')
+      pendingBtn.appendChild(fdEl(doc, 'span', 'fd-floor-pill-text', '🎲 真骰定难中…'))
       headSlot.appendChild(pendingBtn)
       return
     }
@@ -3531,8 +3567,12 @@ function fdMountImperativeFloorHeaders(ui) {
     pillBtn.title = tooltip
     const dot = fdEl(doc, 'span', 'fd-floor-dot')
     dot.setAttribute('aria-hidden', 'true')
-    const txt = fdEl(doc, 'span', '', pillText)
+    const icon = fdEl(doc, 'span', 'fd-floor-pill-icon')
+    icon.setAttribute('aria-hidden', 'true')
+    const txt = fdEl(doc, 'span', 'fd-floor-pill-text', pillText)
+    pillBtn.setAttribute('aria-label', pillText)
     pillBtn.appendChild(dot)
+    pillBtn.appendChild(icon)
     pillBtn.appendChild(txt)
     pillBtn.addEventListener('click', e => {
       if (e && typeof e.stopPropagation === 'function') e.stopPropagation()

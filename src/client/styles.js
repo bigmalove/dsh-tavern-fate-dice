@@ -790,6 +790,17 @@ const CSS_TEXT = `
   box-sizing: border-box;
   border: 1.5px solid var(--fd-pill-color);
 }
+/* 骰子图标：桌面端不显示（显示圆点 + 全文），窄屏/触屏只留这一枚图标。
+ * 用 mask 而不是内联 SVG，三处胶囊（楼层顶栏 / 轮次胶囊 / 输入栏）共用同一套样式。 */
+.fd-floor-pill-icon {
+  display: none;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  background: var(--fd-pill-color);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23000' stroke-width='2' stroke-linejoin='round'%3E%3Crect x='3.4' y='3.4' width='17.2' height='17.2' rx='4.8'/%3E%3C/g%3E%3Cg fill='%23000'%3E%3Ccircle cx='8.4' cy='8.4' r='1.55'/%3E%3Ccircle cx='15.6' cy='8.4' r='1.55'/%3E%3Ccircle cx='12' cy='12' r='1.55'/%3E%3Ccircle cx='8.4' cy='15.6' r='1.55'/%3E%3Ccircle cx='15.6' cy='15.6' r='1.55'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23000' stroke-width='2' stroke-linejoin='round'%3E%3Crect x='3.4' y='3.4' width='17.2' height='17.2' rx='4.8'/%3E%3C/g%3E%3Cg fill='%23000'%3E%3Ccircle cx='8.4' cy='8.4' r='1.55'/%3E%3Ccircle cx='15.6' cy='8.4' r='1.55'/%3E%3Ccircle cx='12' cy='12' r='1.55'/%3E%3Ccircle cx='8.4' cy='15.6' r='1.55'/%3E%3Ccircle cx='15.6' cy='15.6' r='1.55'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+}
 .fd-floor-panel-slot {
   flex: 0 0 100%;
   min-width: 0;
@@ -1246,6 +1257,23 @@ const CSS_TEXT = `
   .fd-tab { flex: 1 1 auto; }
   .fd-live-sub { white-space: normal; }
   .fd-row { align-items: flex-start; }
+}
+/* 移动端裁定胶囊：正文太挤就只留一枚骰子图标（语义交给 title / aria-label） */
+@media (max-width: 720px), (hover: none) and (pointer: coarse) {
+  .fd-floor-pill,
+  .fd-floor-pill.fd-composer-pill {
+    gap: 0;
+    width: 22px;
+    min-width: 22px;
+    height: 22px;
+    min-height: 22px;
+    padding: 0;
+    max-width: none;
+    justify-content: center;
+  }
+  .fd-floor-pill .fd-floor-dot,
+  .fd-floor-pill .fd-floor-pill-text { display: none; }
+  .fd-floor-pill .fd-floor-pill-icon { display: block; }
 }
 @media (max-width: 420px) {
   .fd-tabbar { grid-template-columns: 1fr; }
