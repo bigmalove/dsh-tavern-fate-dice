@@ -130,30 +130,80 @@ function ChecksTab(props) {
         damper.available
           ? (damper.linkage ? '⛓ 叙事阻尼器双向联动' : '⛓ 阻尼器可用 · 未联动')
           : '⛓ 未检测到叙事阻尼器'),
-      h(FdBadge, {
-        tone: fate.points > 0 ? 'ok' : 'warn',
-        title: '逆命重投配额：消耗 1 点可无惩罚重投当前最新未成功检定；坦然接受 1 次大失败或累计 2 次失败不重投自动回充 +1 点；耗尽后仅可孤注一掷'
-      }, `✦ 命运点 ${fate.points}/${fate.max}`),
       view.source === 'local' ? h(FdBadge, { tone: 'off' }, '🖥 本地配置模式') : null),
     h(DecisionModelGuideBanner, { view, onRecheck, checking }),
 
-    /* ---------------- 0.5 当前最新回合检定与逆命重投（常驻可点，历史存档立即可用） ---------------- */
-    hasGame && (fdNumber(view.lastTurn, 0) > 0 || (recent[0] && recent[0].turn > 0))
-      ? h(FdSection, {
-        title: '🎯 最新回合检定与重投',
-        note: `第 ${Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0))} 轮 · ✦ 命运点 ${fate.points}/${fate.max}`,
-        help: [
-          '展示当前最新一轮的检定结果与重投操作（历史已结算存档打开面板即可操作，无需切换酒馆正文样式）。',
-          '若最新一轮检定结果为代价成功 / 失败 / 大失败且非暗骰，可在此直接点击「✦ 逆命重投」（消耗 1 点命运点）或「🔥 孤注一掷」（不耗命运点，但败则恶化大失败、成亦带挂彩透支代价），重投后再点酒馆「重新生成正文」即可按新骰点改写剧情。'
-        ].join('\n')
-      },
-      h(TurnRollCapsule, {
-        ui,
-        gameId,
-        turn: Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0)),
-        defaultOpen: true
-      }))
-      : null,
+    /* ---------------- 0.5 命运点与逆命重投醒目卡片 ---------------- */
+    h(FdSection, {
+      title: '✦ 命运点与逆命重投',
+      note: fate.points > 0 ? `当前可用 ${fate.points}/${fate.max} 点` : '命运点已耗尽 · 仅可孤注一掷',
+      help: [
+        '为什么需要命运点？如果点击酒馆「重新生成」就能无限重掷骰子，真骰检定就会退化成刷到满意为止的假随机。因此本插件默认锁死同楼层骰点（未改写行动直接点「重新生成正文」将 100% 复用首次真骰结果）。',
+        '什么时候允许重投？必须同时满足 4 条铁律：① 仅限当前最新一轮楼层（历史楼层已锁定）；② 仅限非暗骰（感知/洞察类暗骰严禁看底牌悔棋）；③ 首次检定未达成成功（仅「代价成功 / 失败 / 大失败」可重投，已成功不可刷大成功）；④ 每个楼层最多重投 1 次。',
+        '方式一【✦ 逆命重投（耗 1 点命运点）】：每局开局自带 2 点命运点（上限 3 点）。消耗 1 点即可无任何额外惩罚重掷一次真骰，适合关键剧情稳妥改命。',
+        '方式二【🔥 孤注一掷（耗 0 点，高危搏命）】：当命运点用光，或你想省下命运点留给决战时，仍可强行搏命重投 1 次——但代价极重：① 若重投仍失败，普通失败将【强制恶化升级为大失败】并收紧叙事阻尼器配额；② 就算重投逆转成功，最高封顶为普通【成功】（不出无伤大成功），且系统会向正文强制注入挂彩负伤、体力/魔力透支或暴露行踪的实质代价！',
+        '命运点怎么恢复（厄运回充）？只有当你【不重投、坦然接受坏结果落盘结算】时才会回充：接受 1 次「大失败」立刻恢复 +1 点；或累计接受 2 次普通「失败」自动恢复 +1 点（最多存满 3 点）。',
+        '操作步骤：在本卡片下方或聊天楼层顶栏点开检定胶囊 → 点击「✦ 逆命重投」或「🔥 孤注一掷」掷出新点数 → 再点击聊天框下方的「重新生成正文」，AI 就会按新骰点重写本轮剧情。'
+      ].join('\n')
+    },
+      /* 顶部大号星芒点数槽 + 厄运蓄力进度 */
+      h('div', { className: 'fd-fate-hero' + (fate.points <= 0 ? ' is-empty' : '') },
+        h('div', { className: 'fd-fate-main' },
+          h('span', { className: 'fd-fate-eyebrow' }, '当前可用命运点（每局初始 2 点 · 上限 3 点）'),
+          h('div', { className: 'fd-fate-meter-row' },
+            h('div', { className: 'fd-fate-orbs', 'aria-label': `命运点 ${fate.points}/${fate.max}` },
+              Array.from({ length: fate.max }).map((_, idx) => h('span', {
+                key: idx,
+                className: 'fd-fate-orb' + (idx < fate.points ? ' is-lit' : ''),
+                'aria-hidden': 'true'
+              }, idx < fate.points ? '✦' : '✧'))),
+            h('span', { className: 'fd-fate-num' }, `${fate.points} / ${fate.max}`)),
+          h('span', { className: 'fd-fate-status' },
+            fate.points > 0
+              ? `✨ 可发动 ${fate.points} 次无惩罚「✦ 逆命重投」（也可省点选孤注一掷）`
+              : '🔥 命运点已耗尽：本轮若需重投，只能发动高风险「孤注一掷」')),
+        h('div', { className: 'fd-fate-charge' },
+          h('div', { className: 'fd-fate-charge-head' },
+            h('span', null, '厄运回充进度'),
+            h('span', null, fate.points >= fate.max ? '已满额 (3/3)' : `受挫累计 ${Math.min(2, fate.failCount)} / 2`)),
+          h('div', { className: 'fd-fate-pips', 'aria-hidden': 'true' },
+            [0, 1].map(idx => h('span', {
+              key: idx,
+              className: 'fd-fate-pip' + (idx < fate.failCount ? ' is-lit' : '')
+            }))),
+          h('span', { className: 'fd-hint' }, '不重投认栽：1 次大失败 或 累计 2 次失败 → 自动 +1 ✦'))),
+
+      /* 常驻三栏规则卡片：无需点 ? 也能一眼读懂 */
+      h('div', { className: 'fd-fate-rules' },
+        h('div', { className: 'fd-fate-rule-card' },
+          h('div', { className: 'fd-fate-rule-head' },
+            h('span', null, '✦ 逆命重投（-1 点）'),
+            h(FdBadge, { tone: 'ok' }, '无惩罚改命')),
+          h('div', { className: 'fd-fate-rule-desc' }, '消耗 1 点命运点重新投掷本轮真骰，不附加恶化或挂彩惩罚。重投后点酒馆「重新生成正文」即可按新点数改写剧情。')),
+        h('div', { className: 'fd-fate-rule-card' },
+          h('div', { className: 'fd-fate-rule-head' },
+            h('span', null, '🔥 孤注一掷（0 点）'),
+            h(FdBadge, { tone: 'warn' }, '成王败寇')),
+          h('div', { className: 'fd-fate-rule-desc' }, '不耗命运点强搏 1 次：若仍失败将强制恶化为【大失败】；就算翻盘也封顶普通【成功】且正文必写挂彩/透支代价。')),
+        h('div', { className: 'fd-fate-rule-card' },
+          h('div', { className: 'fd-fate-rule-head' },
+            h('span', null, '🔒 锁骰防刷四铁律'),
+            h(FdBadge, { tone: 'off' }, '每轮限 1 次')),
+          h('div', { className: 'fd-fate-rule-desc' }, '不改行动直接点重新生成必锁原骰；仅【最新楼层 · 非暗骰 · 首次未成功】开放 1 次重投，认栽吃瘪才能攒回命运点。'))),
+
+      /* 当前最新一轮检定胶囊与重投按钮 */
+      hasGame && (fdNumber(view.lastTurn, 0) > 0 || (recent[0] && recent[0].turn > 0))
+        ? h('div', { className: 'fd-fate-latest-box' },
+          h('span', { className: 'fd-fate-latest-title' },
+            `🎯 当前最新回合操作（第 ${Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0))} 轮）`),
+          h(TurnRollCapsule, {
+            ui,
+            gameId,
+            turn: Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0)),
+            defaultOpen: true,
+            emptyFallback: h('div', { className: 'fd-hint' }, '当前最新回合为免检定（或无待重投骰点）；发出下一条触发检定的行动后，可在此或楼层顶栏直接重投。')
+          }))
+        : h('div', { className: 'fd-hint' }, hasGame ? '发送一条行动消息触发检定后，可在此或楼层顶栏直接查看骰面并执行重投。' : '进入对话后将在此展示本局命运点与最新回合重投操作。')),
 
     /* ---------------- 1. 自动行动检定 ---------------- */
     h(FdSection, {

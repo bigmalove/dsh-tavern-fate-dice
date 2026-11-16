@@ -945,6 +945,152 @@ const CSS_TEXT = `
   padding-top: 2px;
 }
 
+/* ---------- 命运点醒目英雄卡与规则三宫格 ---------- */
+.fd-fate-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1.5px solid color-mix(in srgb, #c88a22 42%, var(--fd-line));
+  background: linear-gradient(135deg, rgba(208, 146, 40, 0.11), rgba(63, 157, 104, 0.06));
+}
+.fd-fate-hero.is-empty {
+  border-color: color-mix(in srgb, #cf4343 45%, var(--fd-line));
+  background: linear-gradient(135deg, rgba(207, 67, 67, 0.10), rgba(128, 128, 142, 0.05));
+}
+.fd-fate-main {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 180px;
+}
+.fd-fate-eyebrow {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0.78;
+}
+.fd-fate-meter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fd-fate-orbs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fd-fate-orb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  font-size: 16px;
+  font-weight: 800;
+  border: 1.5px dashed var(--fd-line);
+  background: rgba(128, 128, 142, 0.06);
+  opacity: 0.42;
+  transition: transform .16s ease, opacity .16s ease, background .16s ease;
+}
+.fd-fate-orb.is-lit {
+  opacity: 1;
+  border-style: solid;
+  border-color: rgba(202, 138, 28, 0.68);
+  background: rgba(226, 162, 46, 0.20);
+  color: #b87314;
+  box-shadow: 0 1px 6px rgba(202, 138, 28, 0.18);
+}
+.fd-fate-num {
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.fd-fate-status {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.88;
+}
+.fd-fate-charge {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  background: var(--fd-fill);
+  border: 1px solid var(--fd-line-soft);
+  min-width: 190px;
+  flex: 1 1 200px;
+  max-width: 320px;
+}
+.fd-fate-charge-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+.fd-fate-pips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+.fd-fate-pip {
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(128, 128, 142, 0.18);
+  border: 1px solid var(--fd-line-soft);
+}
+.fd-fate-pip.is-lit {
+  background: #d4712a;
+  border-color: rgba(212, 113, 42, 0.65);
+}
+.fd-fate-rules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  gap: 8px;
+}
+.fd-fate-rule-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--fd-fill);
+  border: 1px solid var(--fd-line-soft);
+}
+.fd-fate-rule-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.fd-fate-rule-desc {
+  font-size: 11.5px;
+  line-height: 1.5;
+  opacity: 0.82;
+}
+.fd-fate-latest-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--fd-line-soft);
+}
+.fd-fate-latest-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  opacity: 0.84;
+}
+
 @keyframes fd-tumble {
   0% { transform: translateY(-18px) rotateX(0deg) rotateZ(-200deg) scale(0.72); opacity: 0.25; }
   55% { transform: translateY(3px) rotateX(330deg) rotateZ(18deg) scale(1.1); opacity: 1; }
@@ -2001,7 +2147,7 @@ function fdBuildTurnDetails(record, peeked) {
 const fdMountedTurnViews = new Set()
 
 function TurnRollCapsule(props) {
-  const { ui, gameId, turn, children, defaultOpen, fromTurnView } = props || {}
+  const { ui, gameId, turn, children, defaultOpen, fromTurnView, emptyFallback } = props || {}
   const [record, setRecord] = useState(undefined)
   const [open, setOpen] = useState(Boolean(defaultOpen))
   const [peeked, setPeeked] = useState(false)
@@ -2044,7 +2190,8 @@ function TurnRollCapsule(props) {
   }, [gameId, turn])
 
   const roll = record && record.roll ? record.roll : null
-  if (record === undefined || !record || !roll) return children || null
+  if (record === undefined) return children || null
+  if (!record || !roll) return emptyFallback || children || null
 
   const covered = Boolean(roll.hidden && !peeked)
   const tier = covered ? 'hidden' : fdTierOf(roll.tier)
@@ -2404,140 +2551,429 @@ function fdExtractFloorTurn(article) {
   return fdNumber(article.getAttribute('data-floor'), 0)
 }
 
-function FloorHeaderManager(props) {
-  const { ui } = props || {}
-  const [gameId, setGameId] = useState(() => fdGetActiveGameId())
-  const [targets, setTargets] = useState([])
-  const slotsMapRef = useRef(new Map())
+function fdEl(doc, tag, className, text) {
+  const el = doc.createElement(tag)
+  if (className) el.className = className
+  if (text !== undefined && text !== null && text !== '') el.textContent = String(text)
+  return el
+}
 
-  useEffect(() => {
-    const off = fdSubscribeActiveGameId(next => setGameId(next))
-    if (!fdGetActiveGameId()) {
-      fdCall(ui, FD_RPC.status, {}).then(res => {
-        const active = res && res.ok && res.data && (res.data.activeGameId || res.data.gameId)
-        if (active) fdNoteActiveGameId(String(active))
-      })
+/* 纯原生 DOM 楼层顶栏挂载：不依赖宿主未暴露的 react-dom/client，任何浏览器页面加载即刻生效 */
+function fdMountImperativeFloorHeaders(ui) {
+  if (typeof document === 'undefined' || !document.body || typeof MutationObserver !== 'function') return fdNoop
+  const doc = document
+  const entries = new Map()
+  let rafId = 0
+  let disposed = false
+  let watchedGameId = ''
+  let stopWatches = fdNoop
+
+  const refreshAll = () => {
+    if (disposed) return
+    entries.forEach(entry => {
+      entry.retryCount = 0
+      loadEntry(entry)
+    })
+  }
+
+  const bindGameWatches = nextId => {
+    const id = String(nextId || '').trim()
+    if (!id || id === watchedGameId || disposed) return
+    stopWatches()
+    watchedGameId = id
+    const off1 = fdWatch(ui, id, 'turn-check', refreshAll)
+    const off2 = fdWatch(ui, id, 'live-roll', refreshAll)
+    const off3 = fdWatch(ui, id, 'workbench-sync', refreshAll)
+    stopWatches = () => {
+      off1()
+      off2()
+      off3()
     }
-    return off
-  }, [ui])
+    refreshAll()
+  }
 
-  useEffect(() => {
-    if (typeof document === 'undefined' || !document.body || typeof MutationObserver !== 'function') return undefined
-    let rafId = 0
-    let disposed = false
+  const offGameSub = fdSubscribeActiveGameId(bindGameWatches)
+  if (fdGetActiveGameId()) {
+    bindGameWatches(fdGetActiveGameId())
+  } else {
+    fdCall(ui, FD_RPC.status, {}).then(res => {
+      const active = res && res.ok && res.data && (res.data.activeGameId || res.data.gameId)
+      if (active) fdNoteActiveGameId(String(active))
+    })
+  }
 
-    const scan = () => {
-      rafId = 0
-      if (disposed) return
-      const urlId = fdDetectUrlGameId()
-      if (urlId) fdNoteActiveGameId(urlId)
+  function clearMountedKey(entry) {
+    if (entry.mountedKey) {
+      fdMountedHeaderTurns.delete(entry.mountedKey)
+      entry.mountedKey = ''
+      fdNotifyHeaderTurns()
+    }
+  }
 
-      const map = slotsMapRef.current
-      const seenArticles = new Set()
-      const nextTargets = []
-      const articles = document.querySelectorAll('article.dsh-tavern-story-floor')
+  function renderEntry(entry) {
+    if (disposed) return
+    const { headSlot, panelSlot, record } = entry
+    headSlot.textContent = ''
+    panelSlot.textContent = ''
 
-      for (let i = 0; i < articles.length; i++) {
-        const article = articles[i]
-        if (article.hasAttribute('data-greeting') || article.hasAttribute('data-story-held')) continue
-        const head = article.querySelector(':scope > .dsh-tavern-story-floor-head')
-        if (!head) continue
-        const turn = fdExtractFloorTurn(article)
-        const streaming = article.classList.contains('dsh-tavern-story-streaming')
-        if (turn <= 0 && !streaming) continue
+    const hasContent = Boolean(
+      record && (record.roll || record.setupRequiredReason || (record.judged && record.judged.shouldRoll === false))
+    )
+    if (!hasContent) {
+      clearMountedKey(entry)
+      return
+    }
 
-        seenArticles.add(article)
-        let entry = map.get(article)
-        if (!entry || entry.head !== head) {
-          const headSlot = document.createElement('span')
-          headSlot.className = 'fd-floor-head-slot'
-          const panelSlot = document.createElement('div')
-          panelSlot.className = 'fd-floor-panel-slot'
-          head.appendChild(headSlot)
-          head.appendChild(panelSlot)
-          entry = {
-            id: fdUid('floor'),
-            head,
-            headSlot,
-            panelSlot,
-            turn,
-            streaming
-          }
-          map.set(article, entry)
-        } else {
-          entry.turn = turn
-          entry.streaming = streaming
-          if (entry.headSlot.parentNode !== head) head.appendChild(entry.headSlot)
-          if (entry.panelSlot.parentNode !== head) head.appendChild(entry.panelSlot)
-          else if (head.lastElementChild !== entry.panelSlot) {
-            head.appendChild(entry.headSlot)
-            head.appendChild(entry.panelSlot)
-          }
-        }
-        nextTargets.push(entry)
+    const effectiveTurn = fdNumber((record && record.turn) || entry.turn, 0)
+    const activeId = fdGetActiveGameId()
+    const nextKey = activeId && effectiveTurn ? `${activeId}:${effectiveTurn}` : ''
+    if (nextKey !== entry.mountedKey) {
+      clearMountedKey(entry)
+      if (nextKey) {
+        entry.mountedKey = nextKey
+        fdMountedHeaderTurns.add(nextKey)
+        fdNotifyHeaderTurns()
       }
+    }
 
-      map.forEach((entry, article) => {
-        if (!seenArticles.has(article)) {
+    const roll = record.roll || null
+    const judged = record.judged || null
+    const setupReason = record.setupRequiredReason || ''
+    const fate = fdNormalizeFate(record.fate)
+    const covered = Boolean(roll && roll.hidden && !entry.peeked)
+    const isStreaming = Boolean(entry.streaming || record.streaming)
+
+    let tone = 'skipped'
+    let pillText = '真骰 · 免检定'
+    let tooltip = '点击展开命运之骰本轮详情'
+
+    if (roll) {
+      tone = covered ? 'hidden' : fdTierOf(roll.tier)
+      if (covered) {
+        pillText = `暗骰 · ${roll.check || '感知'} · 点按偷看`
+        tooltip = '感知/洞察暗骰（点击揭晓并展开详情）'
+      } else {
+        const suffix = roll.rerollMeta && roll.rerollMeta.mode === 'push'
+          ? ' · 🔥孤注'
+          : (roll.rerollMeta && roll.rerollMeta.mode === 'fate'
+            ? ' · ✦逆命'
+            : (roll.reusedOnRegenerate ? ' · 🔒锁骰' : ''))
+        pillText = `🎲 ${roll.check || '检定'} ${fdFormatCompactDice(roll)} · ${roll.tierLabel || ''}${suffix}`
+        tooltip = `${roll.rule || '2d6'} ${roll.check || '检定'}（难度：${roll.difficultyLabel || '普通'}）· ✦ 命运点 ${fate.points}/${fate.max}（点击展开详情与重投）`
+      }
+    } else if (setupReason) {
+      tone = 'skipped'
+      pillText = '🎲 待配决策模型'
+      tooltip = '尚未配置决策模型 API Key（点击查看指引）'
+    } else if (judged && judged.shouldRoll === false) {
+      tone = 'skipped'
+      const prob = Number(judged.needProbability)
+      const probPart = judged.damperSync && judged.damperSync.skipped === 'scene-shift'
+        ? '场景放行'
+        : (Number.isFinite(prob) ? `免检定 ${Math.round(prob * 100)}%` : '免检定')
+      pillText = `🎲 ${probPart}`
+      tooltip = `${judged.reason || '本轮行动无显著不确定性，免于投骰'}（点击展开详情）`
+    }
+
+    const pillBtn = fdEl(doc, 'button', 'fd-floor-pill')
+    pillBtn.type = 'button'
+    pillBtn.setAttribute('data-tone', tone)
+    if (entry.expanded) pillBtn.setAttribute('data-expanded', 'true')
+    pillBtn.setAttribute('aria-expanded', entry.expanded ? 'true' : 'false')
+    pillBtn.title = tooltip
+    const dot = fdEl(doc, 'span', 'fd-floor-dot')
+    dot.setAttribute('aria-hidden', 'true')
+    const txt = fdEl(doc, 'span', '', pillText)
+    pillBtn.appendChild(dot)
+    pillBtn.appendChild(txt)
+    pillBtn.addEventListener('click', e => {
+      if (e && typeof e.stopPropagation === 'function') e.stopPropagation()
+      if (covered && !entry.peeked) {
+        entry.peeked = true
+        entry.expanded = true
+      } else {
+        entry.expanded = !entry.expanded
+      }
+      renderEntry(entry)
+    })
+    headSlot.appendChild(pillBtn)
+
+    if (!entry.expanded) return
+
+    const panel = fdEl(doc, 'section', 'fd-root fd-floor-panel')
+    panel.setAttribute('data-tone', tone)
+    panel.setAttribute('aria-label', '命运之骰本轮裁定详情')
+
+    const pHead = fdEl(doc, 'div', 'fd-floor-panel-head')
+    const pTitle = fdEl(
+      doc,
+      'strong',
+      'fd-floor-panel-title',
+      roll
+        ? `命运之骰裁定 · ${roll.check || '行动'}检定（${roll.tierLabel || '判定'}）`
+        : (setupReason ? '命运之骰 · 待配置决策模型' : '命运之骰 · 本轮免检定')
+    )
+    const pTags = fdEl(doc, 'div', 'fd-floor-panel-tags')
+    if (roll) pTags.appendChild(fdEl(doc, 'span', 'fd-floor-tag', String(roll.rule || '2d6')))
+    if (roll && roll.difficultyLabel) pTags.appendChild(fdEl(doc, 'span', 'fd-floor-tag', `难度：${roll.difficultyLabel}`))
+    if (roll && roll.damper) pTags.appendChild(fdEl(doc, 'span', 'fd-floor-tag', `⛓ ${roll.damper.quotaLabel || '阻尼联动'}`))
+    pTags.appendChild(fdEl(doc, 'span', 'fd-floor-tag', `✦ 命运点 ${fate.points}/${fate.max}`))
+    pHead.appendChild(pTitle)
+    pHead.appendChild(pTags)
+    panel.appendChild(pHead)
+
+    if (roll) {
+      const dl = fdEl(doc, 'dl', 'fd-turn-details')
+      const addRow = (label, value) => {
+        dl.appendChild(fdEl(doc, 'dt', 'fd-turn-dt', label))
+        dl.appendChild(fdEl(doc, 'dd', 'fd-turn-dd', value))
+      }
+      addRow(
+        '骰面算式',
+        `${roll.rule || '2d6'} 原骰 [${(roll.dice || []).join(', ')}] = ${roll.total}（目标${roll.rule === 'd100' ? ' ≤ ' : ' ≥ '}${roll.target === undefined ? '—' : roll.target}）`
+      )
+      const breakdown = roll.modifierBreakdown || {}
+      const skillBonus = fdNumber(breakdown.skillBonus ?? roll.skillBonus, 0)
+      addRow(
+        '能力修正',
+        `${roll.check || '检定'} ${skillBonus >= 0 ? '+' : ''}${skillBonus}${roll.modifier ? `（环境/基调修正 ${roll.modifier > 0 ? '+' : ''}${roll.modifier}）` : ''}`
+      )
+      const damper = roll.damper || roll.damperSync || null
+      if (damper) {
+        const quota = damper.quota || damper.quotaSync || ''
+        addRow(
+          '叙事阻尼器',
+          `${damper.applied === false ? '未联动' : '双向联动'}${quota ? ` · 配额 ${quota}` : ''}${damper.reason ? ` · ${damper.reason}` : ''}`
+        )
+      }
+      addRow('难度理由', `${roll.difficultyLabel || '判定'} · ${roll.reason || 'AI 综合评定'}`)
+      panel.appendChild(dl)
+
+      const actions = fdEl(doc, 'div', 'fd-floor-panel-actions')
+      const rerollState = record.rerollState && typeof record.rerollState === 'object'
+        ? record.rerollState
+        : { allowed: false, reason: '本轮骰点已锁定' }
+
+      if (isStreaming) {
+        actions.appendChild(fdEl(doc, 'span', 'fd-hint', '⏳ 正文正在按上述真骰结果生成；生成完成后可在此执行逆命重投或孤注一掷'))
+      } else if (rerollState.allowed) {
+        const triggerReroll = mode => {
+          if (entry.rerolling || !effectiveTurn) return
+          entry.rerolling = true
+          entry.rerollHint = ''
+          renderEntry(entry)
+          fdCall(ui, FD_RPC.rerollTurn, { gameId: fdGetActiveGameId(), turn: effectiveTurn, mode })
+            .then(res => {
+              const data = res && res.ok ? res.data : null
+              const nextRoll = data && data.ok !== false && data.roll ? data.roll : null
+              if (nextRoll) {
+                entry.record = {
+                  ...(entry.record || {}),
+                  roll: nextRoll,
+                  fate: data.fate || fate,
+                  rerollState: data.rerollState || { allowed: false, reason: '本轮已重投锁定（每轮限 1 次）' }
+                }
+                entry.rerollHint = data.mode === 'push'
+                  ? '🔥 已孤注一掷并同步配额！现在点下方「重新生成正文」即可按新结果与代价改写剧情'
+                  : '✦ 已消耗 1 点命运点逆命重投！现在点下方「重新生成正文」即可按新点数改写剧情'
+              } else {
+                if (data && data.rerollState) {
+                  entry.record = { ...(entry.record || {}), fate: data.fate || fate, rerollState: data.rerollState }
+                }
+                entry.rerollHint = (data && data.error) || (res && res.error) || '当前条件不允许重投'
+              }
+            })
+            .catch(() => { entry.rerollHint = '手动重投失败' })
+            .finally(() => {
+              entry.rerolling = false
+              renderEntry(entry)
+            })
+        }
+
+        if (rerollState.canFate) {
+          const fateBtn = fdEl(
+            doc,
+            'button',
+            'fd-btn is-primary is-sm',
+            entry.rerolling ? '重投中…' : `✦ 逆命重投 (-1 点 · 余 ${fdNumber(rerollState.fatePoints, fate.points)}/${fdNumber(rerollState.fateMax, fate.max)})`
+          )
+          fateBtn.type = 'button'
+          fateBtn.disabled = entry.rerolling
+          fateBtn.title = '消耗 1 点命运点，无恶化惩罚重掷本轮真骰（每轮限 1 次）'
+          fateBtn.addEventListener('click', () => triggerReroll('fate'))
+          actions.appendChild(fateBtn)
+        }
+
+        const pushBtn = fdEl(
+          doc,
+          'button',
+          'fd-btn is-danger is-sm',
+          entry.rerolling ? '搏命中…' : (rerollState.canFate ? '🔥 孤注一掷（省点硬搏）' : '🔥 孤注一掷（败则大失败 · 成亦带伤）')
+        )
+        pushBtn.type = 'button'
+        pushBtn.disabled = entry.rerolling
+        pushBtn.title = '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价'
+        pushBtn.addEventListener('click', () => triggerReroll('push'))
+        actions.appendChild(pushBtn)
+
+        actions.appendChild(fdEl(doc, 'span', 'fd-hint', entry.rerollHint || '直接点「重新生成正文」将强制复用原骰点'))
+      } else {
+        actions.appendChild(fdEl(doc, 'span', 'fd-hint', entry.rerollHint || `🔒 ${rerollState.reason || '本轮骰点已锁定'}`))
+      }
+      panel.appendChild(actions)
+    } else {
+      panel.appendChild(fdEl(
+        doc,
+        'div',
+        'fd-hint',
+        setupReason
+          ? '请前往酒馆「设置 › 叙事阻尼器」填写决策模型与 API Key，配好后即可自动定难并投掷真骰。'
+          : ((judged && judged.reason) || '本轮行动无显著不确定性，免于投骰。')
+      ))
+    }
+
+    panelSlot.appendChild(panel)
+  }
+
+  function loadEntry(entry) {
+    if (disposed) return
+    if (entry.retryTimer) {
+      clearTimeout(entry.retryTimer)
+      entry.retryTimer = 0
+    }
+    const reqSeq = (entry.reqSeq || 0) + 1
+    entry.reqSeq = reqSeq
+    fdCall(ui, FD_RPC.readTurn, {
+      gameId: fdGetActiveGameId(),
+      turn: entry.turn,
+      streaming: Boolean(entry.streaming)
+    }).then(res => {
+      if (disposed || entry.disposed || entry.reqSeq !== reqSeq) return
+      const data = res && res.ok ? res.data : null
+      entry.record = data && typeof data === 'object' ? data : null
+      renderEntry(entry)
+      if (entry.streaming && !entry.record && (entry.retryCount || 0) < 8) {
+        entry.retryCount = (entry.retryCount || 0) + 1
+        entry.retryTimer = setTimeout(() => loadEntry(entry), 450)
+      }
+    })
+  }
+
+  const scan = () => {
+    rafId = 0
+    if (disposed) return
+    const urlId = fdDetectUrlGameId()
+    if (urlId) fdNoteActiveGameId(urlId)
+
+    const seenArticles = new Set()
+    const articles = doc.querySelectorAll('article.dsh-tavern-story-floor')
+    for (let i = 0; i < articles.length; i++) {
+      const article = articles[i]
+      if (article.hasAttribute('data-greeting') || article.hasAttribute('data-story-held')) continue
+      const head = article.querySelector('.dsh-tavern-story-floor-head')
+      if (!head || head.parentNode !== article) continue
+      const turn = fdExtractFloorTurn(article)
+      const streaming = article.classList.contains('dsh-tavern-story-streaming')
+      if (turn <= 0 && !streaming) continue
+
+      seenArticles.add(article)
+      let entry = entries.get(article)
+      if (!entry || entry.head !== head) {
+        if (entry) {
+          entry.disposed = true
+          if (entry.retryTimer) clearTimeout(entry.retryTimer)
+          clearMountedKey(entry)
           try { if (entry.headSlot.parentNode) entry.headSlot.parentNode.removeChild(entry.headSlot) } catch {}
           try { if (entry.panelSlot.parentNode) entry.panelSlot.parentNode.removeChild(entry.panelSlot) } catch {}
-          map.delete(article)
         }
-      })
-
-      setTargets(prev => {
-        if (
-          prev.length === nextTargets.length
-          && prev.every((item, idx) => item.id === nextTargets[idx].id && item.turn === nextTargets[idx].turn && item.streaming === nextTargets[idx].streaming)
-        ) {
-          return prev
+        const headSlot = fdEl(doc, 'span', 'fd-floor-head-slot')
+        const panelSlot = fdEl(doc, 'div', 'fd-floor-panel-slot')
+        head.appendChild(headSlot)
+        head.appendChild(panelSlot)
+        entry = {
+          head,
+          headSlot,
+          panelSlot,
+          turn,
+          streaming,
+          record: null,
+          expanded: false,
+          peeked: false,
+          rerolling: false,
+          rerollHint: '',
+          mountedKey: '',
+          retryCount: 0,
+          retryTimer: 0,
+          reqSeq: 0,
+          disposed: false
         }
-        return nextTargets.map(item => ({ ...item }))
-      })
-    }
-
-    const schedule = () => {
-      if (rafId || disposed) return
-      rafId = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(scan) : setTimeout(scan, 16)
-    }
-
-    scan()
-    const observer = new MutationObserver(mutations => {
-      for (let i = 0; i < mutations.length; i++) {
-        const t = mutations[i].target
-        if (t && t.classList && (t.classList.contains('fd-floor-head-slot') || t.classList.contains('fd-floor-panel-slot'))) continue
-        schedule()
-        break
+        entries.set(article, entry)
+        loadEntry(entry)
+      } else {
+        const changed = entry.turn !== turn || entry.streaming !== streaming
+        entry.turn = turn
+        entry.streaming = streaming
+        if (entry.headSlot.parentNode !== head) head.appendChild(entry.headSlot)
+        if (entry.panelSlot.parentNode !== head) head.appendChild(entry.panelSlot)
+        else if (head.lastElementChild !== entry.panelSlot) {
+          head.appendChild(entry.headSlot)
+          head.appendChild(entry.panelSlot)
+        }
+        if (changed) {
+          entry.retryCount = 0
+          loadEntry(entry)
+        }
       }
-    })
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['data-legacy-turn', 'data-chat-turn', 'data-row-key', 'data-story-held', 'class']
-    })
+    }
 
-    return () => {
-      disposed = true
-      observer.disconnect()
-      if (rafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId)
-      slotsMapRef.current.forEach(entry => {
+    entries.forEach((entry, article) => {
+      if (!seenArticles.has(article)) {
+        entry.disposed = true
+        if (entry.retryTimer) clearTimeout(entry.retryTimer)
+        clearMountedKey(entry)
         try { if (entry.headSlot.parentNode) entry.headSlot.parentNode.removeChild(entry.headSlot) } catch {}
         try { if (entry.panelSlot.parentNode) entry.panelSlot.parentNode.removeChild(entry.panelSlot) } catch {}
-      })
-      slotsMapRef.current.clear()
-    }
-  }, [])
+        entries.delete(article)
+      }
+    })
+  }
 
-  return h(Fragment, null, targets.map(target => h(StoryFloorDiceItem, {
-    key: target.id,
-    ui,
-    gameId,
-    turn: target.turn,
-    streaming: target.streaming,
-    headSlot: target.headSlot,
-    panelSlot: target.panelSlot
-  })))
+  const schedule = () => {
+    if (rafId || disposed) return
+    rafId = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(scan) : setTimeout(scan, 16)
+  }
+
+  scan()
+  const observer = new MutationObserver(mutations => {
+    for (let i = 0; i < mutations.length; i++) {
+      const t = mutations[i].target
+      if (t && t.closest && (t.closest('.fd-floor-head-slot') || t.closest('.fd-floor-panel-slot'))) continue
+      schedule()
+      break
+    }
+  })
+  observer.observe(doc.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['data-legacy-turn', 'data-chat-turn', 'data-row-key', 'data-story-held', 'class']
+  })
+
+  return () => {
+    disposed = true
+    observer.disconnect()
+    offGameSub()
+    stopWatches()
+    if (rafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId)
+    entries.forEach(entry => {
+      entry.disposed = true
+      if (entry.retryTimer) clearTimeout(entry.retryTimer)
+      clearMountedKey(entry)
+      try { if (entry.headSlot.parentNode) entry.headSlot.parentNode.removeChild(entry.headSlot) } catch {}
+      try { if (entry.panelSlot.parentNode) entry.panelSlot.parentNode.removeChild(entry.panelSlot) } catch {}
+    })
+    entries.clear()
+  }
 }
 
 function StatusDiceSection(props) {
@@ -3033,30 +3469,80 @@ function ChecksTab(props) {
         damper.available
           ? (damper.linkage ? '⛓ 叙事阻尼器双向联动' : '⛓ 阻尼器可用 · 未联动')
           : '⛓ 未检测到叙事阻尼器'),
-      h(FdBadge, {
-        tone: fate.points > 0 ? 'ok' : 'warn',
-        title: '逆命重投配额：消耗 1 点可无惩罚重投当前最新未成功检定；坦然接受 1 次大失败或累计 2 次失败不重投自动回充 +1 点；耗尽后仅可孤注一掷'
-      }, `✦ 命运点 ${fate.points}/${fate.max}`),
       view.source === 'local' ? h(FdBadge, { tone: 'off' }, '🖥 本地配置模式') : null),
     h(DecisionModelGuideBanner, { view, onRecheck, checking }),
 
-    /* ---------------- 0.5 当前最新回合检定与逆命重投（常驻可点，历史存档立即可用） ---------------- */
-    hasGame && (fdNumber(view.lastTurn, 0) > 0 || (recent[0] && recent[0].turn > 0))
-      ? h(FdSection, {
-        title: '🎯 最新回合检定与重投',
-        note: `第 ${Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0))} 轮 · ✦ 命运点 ${fate.points}/${fate.max}`,
-        help: [
-          '展示当前最新一轮的检定结果与重投操作（历史已结算存档打开面板即可操作，无需切换酒馆正文样式）。',
-          '若最新一轮检定结果为代价成功 / 失败 / 大失败且非暗骰，可在此直接点击「✦ 逆命重投」（消耗 1 点命运点）或「🔥 孤注一掷」（不耗命运点，但败则恶化大失败、成亦带挂彩透支代价），重投后再点酒馆「重新生成正文」即可按新骰点改写剧情。'
-        ].join('\n')
-      },
-      h(TurnRollCapsule, {
-        ui,
-        gameId,
-        turn: Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0)),
-        defaultOpen: true
-      }))
-      : null,
+    /* ---------------- 0.5 命运点与逆命重投醒目卡片 ---------------- */
+    h(FdSection, {
+      title: '✦ 命运点与逆命重投',
+      note: fate.points > 0 ? `当前可用 ${fate.points}/${fate.max} 点` : '命运点已耗尽 · 仅可孤注一掷',
+      help: [
+        '为什么需要命运点？如果点击酒馆「重新生成」就能无限重掷骰子，真骰检定就会退化成刷到满意为止的假随机。因此本插件默认锁死同楼层骰点（未改写行动直接点「重新生成正文」将 100% 复用首次真骰结果）。',
+        '什么时候允许重投？必须同时满足 4 条铁律：① 仅限当前最新一轮楼层（历史楼层已锁定）；② 仅限非暗骰（感知/洞察类暗骰严禁看底牌悔棋）；③ 首次检定未达成成功（仅「代价成功 / 失败 / 大失败」可重投，已成功不可刷大成功）；④ 每个楼层最多重投 1 次。',
+        '方式一【✦ 逆命重投（耗 1 点命运点）】：每局开局自带 2 点命运点（上限 3 点）。消耗 1 点即可无任何额外惩罚重掷一次真骰，适合关键剧情稳妥改命。',
+        '方式二【🔥 孤注一掷（耗 0 点，高危搏命）】：当命运点用光，或你想省下命运点留给决战时，仍可强行搏命重投 1 次——但代价极重：① 若重投仍失败，普通失败将【强制恶化升级为大失败】并收紧叙事阻尼器配额；② 就算重投逆转成功，最高封顶为普通【成功】（不出无伤大成功），且系统会向正文强制注入挂彩负伤、体力/魔力透支或暴露行踪的实质代价！',
+        '命运点怎么恢复（厄运回充）？只有当你【不重投、坦然接受坏结果落盘结算】时才会回充：接受 1 次「大失败」立刻恢复 +1 点；或累计接受 2 次普通「失败」自动恢复 +1 点（最多存满 3 点）。',
+        '操作步骤：在本卡片下方或聊天楼层顶栏点开检定胶囊 → 点击「✦ 逆命重投」或「🔥 孤注一掷」掷出新点数 → 再点击聊天框下方的「重新生成正文」，AI 就会按新骰点重写本轮剧情。'
+      ].join('\n')
+    },
+      /* 顶部大号星芒点数槽 + 厄运蓄力进度 */
+      h('div', { className: 'fd-fate-hero' + (fate.points <= 0 ? ' is-empty' : '') },
+        h('div', { className: 'fd-fate-main' },
+          h('span', { className: 'fd-fate-eyebrow' }, '当前可用命运点（每局初始 2 点 · 上限 3 点）'),
+          h('div', { className: 'fd-fate-meter-row' },
+            h('div', { className: 'fd-fate-orbs', 'aria-label': `命运点 ${fate.points}/${fate.max}` },
+              Array.from({ length: fate.max }).map((_, idx) => h('span', {
+                key: idx,
+                className: 'fd-fate-orb' + (idx < fate.points ? ' is-lit' : ''),
+                'aria-hidden': 'true'
+              }, idx < fate.points ? '✦' : '✧'))),
+            h('span', { className: 'fd-fate-num' }, `${fate.points} / ${fate.max}`)),
+          h('span', { className: 'fd-fate-status' },
+            fate.points > 0
+              ? `✨ 可发动 ${fate.points} 次无惩罚「✦ 逆命重投」（也可省点选孤注一掷）`
+              : '🔥 命运点已耗尽：本轮若需重投，只能发动高风险「孤注一掷」')),
+        h('div', { className: 'fd-fate-charge' },
+          h('div', { className: 'fd-fate-charge-head' },
+            h('span', null, '厄运回充进度'),
+            h('span', null, fate.points >= fate.max ? '已满额 (3/3)' : `受挫累计 ${Math.min(2, fate.failCount)} / 2`)),
+          h('div', { className: 'fd-fate-pips', 'aria-hidden': 'true' },
+            [0, 1].map(idx => h('span', {
+              key: idx,
+              className: 'fd-fate-pip' + (idx < fate.failCount ? ' is-lit' : '')
+            }))),
+          h('span', { className: 'fd-hint' }, '不重投认栽：1 次大失败 或 累计 2 次失败 → 自动 +1 ✦'))),
+
+      /* 常驻三栏规则卡片：无需点 ? 也能一眼读懂 */
+      h('div', { className: 'fd-fate-rules' },
+        h('div', { className: 'fd-fate-rule-card' },
+          h('div', { className: 'fd-fate-rule-head' },
+            h('span', null, '✦ 逆命重投（-1 点）'),
+            h(FdBadge, { tone: 'ok' }, '无惩罚改命')),
+          h('div', { className: 'fd-fate-rule-desc' }, '消耗 1 点命运点重新投掷本轮真骰，不附加恶化或挂彩惩罚。重投后点酒馆「重新生成正文」即可按新点数改写剧情。')),
+        h('div', { className: 'fd-fate-rule-card' },
+          h('div', { className: 'fd-fate-rule-head' },
+            h('span', null, '🔥 孤注一掷（0 点）'),
+            h(FdBadge, { tone: 'warn' }, '成王败寇')),
+          h('div', { className: 'fd-fate-rule-desc' }, '不耗命运点强搏 1 次：若仍失败将强制恶化为【大失败】；就算翻盘也封顶普通【成功】且正文必写挂彩/透支代价。')),
+        h('div', { className: 'fd-fate-rule-card' },
+          h('div', { className: 'fd-fate-rule-head' },
+            h('span', null, '🔒 锁骰防刷四铁律'),
+            h(FdBadge, { tone: 'off' }, '每轮限 1 次')),
+          h('div', { className: 'fd-fate-rule-desc' }, '不改行动直接点重新生成必锁原骰；仅【最新楼层 · 非暗骰 · 首次未成功】开放 1 次重投，认栽吃瘪才能攒回命运点。'))),
+
+      /* 当前最新一轮检定胶囊与重投按钮 */
+      hasGame && (fdNumber(view.lastTurn, 0) > 0 || (recent[0] && recent[0].turn > 0))
+        ? h('div', { className: 'fd-fate-latest-box' },
+          h('span', { className: 'fd-fate-latest-title' },
+            `🎯 当前最新回合操作（第 ${Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0))} 轮）`),
+          h(TurnRollCapsule, {
+            ui,
+            gameId,
+            turn: Math.max(fdNumber(view.lastTurn, 0), fdNumber(recent[0] && recent[0].turn, 0)),
+            defaultOpen: true,
+            emptyFallback: h('div', { className: 'fd-hint' }, '当前最新回合为免检定（或无待重投骰点）；发出下一条触发检定的行动后，可在此或楼层顶栏直接重投。')
+          }))
+        : h('div', { className: 'fd-hint' }, hasGame ? '发送一条行动消息触发检定后，可在此或楼层顶栏直接查看骰面并执行重投。' : '进入对话后将在此展示本局命运点与最新回合重投操作。')),
 
     /* ---------------- 1. 自动行动检定 ---------------- */
     h(FdSection, {
@@ -3358,32 +3844,6 @@ function FateDicePanel(props) {
   return h(WorkbenchPanel, { ui, gameId })
 }
 
-function fdMountFloorHeaderRoot(ui) {
-  if (typeof document === 'undefined' || !document.body || typeof document.createElement !== 'function') return fdNoop
-  const createRootFn = (ReactDOMClient && typeof ReactDOMClient.createRoot === 'function' && ReactDOMClient.createRoot)
-    || (ReactDOM && typeof ReactDOM.createRoot === 'function' && ReactDOM.createRoot)
-    || null
-  if (!createRootFn) return fdNoop
-  let hostEl = null
-  let root = null
-  try {
-    const existing = typeof document.getElementById === 'function' ? document.getElementById('dsh-fate-dice-floor-root') : null
-    if (existing && existing.parentNode) existing.parentNode.removeChild(existing)
-    hostEl = document.createElement('div')
-    hostEl.id = 'dsh-fate-dice-floor-root'
-    hostEl.style.display = 'none'
-    document.body.appendChild(hostEl)
-    root = createRootFn(hostEl)
-    root.render(h(FloorHeaderManager, { ui }))
-  } catch {
-    return fdNoop
-  }
-  return () => {
-    try { if (root && typeof root.unmount === 'function') root.unmount() } catch {}
-    try { if (hostEl && hostEl.parentNode) hostEl.parentNode.removeChild(hostEl) } catch {}
-  }
-}
-
 function fdRegisterSafely(ctx, label, factory) {
   try {
     const disposable = factory()
@@ -3421,7 +3881,7 @@ function apply(ctx) {
       run: () => {}
     }))
   }
-  fdRegisterSafely(ctx, 'fate-dice: floor header pill', () => fdMountFloorHeaderRoot(ui))
+  fdRegisterSafely(ctx, 'fate-dice: floor header pill', () => fdMountImperativeFloorHeaders(ui))
 
   // 1) 右侧栏「插件」卡片区：常驻双页签极简工作台（桌面与手机竖屏单列自适应）
   fdRegisterSafely(ctx, 'fate-dice: workbench panel', () => ui.registerPanel({
@@ -3467,7 +3927,7 @@ exports.name = FD_PLUGIN_ID
 exports.inject = ['tavernUi']
 exports.apply = apply
 exports.WorkbenchPanel = WorkbenchPanel
-exports.__test = { DieGlyph, formatRollSummary, LiveRollBanner, TurnRollCapsule, StoryFloorDiceItem, fdExtractFloorTurn, WorkbenchPanel, DecisionModelGuideBanner, FdHelp, SettingsTab }
+exports.__test = { DieGlyph, formatRollSummary, LiveRollBanner, TurnRollCapsule, StoryFloorDiceItem, fdExtractFloorTurn, fdMountImperativeFloorHeaders, WorkbenchPanel, DecisionModelGuideBanner, FdHelp, SettingsTab }
     return module.exports
   }
 })

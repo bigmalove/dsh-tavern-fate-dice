@@ -1132,61 +1132,137 @@ test('楼层顶栏胶囊（与叙事阻尼器胶囊并排）：正在生成期�
   // 验证前端 StoryFloorDiceItem 与 fdExtractFloorTurn 胶囊渲染树
   const clientCode = await readFile(new URL('../client.js', import.meta.url), 'utf8')
   let loadedModule = null
-  let stateQueue = []
+  function makeEl(tag) {
+    const attrs = new Map()
+    const listeners = new Map()
+    const el = {
+      tagName: String(tag || '').toUpperCase(),
+      className: '',
+      textContent: '',
+      title: '',
+      type: '',
+      disabled: false,
+      style: {},
+      parentNode: null,
+      children: [],
+      get lastElementChild() { return this.children.length ? this.children[this.children.length - 1] : null },
+      classList: {
+        contains(cls) { return String(el.className || '').split(/\s+/).includes(cls) }
+      },
+      setAttribute(k, v) { attrs.set(k, String(v)) },
+      getAttribute(k) { return attrs.has(k) ? attrs.get(k) : null },
+      hasAttribute(k) { return attrs.has(k) },
+      appendChild(child) {
+        if (child.parentNode && child.parentNode !== el) child.parentNode.removeChild(child)
+        const idx = el.children.indexOf(child)
+        if (idx >= 0) el.children.splice(idx, 1)
+        child.parentNode = el
+        el.children.push(child)
+        return child
+      },
+      removeChild(child) {
+        const idx = el.children.indexOf(child)
+        if (idx >= 0) el.children.splice(idx, 1)
+        child.parentNode = null
+        return child
+      },
+      querySelector(sel) {
+        if (sel === '.dsh-tavern-story-floor-head') {
+          return el.children.find(c => c.classList.contains('dsh-tavern-story-floor-head')) || null
+        }
+        return null
+      },
+      addEventListener(ev, fn) { listeners.set(ev, fn) },
+      click() {
+        const fn = listeners.get('click')
+        if (fn) fn({ stopPropagation() {} })
+      }
+    }
+    Object.defineProperty(el, 'textContent', {
+      get() {
+        return el._text !== undefined && el.children.length === 0
+          ? el._text
+          : (el._text || '') + el.children.map(c => c.textContent).join('')
+      },
+      set(val) {
+        el._text = String(val ?? '')
+        if (val === '') el.children.forEach(c => { c.parentNode = null })
+        if (val === '') el.children = []
+      }
+    })
+    return el
+  }
+
+  const fakeArticle = makeEl('article')
+  fakeArticle.className = 'dsh-tavern-story-transcript-row dsh-tavern-assistant dsh-tavern-story-floor dsh-tavern-story-streaming'
+  fakeArticle.setAttribute('data-floor', '4')
+  fakeArticle.setAttribute('data-legacy-turn', '5')
+  const fakeHead = makeEl('div')
+  fakeHead.className = 'dsh-tavern-story-floor-head'
+  fakeArticle.appendChild(fakeHead)
+
+  const fakeBody = makeEl('body')
+  fakeBody.appendChild(fakeArticle)
+  const fakeDoc = {
+    head: makeEl('head'),
+    body: fakeBody,
+    getElementById: () => null,
+    createElement: tag => makeEl(tag),
+    querySelectorAll: sel => (sel === 'article.dsh-tavern-story-floor' ? [fakeArticle] : [])
+  }
+
   const fakeReact = {
     Fragment: Symbol('Fragment'),
     createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
-    useState: init => {
-      if (stateQueue.length) return [stateQueue.shift(), () => {}]
-      return [typeof init === 'function' ? init() : init, () => {}]
-    },
+    useState: init => [typeof init === 'function' ? init() : init, () => {}],
     useEffect: () => {},
     useMemo: fn => fn(),
     useRef: val => ({ current: val })
   }
-  const fakeReactDOM = {
-    createPortal: (node, container) => ({ portal: true, container, node })
-  }
   const sandbox = {
     window: { __ModuleLoader__: { load(def) { loadedModule = def } }, localStorage: { getItem: () => null, setItem: () => {} } },
-    document: { head: { appendChild() {} }, body: null, getElementById: () => null, createElement: () => ({ id: '', textContent: '', style: {} }) },
+    document: fakeDoc,
+    MutationObserver: class { observe() {} disconnect() {} },
+    setTimeout,
+    clearTimeout,
     console
   }
   vm.runInNewContext(clientCode, sandbox, { filename: 'client.js' })
+  // 模拟真实 DSH 宿主 ModuleLoader：只暴露 react，require('react-dom') 抛错
   const exported = loadedModule.factory(mod => {
     if (mod === 'react') return fakeReact
-    if (mod === 'react-dom') return fakeReactDOM
-    throw new Error('unexpected require: ' + mod)
+    throw new Error('host exposes no ' + mod)
   })
 
-  // 验证 data-legacy-turn 优先于 data-floor（解决删楼回退后第 4 楼实际对应 turn 5 的映射）
-  const mockArticle = {
-    getAttribute(attr) {
-      if (attr === 'data-floor') return '4'
-      if (attr === 'data-legacy-turn') return '5'
-      return null
-    }
+  assert.equal(exported.__test.fdExtractFloorTurn(fakeArticle), 5)
+
+  // 1) 在「正在生成」（streaming）期间挂载纯原生 DOM 顶栏胶囊，必须无需 react-dom 直接出现
+  const fakeUi = {
+    callHost: (name, args) => handlers.get(name)(args),
+    watchState: () => () => {}
   }
-  assert.equal(exported.__test.fdExtractFloorTurn(mockArticle), 5)
+  const unmount = exported.__test.fdMountImperativeFloorHeaders(fakeUi)
+  await new Promise(resolve => setTimeout(resolve, 15))
 
-  // 结算后读回 settled 状态，展开顶栏面板可见「✦ 命运点 2/3」「✦ 逆命重投」「🔥 孤注一掷」
+  const headSlot = fakeHead.children.find(c => c.classList.contains('fd-floor-head-slot'))
+  const panelSlot = fakeHead.children.find(c => c.classList.contains('fd-floor-panel-slot'))
+  assert.ok(headSlot && headSlot.children.length === 1, '正在生成期间必须在楼层顶栏插入胶囊按钮')
+  assert.match(headSlot.children[0].textContent, /通用·技艺/)
+
+  // 2) 结算后刷新并点击胶囊：展开详情面板，出现「✦ 命运点 2/3」「✦ 逆命重投」「🔥 孤注一掷」
   await settledHooks[0]({ gameId: 'g-head-pill', turn: 5, textVersion: 'v5' })
-  const settledRead = await handlers.get('fate-dice:read-turn')({ gameId: 'g-head-pill', turn: 5 })
+  fakeArticle.className = 'dsh-tavern-story-transcript-row dsh-tavern-assistant dsh-tavern-story-floor'
+  unmount()
 
-  // 预充组件内部 state：[record, expanded, peeked, rerolling, rerollHint]
-  stateQueue = [settledRead, true, false, false, '']
-  const tree = exported.__test.StoryFloorDiceItem({
-    ui: {},
-    gameId: 'g-head-pill',
-    turn: 5,
-    streaming: false,
-    headSlot: { slot: 'head' },
-    panelSlot: { slot: 'panel' }
-  })
-
-  const serialized = JSON.stringify(tree)
-  assert.match(serialized, /真骰 · 通用·技艺/)
-  assert.match(serialized, /✦ 命运点 2\/3/)
-  assert.match(serialized, /✦ 逆命重投/)
-  assert.match(serialized, /🔥 孤注一掷/)
+  const unmount2 = exported.__test.fdMountImperativeFloorHeaders(fakeUi)
+  await new Promise(resolve => setTimeout(resolve, 15))
+  const settledHeadSlot = fakeHead.children.find(c => c.classList.contains('fd-floor-head-slot'))
+  const settledPanelSlot = fakeHead.children.find(c => c.classList.contains('fd-floor-panel-slot'))
+  settledHeadSlot.children[0].click()
+  assert.ok(settledPanelSlot.children.length === 1, '点击顶栏胶囊后应在下方展开详情面板')
+  const panelText = settledPanelSlot.textContent
+  assert.match(panelText, /✦ 命运点 2\/3/)
+  assert.match(panelText, /✦ 逆命重投/)
+  assert.match(panelText, /🔥 孤注一掷/)
+  unmount2()
 })

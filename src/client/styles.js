@@ -844,6 +844,152 @@ const CSS_TEXT = `
   padding-top: 2px;
 }
 
+/* ---------- 命运点醒目英雄卡与规则三宫格 ---------- */
+.fd-fate-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1.5px solid color-mix(in srgb, #c88a22 42%, var(--fd-line));
+  background: linear-gradient(135deg, rgba(208, 146, 40, 0.11), rgba(63, 157, 104, 0.06));
+}
+.fd-fate-hero.is-empty {
+  border-color: color-mix(in srgb, #cf4343 45%, var(--fd-line));
+  background: linear-gradient(135deg, rgba(207, 67, 67, 0.10), rgba(128, 128, 142, 0.05));
+}
+.fd-fate-main {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 180px;
+}
+.fd-fate-eyebrow {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0.78;
+}
+.fd-fate-meter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fd-fate-orbs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fd-fate-orb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  font-size: 16px;
+  font-weight: 800;
+  border: 1.5px dashed var(--fd-line);
+  background: rgba(128, 128, 142, 0.06);
+  opacity: 0.42;
+  transition: transform .16s ease, opacity .16s ease, background .16s ease;
+}
+.fd-fate-orb.is-lit {
+  opacity: 1;
+  border-style: solid;
+  border-color: rgba(202, 138, 28, 0.68);
+  background: rgba(226, 162, 46, 0.20);
+  color: #b87314;
+  box-shadow: 0 1px 6px rgba(202, 138, 28, 0.18);
+}
+.fd-fate-num {
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.fd-fate-status {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.88;
+}
+.fd-fate-charge {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  background: var(--fd-fill);
+  border: 1px solid var(--fd-line-soft);
+  min-width: 190px;
+  flex: 1 1 200px;
+  max-width: 320px;
+}
+.fd-fate-charge-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+.fd-fate-pips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+.fd-fate-pip {
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(128, 128, 142, 0.18);
+  border: 1px solid var(--fd-line-soft);
+}
+.fd-fate-pip.is-lit {
+  background: #d4712a;
+  border-color: rgba(212, 113, 42, 0.65);
+}
+.fd-fate-rules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  gap: 8px;
+}
+.fd-fate-rule-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--fd-fill);
+  border: 1px solid var(--fd-line-soft);
+}
+.fd-fate-rule-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.fd-fate-rule-desc {
+  font-size: 11.5px;
+  line-height: 1.5;
+  opacity: 0.82;
+}
+.fd-fate-latest-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--fd-line-soft);
+}
+.fd-fate-latest-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  opacity: 0.84;
+}
+
 @keyframes fd-tumble {
   0% { transform: translateY(-18px) rotateX(0deg) rotateZ(-200deg) scale(0.72); opacity: 0.25; }
   55% { transform: translateY(3px) rotateX(330deg) rotateZ(18deg) scale(1.1); opacity: 1; }
