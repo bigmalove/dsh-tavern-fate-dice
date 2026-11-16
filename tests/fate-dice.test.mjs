@@ -727,9 +727,9 @@ test('同楼层重新生成锁骰复用：turn 与 inputHash 未变时强制复�
           ruling: { rulingTier: 'resist_pushback', deltaBudget: 'frozen', leverageScore: 2.0 },
           answers: {
             fd_needs_check: { type: 'noul', probability: 0.95 },
-            fd_difficulty: { type: 'choice', choice: 'hard' },
-            fd_capability: { type: 'score', score: 2 },
-            fd_domain: { type: 'choice', choice: 'general_deft' }
+            fd_difficulty: { type: 'choice', choice: 'extreme' },
+            fd_capability: { type: 'score', score: 0 },
+            fd_domain: { type: 'choice', choice: 'general_stealth' }
           }
         }
       },
@@ -746,6 +746,8 @@ test('同楼层重新生成锁骰复用：turn 与 inputHash 未变时强制复�
       }
     }
   })
+
+  await handlers.get('fate-dice:save-global-settings')({ settings: { rule: 'd10', toneBias: 'gritty' } })
 
   const actionA = '我屏住呼吸用细铁丝拨动锁芯尝试撬开铁门'
 
@@ -816,4 +818,171 @@ test('同楼层重新生成锁骰复用：turn 与 inputHash 未变时强制复�
   assert.equal(lockedToManualRoll.rolledAt, rerollRes.roll.rolledAt)
   assert.equal(lockedToManualRoll.reusedOnRegenerate, true)
   assert.equal(damperShifts.length, 6, '手动重投后的重新生成同样要重新同步阻尼器配额')
+})
+
+test('手动重投四重硬限制与「✦ 命运点 + 🔥 孤注一掷」代价及厄运回充闭环', async () => {
+  const turnSections = []
+  const settledHooks = []
+  const timelineHooks = []
+  const handlers = new Map()
+  const damperShifts = []
+  let pluginData = null
+  const gameDataMap = new Map()
+  const turnDataMap = new Map()
+  let nextMockContext = {
+    difficulty: 'trivial',
+    capability: 5,
+    domain: 'general_physical'
+  }
+
+  applyFateDicePlugin({
+    tavern: {
+      capabilities: { decisionJudge: 1, narrativeDamper: 1 },
+      damperTurnQuestions() { return () => {} },
+      turnSection(def) { turnSections.push(def); return () => {} },
+      settlementSection() { return () => {} },
+      settlementTool() { return () => {} },
+      onTurnSettled(fn) { settledHooks.push(fn); return () => {} },
+      onTimelineChanged(fn) { timelineHooks.push(fn); return () => {} },
+      onGameRemoved() { return () => {} },
+      handle(name, fn) { handlers.set(name, fn) },
+      async savePluginData({ data }) { pluginData = structuredClone(data) },
+      async readPluginData() { return pluginData ? structuredClone(pluginData) : null },
+      async saveGameData({ gameId, data }) { gameDataMap.set(gameId, structuredClone(data)) },
+      async readGameData({ gameId }) { return structuredClone(gameDataMap.get(gameId) || null) },
+      async saveTurnData({ gameId, turn, textVersion, data }) {
+        turnDataMap.set(`${gameId}:${turn}`, { turn, textVersion, data: structuredClone(data) })
+        return { turn, textVersion }
+      },
+      async readTurnData({ gameId, turn }) { return structuredClone(turnDataMap.get(`${gameId}:${turn}`) || null) },
+      async getTurn() { return { turn: 1, text: '暗道幽深。', variables: {} } },
+      async publishState() {},
+      async getDamperTurnContext({ turn }) {
+        return {
+          active: true,
+          turn,
+          explicitSceneShift: false,
+          stateSnapshot: { kind: 'plain', data: { intimacy_trust: 50, psychological_guard: 30, arousal_or_tension: 30, leverage_depth: 1 } },
+          ruling: { rulingTier: 'allow_advance', deltaBudget: 'step', leverageScore: 0 },
+          answers: {
+            fd_needs_check: { type: 'noul', probability: 0.96 },
+            fd_difficulty: { type: 'choice', choice: nextMockContext.difficulty },
+            fd_capability: { type: 'score', score: nextMockContext.capability },
+            fd_domain: { type: 'choice', choice: nextMockContext.domain }
+          }
+        }
+      },
+      async applyDamperDiceShift(payload) {
+        damperShifts.push(payload)
+        return { applied: true, ruling: { rulingTier: 'synced', deltaBudget: 'step' } }
+      }
+    }
+  })
+
+  await handlers.get('fate-dice:save-global-settings')({ settings: { rule: 'd10', toneBias: 'balanced', allowHidden: true } })
+
+  // 开局默认 2/3 命运点
+  const wbInit = await handlers.get('fate-dice:workbench')({ gameId: 'g-fate' })
+  assert.equal(wbInit.fate.points, 2)
+  assert.equal(wbInit.fate.max, 3)
+
+  // 1) 硬限制：已达成成功/大成功时禁止手动重投（d10 trivial target=3, score=5 => bonus=+6, 1+6=7 >= 6 必为 success/critical）
+  nextMockContext = { difficulty: 'trivial', capability: 5, domain: 'general_physical' }
+  await turnSections[0].text({ gameId: 'g-fate', turn: 2, input: '我轻松推开虚掩的木门' })
+  await settledHooks[0]({ gameId: 'g-fate', turn: 2, textVersion: 'v2' })
+  const denySuccess = await handlers.get('fate-dice:reroll-turn')({ gameId: 'g-fate', turn: 2 })
+  assert.equal(denySuccess.ok, false)
+  assert.equal(denySuccess.code, 'ALREADY_SUCCEEDED')
+
+  // 2) 硬限制：感知洞察类暗骰一律禁止手动重投
+  nextMockContext = { difficulty: 'extreme', capability: 0, domain: 'general_insight' }
+  await turnSections[0].text({ gameId: 'g-fate', turn: 3, input: '我凝神观察石壁缝隙后的呼吸动静' })
+  await settledHooks[0]({ gameId: 'g-fate', turn: 3, textVersion: 'v3' })
+  const denyHidden = await handlers.get('fate-dice:reroll-turn')({ gameId: 'g-fate', turn: 3 })
+  assert.equal(denyHidden.ok, false)
+  assert.equal(denyHidden.code, 'HIDDEN_LOCKED')
+
+  // 3) 推进到第 4 轮失败（d10 extreme target=11, score=0 => bonus=-4, max=6 < 9 必为 failure/fumble）
+  nextMockContext = { difficulty: 'extreme', capability: 0, domain: 'general_stealth' }
+  await turnSections[0].text({ gameId: 'g-fate', turn: 4, input: '我徒手攀爬湿滑的倒悬石壁' })
+  await settledHooks[0]({ gameId: 'g-fate', turn: 4, textVersion: 'v4' })
+
+  // 硬限制：尝试重投历史旧楼层（turn 2 / turn 3 < lastTurn 4）必须拦截
+  const denyHistory = await handlers.get('fate-dice:reroll-turn')({ gameId: 'g-fate', turn: 2 })
+  assert.equal(denyHistory.ok, false)
+  assert.equal(denyHistory.code, 'HISTORY_LOCKED')
+
+  // 强制预置命运点为 2，验证命运点消耗（2 -> 1 -> 0）与同楼层限 1 次硬限制
+  const gSnap = await gameDataMap.get('g-fate')
+  gSnap.fate = { points: 2, max: 3, failCount: 0, lastAwardTurn: 4 }
+  gameDataMap.set('g-fate', gSnap)
+
+  const fateReroll1 = await handlers.get('fate-dice:reroll-turn')({ gameId: 'g-fate', turn: 4, mode: 'fate' })
+  assert.equal(fateReroll1.ok, true)
+  assert.equal(fateReroll1.mode, 'fate')
+  assert.equal(fateReroll1.fate.points, 1, '逆命重投消耗 1 点命运点')
+  assert.equal(fateReroll1.roll.rerollMeta?.mode, 'fate')
+
+  // 硬限制：同一楼层再次重投立即拦截（ALREADY_REROLLED）
+  const denyTwice = await handlers.get('fate-dice:reroll-turn')({ gameId: 'g-fate', turn: 4 })
+  assert.equal(denyTwice.ok, false)
+  assert.equal(denyTwice.code, 'ALREADY_REROLLED')
+
+  // 4) 第 5 轮耗尽最后 1 点命运点（1 -> 0）
+  await turnSections[0].text({ gameId: 'g-fate', turn: 5, input: '我试图用匕首卡住下落的千斤闸' })
+  await settledHooks[0]({ gameId: 'g-fate', turn: 5, textVersion: 'v5' })
+  // 若第 5 轮首骰恰好出了大失败回充了 1 点，固定置为 1 点以验证耗尽边界
+  const gSnap5 = gameDataMap.get('g-fate')
+  gSnap5.fate.points = 1
+  gameDataMap.set('g-fate', gSnap5)
+  const fateReroll2 = await handlers.get('fate-dice:reroll-turn')({ gameId: 'g-fate', turn: 5, mode: 'fate' })
+  assert.equal(fateReroll2.ok, true)
+  assert.equal(fateReroll2.fate.points, 0)
+
+  // 5) 第 6 轮命运点为 0：指定 mode:'fate' 被拒，自动走「🔥 孤注一掷」且失败强制恶化为大失败（fumble）并同步阻尼器
+  await turnSections[0].text({ gameId: 'g-fate', turn: 6, input: '我咬牙硬扛机关弩箭强冲过去' })
+  await settledHooks[0]({ gameId: 'g-fate', turn: 6, textVersion: 'v6' })
+  const gSnap6 = gameDataMap.get('g-fate')
+  gSnap6.fate.points = 0
+  gameDataMap.set('g-fate', gSnap6)
+
+  const noFateErr = await handlers.get('fate-dice:reroll-turn')({ gameId: 'g-fate', turn: 6, mode: 'fate' })
+  assert.equal(noFateErr.ok, false)
+  assert.equal(noFateErr.code, 'NO_FATE_POINTS')
+
+  const pushFailRes = await handlers.get('fate-dice:reroll-turn')({ gameId: 'g-fate', turn: 6, mode: 'auto' })
+  assert.equal(pushFailRes.ok, true)
+  assert.equal(pushFailRes.mode, 'push', '0 命运点时 auto 自动走孤注一掷')
+  assert.equal(pushFailRes.roll.tier, 'fumble', '孤注一掷未达标必须强制恶化为大失败')
+  assert.equal(damperShifts.at(-1).tier, 'fumble', '恶化后的大失败档位必须同步传给叙事阻尼器')
+  assert.match(pushFailRes.injection, /孤注一掷反噬（强制兑现）/)
+
+  // 6) 孤注一掷逆转成功代价验证：初投失手后，切换高把握环境选 mode:'push' 翻盘，必须封顶为 success 并注入挂彩/透支代价
+  nextMockContext = { difficulty: 'extreme', capability: 0, domain: 'general_physical' }
+  await turnSections[0].text({ gameId: 'g-fate', turn: 7, input: '我燃尽气血震碎锁链' })
+  await settledHooks[0]({ gameId: 'g-fate', turn: 7, textVersion: 'v7' })
+  nextMockContext = { difficulty: 'trivial', capability: 5, domain: 'general_physical' }
+  const pushWinRes = await handlers.get('fate-dice:reroll-turn')({ gameId: 'g-fate', turn: 7, mode: 'push' })
+  assert.equal(pushWinRes.ok, true)
+  assert.equal(pushWinRes.roll.tier, 'success', '孤注一掷即使掷出极高点也封顶为成功，不出无伤大成功')
+  assert.equal(pushWinRes.roll.pushedCostRequired, true)
+  assert.match(pushWinRes.injection, /孤注一掷代价（强制兑现）/)
+
+  // 7) 厄运回充闭环：坦然接受失败不重投（累计 2 次失败或 1 次大失败）自动回充命运点，且重新生成不会重复加点
+  const gSnap8 = gameDataMap.get('g-fate')
+  gSnap8.fate = { points: 0, max: 3, failCount: 1, lastAwardTurn: 7 }
+  gameDataMap.set('g-fate', gSnap8)
+
+  nextMockContext = { difficulty: 'extreme', capability: 0, domain: 'general_stealth' }
+  await turnSections[0].text({ gameId: 'g-fate', turn: 8, input: '我摸黑涉过地下暗河' })
+  await settledHooks[0]({ gameId: 'g-fate', turn: 8, textVersion: 'v8-a' })
+  const wbRecharged = await handlers.get('fate-dice:workbench')({ gameId: 'g-fate' })
+  assert.equal(wbRecharged.fate.points, 1, '坦然接受第 2 次失败（或大失败）结算后自动回充 +1 点命运点')
+
+  // 重新生成第 8 轮不得重复回充命运点
+  timelineHooks[0]({ gameId: 'g-fate' })
+  await turnSections[0].text({ gameId: 'g-fate', turn: 8, input: '我摸黑涉过地下暗河' })
+  await settledHooks[0]({ gameId: 'g-fate', turn: 8, textVersion: 'v8-b' })
+  const wbAfterRegen = await handlers.get('fate-dice:workbench')({ gameId: 'g-fate' })
+  assert.equal(wbAfterRegen.fate.points, 1, '重新生成锁骰复用绝不能重复刷出命运点')
 })

@@ -116,10 +116,22 @@ function fdNormalizeRecent(raw) {
   }))
 }
 
+function fdNormalizeFate(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {}
+  const max = Math.max(1, fdNumber(src.max, 3))
+  const points = fdClamp(fdNumber(src.points, 2), 0, max)
+  return {
+    points,
+    max,
+    failCount: Math.max(0, fdNumber(src.failCount, 0))
+  }
+}
+
 function fdBindStatusSummary(view, status) {
   if (!status || typeof status !== 'object') return view
   const next = { ...view }
   if (status.judgeStatus) next.judgeStatus = status.judgeStatus
+  if (status.fate) next.fate = fdNormalizeFate(status.fate)
   const summary = status.summary
   if (summary && typeof summary === 'object') {
     const counts = summary.counts && typeof summary.counts === 'object' ? summary.counts : {}
@@ -258,6 +270,7 @@ function fdEmptyWorkbench() {
     binding: { autoCheck: true },
     damper: { available: false, linkage: cachedSettings.damperLinkage },
     judgeStatus: { available: false },
+    fate: { points: 2, max: 3, failCount: 0 },
     summary: { total: 0, counts: {}, recent: [] },
     stats: { total: 0, good: 0, bad: 0 },
     recent: [],
@@ -289,6 +302,7 @@ function fdMergeWorkbench(base, raw) {
     linkage: Boolean(payload.damperLinkage ?? damper.linkage ?? view.settings.damperLinkage)
   }
   if (payload.judgeStatus) view.judgeStatus = payload.judgeStatus
+  if (payload.fate) view.fate = fdNormalizeFate(payload.fate)
   if (payload.summary) {
     const summary = payload.summary
     const counts = summary.counts && typeof summary.counts === 'object' ? summary.counts : {}

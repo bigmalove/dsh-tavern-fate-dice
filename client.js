@@ -972,10 +972,22 @@ function fdNormalizeRecent(raw) {
   }))
 }
 
+function fdNormalizeFate(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {}
+  const max = Math.max(1, fdNumber(src.max, 3))
+  const points = fdClamp(fdNumber(src.points, 2), 0, max)
+  return {
+    points,
+    max,
+    failCount: Math.max(0, fdNumber(src.failCount, 0))
+  }
+}
+
 function fdBindStatusSummary(view, status) {
   if (!status || typeof status !== 'object') return view
   const next = { ...view }
   if (status.judgeStatus) next.judgeStatus = status.judgeStatus
+  if (status.fate) next.fate = fdNormalizeFate(status.fate)
   const summary = status.summary
   if (summary && typeof summary === 'object') {
     const counts = summary.counts && typeof summary.counts === 'object' ? summary.counts : {}
@@ -1114,6 +1126,7 @@ function fdEmptyWorkbench() {
     binding: { autoCheck: true },
     damper: { available: false, linkage: cachedSettings.damperLinkage },
     judgeStatus: { available: false },
+    fate: { points: 2, max: 3, failCount: 0 },
     summary: { total: 0, counts: {}, recent: [] },
     stats: { total: 0, good: 0, bad: 0 },
     recent: [],
@@ -1145,6 +1158,7 @@ function fdMergeWorkbench(base, raw) {
     linkage: Boolean(payload.damperLinkage ?? damper.linkage ?? view.settings.damperLinkage)
   }
   if (payload.judgeStatus) view.judgeStatus = payload.judgeStatus
+  if (payload.fate) view.fate = fdNormalizeFate(payload.fate)
   if (payload.summary) {
     const summary = payload.summary
     const counts = summary.counts && typeof summary.counts === 'object' ? summary.counts : {}
@@ -1556,6 +1570,23 @@ function fdDamperChip(roll) {
   }, `${applied ? '⛓' : '⛓̶'} ${text}`)
 }
 
+function fdRerollChip(roll) {
+  const meta = roll && roll.rerollMeta
+  if (!meta || !meta.mode) return null
+  if (meta.mode === 'push') {
+    return h('span', {
+      className: 'fd-event-pill',
+      title: roll.pushedFumble
+        ? '孤注一掷失手：普通失败已强制恶化为大失败'
+        : '孤注一掷：强行逆转亦须承受挂彩/透支等叙事代价'
+    }, '🔥 孤注一掷')
+  }
+  return h('span', {
+    className: 'fd-event-pill',
+    title: '消耗 1 点命运点发动的逆命重投'
+  }, '✦ 逆命重投')
+}
+
 function LiveRollBanner(props) {
   const { event, onDismiss } = props || {}
   const [rolling, setRolling] = useState(true)
@@ -1717,6 +1748,7 @@ function LiveRollBanner(props) {
       !rolling && isReused
         ? h('span', { className: 'fd-event-pill', title: '同一楼层输入未变，重新生成已强制复用首次已结算的真骰结果' }, '🔒 锁骰复用')
         : null,
+      !rolling ? fdRerollChip(roll) : null,
       !rolling ? fdDamperChip(roll) : null),
     h('div', { className: 'fd-live-sub' }, subText))))
 }
@@ -1837,19 +1869,48 @@ function TurnRollCapsule(props) {
   const covered = Boolean(roll.hidden && !peeked)
   const tier = covered ? 'hidden' : fdTierOf(roll.tier)
   const summary = formatRollSummary(roll, peeked)
+  const fate = fdNormalizeFate(record.fate)
+  const rerollState = record.rerollState && typeof record.rerollState === 'object'
+    ? record.rerollState
+    : {
+      allowed: !roll.hidden
+        && !(roll.rerollMeta && roll.rerollMeta.count >= 1)
+        && roll.tier !== 'critical'
+        && roll.tier !== 'success',
+      canFate: fate.points > 0,
+      canPush: true,
+      fatePoints: fate.points,
+      fateMax: fate.max,
+      reason: roll.hidden
+        ? '感知/洞察类暗骰不可重投'
+        : (roll.rerollMeta && roll.rerollMeta.count >= 1
+          ? '本轮已重投锁定（每轮限 1 次）'
+          : ((roll.tier === 'critical' || roll.tier === 'success') ? '检定已达成成功，无需重投' : ''))
+    }
 
-  const manualReroll = () => {
+  const manualReroll = mode => {
     if (rerolling || !gameId || !turn) return
     setRerolling(true)
     setRerollHint('')
-    fdCall(ui, FD_RPC.rerollTurn, { gameId, turn })
+    fdCall(ui, FD_RPC.rerollTurn, { gameId, turn, mode: mode || 'auto' })
       .then(res => {
-        const nextRoll = res && res.ok && res.data && res.data.roll ? res.data.roll : null
+        const data = res && res.ok ? res.data : null
+        const nextRoll = data && data.ok !== false && data.roll ? data.roll : null
         if (nextRoll) {
-          setRecord(prev => ({ ...(prev || {}), roll: nextRoll }))
-          setRerollHint('已手动重投真骰并同步配额，点酒馆「重新生成」即可按新点数重写正文')
+          setRecord(prev => ({
+            ...(prev || {}),
+            roll: nextRoll,
+            fate: data.fate || (prev && prev.fate) || fate,
+            rerollState: data.rerollState || { allowed: false, reason: '本轮已重投锁定（每轮限 1 次）' }
+          }))
+          setRerollHint(data.mode === 'push'
+            ? '已孤注一掷并同步配额（点酒馆「重新生成」按新结果与代价重写正文）'
+            : '已消耗 1 点命运点逆命重投（点酒馆「重新生成」按新点数重写正文）')
         } else {
-          setRerollHint((res && res.data && res.data.error) || (res && res.error) || '重投未生成新骰点')
+          if (data && data.rerollState) {
+            setRecord(prev => ({ ...(prev || {}), fate: data.fate || (prev && prev.fate), rerollState: data.rerollState }))
+          }
+          setRerollHint((data && data.error) || (res && res.error) || '当前条件不允许重投')
         }
       })
       .catch(() => setRerollHint('手动重投失败'))
@@ -1872,7 +1933,8 @@ function TurnRollCapsule(props) {
         h('span', { className: 'fd-turn-head-left' },
           h('span', { 'aria-hidden': 'true' }, covered ? '🎴' : '🎲'),
           h('span', { className: 'fd-turn-summary' }, summary),
-          roll.reusedOnRegenerate ? h('span', { className: 'fd-event-pill', title: '重新生成已复用本轮首次真骰结果' }, '🔒 锁骰') : null,
+          roll.reusedOnRegenerate ? h('span', { className: 'fd-event-pill', title: '重新生成已复用本轮已锁定的真骰结果' }, '🔒 锁骰') : null,
+          fdRerollChip(roll),
           roll.damper ? h('span', { className: 'fd-event-pill' }, '⛓ 阻尼') : null),
         h('span', { className: 'fd-tier-pill', 'data-tier': tier },
           covered ? '点按揭晓' : (roll.tierLabel || '结果'))),
@@ -1881,13 +1943,29 @@ function TurnRollCapsule(props) {
             fdBuildTurnDetails(record, peeked),
             !covered
               ? h('div', { className: 'fd-btn-row', style: { padding: '4px 10px 8px' } },
-                h(FdBtn, {
-                  small: true,
-                  disabled: rerolling,
-                  title: '突破防刷骰锁定，强制重新投掷本轮真骰',
-                  onClick: manualReroll
-                }, rerolling ? '重投中…' : '🎲 手动重投本轮'),
-                rerollHint ? h('span', { className: 'fd-hint' }, rerollHint) : h('span', { className: 'fd-hint' }, '直接重新生成正文将自动复用原骰点'))
+                rerollState.allowed
+                  ? h(Fragment, null,
+                    rerollState.canFate
+                      ? h(FdBtn, {
+                        small: true,
+                        primary: true,
+                        disabled: rerolling,
+                        title: '消耗 1 点命运点，无额外恶化惩罚重投本轮真骰（每轮限 1 次）',
+                        onClick: () => manualReroll('fate')
+                      }, rerolling ? '重投中…' : `✦ 逆命重投 (-1 点 · 余 ${fdNumber(rerollState.fatePoints, fate.points)}/${fdNumber(rerollState.fateMax, fate.max)})`)
+                      : null,
+                    h(FdBtn, {
+                      small: true,
+                      danger: true,
+                      disabled: rerolling,
+                      title: '不耗命运点强行一搏（每轮限 1 次）：若仍失败强制恶化为大失败，就算逆转成功也必须承受挂彩/透支代价',
+                      onClick: () => manualReroll('push')
+                    }, rerolling ? '搏命中…' : (rerollState.canFate ? '🔥 孤注一掷' : '🔥 孤注一掷（败则大失败 · 成亦带伤）')))
+                  : null,
+                h('span', { className: 'fd-hint' },
+                  rerollHint || (rerollState.allowed
+                    ? '直接重新生成正文将自动复用原骰点'
+                    : `🔒 ${rerollState.reason || '本轮骰点已锁定'}`)))
               : null)
           : null)),
     children || null)
@@ -1923,6 +2001,7 @@ function StatusDiceSection(props) {
 
   const current = view || fdEmptyWorkbench()
   const judgeReady = Boolean(current.judgeStatus && current.judgeStatus.available)
+  const fate = fdNormalizeFate(current.fate)
   const stats = current.stats || { total: 0, good: 0, bad: 0 }
   const recent = (current.recent || []).slice(0, 5)
 
@@ -1933,7 +2012,8 @@ function StatusDiceSection(props) {
           ? `⚡ 决策模型 ${current.judgeStatus.provider || '就绪'}`
           : '⚠️ 待配决策模型'),
       h(FdBadge, { tone: current.damper && current.damper.linkage ? 'ok' : 'off' },
-        current.damper && current.damper.linkage ? '⛓ 阻尼联动' : '⛓ 阻尼未联动')),
+        current.damper && current.damper.linkage ? '⛓ 阻尼联动' : '⛓ 阻尼未联动'),
+      h(FdBadge, { tone: fate.points > 0 ? 'ok' : 'warn' }, `✦ 命运点 ${fate.points}/${fate.max}`)),
     judgeReady
       ? null
       : h('div', { className: 'fd-guide-banner is-lite', role: 'note' },
@@ -2311,6 +2391,7 @@ function ChecksTab(props) {
   const { ui, gameId, hasGame, view, actions, notify, checking, onRecheck } = props || {}
   const judge = view.judgeStatus || { available: false }
   const damper = view.damper || { available: false, linkage: false }
+  const fate = fdNormalizeFate(view.fate)
   const settings = view.settings || FD_DEFAULT_SETTINGS
   const rule = view.rule || '2d6'
   const meta = fdRuleMeta(rule)
@@ -2383,6 +2464,10 @@ function ChecksTab(props) {
         damper.available
           ? (damper.linkage ? '⛓ 叙事阻尼器双向联动' : '⛓ 阻尼器可用 · 未联动')
           : '⛓ 未检测到叙事阻尼器'),
+      h(FdBadge, {
+        tone: fate.points > 0 ? 'ok' : 'warn',
+        title: '逆命重投配额：消耗 1 点可无惩罚重投当前最新未成功检定；坦然接受 1 次大失败或累计 2 次失败不重投自动回充 +1 点；耗尽后仅可孤注一掷'
+      }, `✦ 命运点 ${fate.points}/${fate.max}`),
       view.source === 'local' ? h(FdBadge, { tone: 'off' }, '🖥 本地配置模式') : null),
     h(DecisionModelGuideBanner, { view, onRecheck, checking }),
 
@@ -2394,7 +2479,7 @@ function ChecksTab(props) {
         '你在主聊天框照常发送一行行动描述后，插件会在生成正文前把它交给叙事阻尼器的决策模型评估本次行动的不确定性。',
         '模型会结合【角色卡/玩家人设 + 启用世界书 + 当前 MVU 变量 + 近期正文】实时评定主角在该行动上的能力加减值（−2 ~ +3），并按处境裁定 5 档难度（极难 / 困难 / 普通 / 容易 / 极易）——无需任何手填技能表。',
         '随后由密码学真随机数投骰，把骰面、总计、档位结论注入本轮上下文，再交还给宿主继续生成正文——整个过程不额外消耗一次主模型对话轮次。',
-        '角色能力画像在下方「AI 动态角色能力画像」中可查看，随受伤、突破或装备变化自动演进。',
+        '防刷与重投规则：同一楼层未改写行动时，点「重新生成」强制复用首次真骰结果。仅最新楼层、非暗骰、且首次未成功时允许重投 1 次——可花 1 点「✦ 命运点」稳妥逆命重投（坦然接受 1 次大失败或累计 2 次失败不重投自动回充 +1 点），或选「🔥 孤注一掷」（重投成功必带挂彩/透支代价，若仍失败则直接恶化为大失败）。',
         '关闭本开关后不再自动检定：正文照常生成，只是没有骰子与难度裁定。'
       ].join('\n')
     },

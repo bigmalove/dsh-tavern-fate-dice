@@ -57,6 +57,7 @@ function ChecksTab(props) {
   const { ui, gameId, hasGame, view, actions, notify, checking, onRecheck } = props || {}
   const judge = view.judgeStatus || { available: false }
   const damper = view.damper || { available: false, linkage: false }
+  const fate = fdNormalizeFate(view.fate)
   const settings = view.settings || FD_DEFAULT_SETTINGS
   const rule = view.rule || '2d6'
   const meta = fdRuleMeta(rule)
@@ -129,6 +130,10 @@ function ChecksTab(props) {
         damper.available
           ? (damper.linkage ? '⛓ 叙事阻尼器双向联动' : '⛓ 阻尼器可用 · 未联动')
           : '⛓ 未检测到叙事阻尼器'),
+      h(FdBadge, {
+        tone: fate.points > 0 ? 'ok' : 'warn',
+        title: '逆命重投配额：消耗 1 点可无惩罚重投当前最新未成功检定；坦然接受 1 次大失败或累计 2 次失败不重投自动回充 +1 点；耗尽后仅可孤注一掷'
+      }, `✦ 命运点 ${fate.points}/${fate.max}`),
       view.source === 'local' ? h(FdBadge, { tone: 'off' }, '🖥 本地配置模式') : null),
     h(DecisionModelGuideBanner, { view, onRecheck, checking }),
 
@@ -140,7 +145,7 @@ function ChecksTab(props) {
         '你在主聊天框照常发送一行行动描述后，插件会在生成正文前把它交给叙事阻尼器的决策模型评估本次行动的不确定性。',
         '模型会结合【角色卡/玩家人设 + 启用世界书 + 当前 MVU 变量 + 近期正文】实时评定主角在该行动上的能力加减值（−2 ~ +3），并按处境裁定 5 档难度（极难 / 困难 / 普通 / 容易 / 极易）——无需任何手填技能表。',
         '随后由密码学真随机数投骰，把骰面、总计、档位结论注入本轮上下文，再交还给宿主继续生成正文——整个过程不额外消耗一次主模型对话轮次。',
-        '角色能力画像在下方「AI 动态角色能力画像」中可查看，随受伤、突破或装备变化自动演进。',
+        '防刷与重投规则：同一楼层未改写行动时，点「重新生成」强制复用首次真骰结果。仅最新楼层、非暗骰、且首次未成功时允许重投 1 次——可花 1 点「✦ 命运点」稳妥逆命重投（坦然接受 1 次大失败或累计 2 次失败不重投自动回充 +1 点），或选「🔥 孤注一掷」（重投成功必带挂彩/透支代价，若仍失败则直接恶化为大失败）。',
         '关闭本开关后不再自动检定：正文照常生成，只是没有骰子与难度裁定。'
       ].join('\n')
     },
