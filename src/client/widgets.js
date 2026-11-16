@@ -730,8 +730,6 @@ function fdExtractFloorTurn(article) {
     const rkTurn = fdNumber(rkMatch[1], 0)
     if (rkTurn > 0) return rkTurn
   }
-  const chatTurn = fdNumber(article.getAttribute('data-chat-turn'), 0)
-  if (chatTurn > 0) return chatTurn
   return fdNumber(article.getAttribute('data-floor'), 0)
 }
 
@@ -1165,7 +1163,7 @@ function fdMountImperativeFloorHeaders(ui) {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ['data-legacy-turn', 'data-chat-turn', 'data-row-key', 'data-story-held', 'class']
+    attributeFilter: ['data-legacy-turn', 'data-row-key', 'data-story-held', 'class']
   })
 
   return () => {

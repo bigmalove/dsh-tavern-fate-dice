@@ -1095,6 +1095,7 @@ test('楼层顶栏胶囊（与叙事阻尼器胶囊并排）：正在生成期�
         return { turn, textVersion }
       },
       async readTurnData({ gameId, turn }) { return structuredClone(turnDataMap.get(`${gameId}:${turn}`) || null) },
+      async getTurnState() { return { turn: 5, settled: false, generating: true } },
       async getTurn() { return { turn: 1, text: '书房里摆放着古老魔导书。', variables: {} } },
       async publishState() {},
       async getDamperTurnContext({ turn }) {
