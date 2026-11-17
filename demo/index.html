@@ -1635,10 +1635,10 @@ vec3 spectralIridescence(float cosTheta, float phase) {
 void main() {
   vec3 V = normalize(u_camPos - v_worldPos);
 
-  // 1. 圆润倒角法线平滑插值（棱边 14.5% 宽度内由平面法线平滑过渡至圆角法线！）
-  float bevelMask = 1.0 - smoothstep(0.02, 0.155, v_edgeDist);
-  float ridgeLine = smoothstep(0.055, 0.008, v_edgeDist);
-  vec3 N = normalize(mix(v_faceN, v_smoothN, bevelMask * 0.82));
+  // 1. 窄倒角：圆角只吃掉最外 5% 边沿，面内 95% 严格保持平面法线（切面必须平，否则会像球）
+  float bevelMask = 1.0 - smoothstep(0.008, 0.052, v_edgeDist);
+  float ridgeLine = smoothstep(0.032, 0.004, v_edgeDist);
+  vec3 N = normalize(mix(v_faceN, v_smoothN, bevelMask * 0.55));
 
   // 2. 采样 2048x2048 高对比四通道雕文图集（R:锐利字芯, G:暗槽描边保护环, B:刻槽斜率, A:外晕）
   float glyphMask = 0.0;
@@ -1651,9 +1651,10 @@ void main() {
     vec2 tileOrigin = vec2(float(tileId & 7), float(tileId >> 3)) * 0.125;
     vec2 atlasUV = tileOrigin + clamp(v_uv, 0.02, 0.98) * 0.125;
     vec4 tex = texture(u_atlas, atlasUV);
-    float aa = max(0.08, fwidth(tex.r) * 1.1);
-    glyphMask = smoothstep(0.52 - aa, 0.52 + aa, tex.r);
-    moatMask  = clamp(smoothstep(0.28, 0.65, tex.g) - glyphMask, 0.0, 1.0);
+    // 收紧字芯阈值：缩小到 30~50px 时，宽软边会把笔画糊成一团灰白
+    float aa = max(0.035, fwidth(tex.r) * 0.8);
+    glyphMask = smoothstep(0.56 - aa, 0.56 + aa, tex.r);
+    moatMask  = clamp(smoothstep(0.34, 0.60, tex.g) - glyphMask, 0.0, 1.0);
     bumpSlope = (tex.b * 2.0 - 1.0);
     glyphHalo = clamp(tex.a - glyphMask * 0.85, 0.0, 1.0);
   }
@@ -1704,16 +1705,18 @@ void main() {
              + numColor * (glyphMask * 0.42);
   } else if (u_theme == 1) {
     // [1] 时停棱镜：深海蓝宝石棱镜 + 深靛黑护城槽 + 纯白高锐度刻字
-    vec3 irid = spectralIridescence(NdotV, interiorNoise * 0.55 + u_time * 0.08);
-    vec3 refractedCore = mix(vec3(0.02, 0.11, 0.26), irid * 0.52, (0.45 + 0.35 * interiorFine) * (1.0 - clearZone));
+    // 每个切面一个色相：相位由面法线决定（面内恒定），彩虹只沿棱脊流动，面内不再出现油膜斑块
+    float faceNdotV = max(dot(v_faceN, V), 0.001);
+    vec3 irid = spectralIridescence(faceNdotV, float(v_faceIdx) * 0.13 + u_time * 0.05);
+    vec3 refractedCore = mix(vec3(0.016, 0.082, 0.215), irid * 0.30, (0.34 + 0.10 * interiorFine) * (1.0 - clearZone));
     refractedCore = mix(refractedCore, vec3(0.005, 0.015, 0.045), moatMask);
 
-    vec3 numCol = vec3(0.98, 0.99, 1.0);
+    vec3 numCol = vec3(0.99, 1.0, 1.0);
     baseColor = mix(refractedCore, numCol, glyphMask);
     roughness = mix(0.06, 0.42, glyphMask);
     metallic  = 0.12 * (1.0 - glyphMask);
-    emissive  = irid * (fresnel * 1.45 + ridgeLine * 0.72) * (1.0 - clearZone)
-              + numCol * (glyphMask * 0.46);
+    emissive  = irid * (fresnel * 0.42 + ridgeLine * 0.9) * (1.0 - clearZone)
+              + numCol * (glyphMask * 0.62);
   } else if (u_theme == 2) {
     // [2] 焚天熔炉：锻打黑铁壳 + 纯黑隔热槽 + 亮金白清晰数字
     float coreHeat = pow(clamp(interiorNoise * 0.65 + interiorFine * 0.55, 0.0, 1.0), 2.2);
@@ -1771,7 +1774,14 @@ void main() {
              + voidNum * (glyphMask * 0.42);
   }
 
-  // 3. PBR 高光与环境反射合成（字芯与暗槽 98% 消光抗眩，任何视角绝不反光糊字！）
+  // 3. 落定后"赢面聚焦"：判定面全亮，其余四个面压暗到 42%，多面数字不再互相干扰读数
+  if (u_settled > 0.5) {
+    float faceFocus = isWinFace ? 1.0 : 0.42;
+    baseColor *= faceFocus;
+    emissive *= faceFocus;
+  }
+
+  // 4. PBR 高光与环境反射合成（字芯与暗槽 98% 消光抗眩，任何视角绝不反光糊字！）
   float specPow = mix(128.0, 14.0, roughness);
   float spec1 = pow(max(dot(N, H1), 0.0), specPow) * (1.8 - roughness);
   float spec2 = pow(max(dot(N, H2), 0.0), specPow * 0.6) * 0.65;
@@ -2318,6 +2328,14 @@ class WebGLDiceRenderer {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, atlasCanvas)
     gl.generateMipmap(gl.TEXTURE_2D)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+    // 倾斜顶面在 mipmap 下会把笔画糊成灰边，各向异性过滤救回锐度
+    const anisoExt = gl.getExtension('EXT_texture_filter_anisotropic') ||
+      gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic') ||
+      gl.getExtension('MOZ_EXT_texture_filter_anisotropic')
+    if (anisoExt) {
+      const maxAniso = Math.min(16, gl.getParameter(anisoExt.MAX_TEXTURE_MAX_ANISOTROPY_EXT) || 1)
+      if (maxAniso > 1) gl.texParameterf(gl.TEXTURE_2D, anisoExt.TEXTURE_MAX_ANISOTROPY_EXT, maxAniso)
+    }
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
