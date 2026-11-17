@@ -2553,11 +2553,11 @@ const SEAL_TEXT_BY_TIER = {
   fumble: '大失败'
 }
 
-function drawThemeSealOverlay(ctx, { themeIndex, tier, settleTime, sx, sy, scaleMul = 1 }) {
+function drawThemeSealOverlay(ctx, { themeIndex, tier, settleTime, sx, sy, scaleMul = 1, fadeStart = 1.9 }) {
   const sealWord = SEAL_TEXT_BY_TIER[tier] || '成功'
   const slamT = Math.min(1, settleTime / 0.14)
   const scale = (slamT < 1 ? (2.1 - 1.1 * slamT) : 1.0) * scaleMul
-  const fade = settleTime > 1.9 ? Math.max(0, 1 - (settleTime - 1.9) / 0.6) : 1.0
+  const fade = settleTime > fadeStart ? Math.max(0, 1 - (settleTime - fadeStart) / 0.65) : 1.0
   const horizFontSize = sealWord.length >= 4 ? 19 : (sealWord.length === 3 ? 23 : 26)
 
   ctx.save()
@@ -2768,7 +2768,7 @@ function drawThemeSealOverlay(ctx, { themeIndex, tier, settleTime, sx, sy, scale
 }
 
 const SIM_DT = 1 / 120
-const MAX_STEPS = 240 // 2.0s 120Hz 高精度轨迹
+const MAX_STEPS = 320 // 2.67s 120Hz 高精度轨迹（支撑宽幅剧场长弧线投掷）
 const PARTICLE_CAP = 900
 
 function qMul(ax, ay, az, aw, bx, by, bz, bw, out) {
@@ -2850,6 +2850,7 @@ class CinematicDiceStage {
     this.onTelemetry = options.onTelemetry || null
     this.onRollSettled = options.onRollSettled || null
     this.compactMode = Boolean(options.compact)
+    this.theaterMode = Boolean(options.theater)
 
     this.theme = NEXTGEN_THEMES[0]
     this.quality = 'ultra' // 'ultra' | 'balanced' | 'lite'
@@ -3260,7 +3261,7 @@ class CinematicDiceStage {
 
     const baseR = count <= 1 ? 42 : count <= 2 ? 37 : count <= 4 ? 31 : count <= 8 ? 25 : count <= 14 ? 20 : 16
     const aspect = this.cssW / Math.max(1, this.cssH)
-    const boundX = Math.min(225, Math.max(92, 155 * aspect)) - baseR
+    const boundX = Math.min(this.theaterMode ? 285 : 225, Math.max(92, 155 * aspect)) - baseR
     const boundY = (this.compactMode ? 88 : 138) - baseR
 
     const dice = []
@@ -3286,20 +3287,25 @@ class CinematicDiceStage {
         vy = spec.launchVelocity.vy + (Math.random() - 0.5) * 95
         vz = 140 + Math.random() * 130
       } else {
-        // 默认从近景两侧帅气弧线抛入舞台中央！
-        const side = (i % 2 === 0 ? -1 : 1) * (0.72 + Math.random() * 0.28)
-        startX = side * boundX * 0.88
-        startY = -boundY * (0.75 + Math.random() * 0.35)
-        startZ = baseR + 105 + Math.random() * 75 + (i % 4) * 14
+        // 默认从近景两侧帅气弧线抛入舞台正中央星盘！剧场横幅模式从宽翼起跳，向中心黄金圆环精准聚拢碰撞
+        const side = (i % 2 === 0 ? -1 : 1) * (0.86 + Math.random() * 0.12)
+        startX = this.theaterMode ? side * boundX * 0.96 : side * boundX * 0.88
+        startY = -boundY * (0.72 + Math.random() * 0.30)
+        startZ = baseR + (this.theaterMode ? 132 : 105) + Math.random() * 68 + (i % 4) * 14
 
-        const ringR = count === 1 ? 0 : Math.min(boundX * 0.65, baseR * (1.65 + Math.sqrt(count) * 0.78))
-        const slotA = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.45
-        const aimX = Math.cos(slotA) * ringR * 0.85
-        const aimY = Math.sin(slotA) * ringR * 0.72 + 12
-        const tFlight = 0.38 + Math.random() * 0.08
-        vx = (aimX - startX) / tFlight + (Math.random() - 0.5) * 65
-        vy = (aimY - startY) / tFlight + (Math.random() - 0.5) * 65
-        vz = 135 + Math.random() * 115
+        const ringR = count === 1
+          ? 0
+          : (this.theaterMode
+            ? baseR * (1.05 + Math.sqrt(count) * 0.52)
+            : Math.min(boundX * 0.58, baseR * (1.65 + Math.sqrt(count) * 0.78)))
+        const slotA = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.35
+        const aimX = Math.cos(slotA) * ringR * (this.theaterMode ? 0.78 : 0.85)
+        const aimY = Math.sin(slotA) * ringR * 0.65 + (this.theaterMode ? 2 : 12)
+        const tFlight = (this.theaterMode ? 0.52 : 0.38) + Math.random() * 0.07
+        const jitter = this.theaterMode ? 36 : 65
+        vx = (aimX - startX) / tFlight + (Math.random() - 0.5) * jitter
+        vy = (aimY - startY) / tFlight + (Math.random() - 0.5) * jitter
+        vz = (this.theaterMode ? 168 : 135) + Math.random() * 105
       }
 
       dice.push({
@@ -3380,8 +3386,8 @@ class CinematicDiceStage {
             if (impV > 60 && d.bounces < 5) {
               const rest = Math.max(0.24, 0.58 - d.bounces * 0.09)
               d.vz = impV * rest
-              d.vx *= 0.75
-              d.vy *= 0.75
+              d.vx *= this.theaterMode ? 0.56 : 0.75
+              d.vy *= this.theaterMode ? 0.64 : 0.75
               d.wx = d.wx * 0.65 - d.vy * 0.05 + (Math.random() - 0.5) * 6.5
               d.wy = d.wy * 0.65 + d.vx * 0.05 + (Math.random() - 0.5) * 6.5
               d.wz *= 0.72
@@ -3710,10 +3716,11 @@ class CinematicDiceStage {
       const hasImpacts = this.impacts.some(imp => imp.strength > 0.001)
       const hasSlashes = this.slashes.some(sl => sl.active)
       const hiddenIdle = this.mode === 'hidden' && !this.revealed && this.settleTime < 3.2
+      const sleepAfter = this.theaterMode ? 3.8 : 2.6
       if (
         !this.charging &&
         this.settled &&
-        this.settleTime > 2.6 &&
+        this.settleTime > sleepAfter &&
         this.particles.aliveCount === 0 &&
         !hasImpacts &&
         !hasSlashes &&
@@ -3814,8 +3821,14 @@ class CinematicDiceStage {
         remainingSim > 0.03 &&
         remainingSim < 0.30 &&
         this.dice.length <= 6
+      const wantTheaterEase =
+        !wantBullet &&
+        this.theaterMode &&
+        remainingSim > 0.02 &&
+        remainingSim < 0.24 &&
+        this.dice.length <= 6
 
-      const targetBT = wantBullet ? 1.0 : 0.0
+      const targetBT = wantBullet ? 1.0 : (wantTheaterEase ? 0.56 : 0.0)
       this.bulletTimeAmount += (targetBT - this.bulletTimeAmount) * Math.min(1, rawDt * 12)
       if (wantBullet && !this.bulletSoundPlayed) {
         this.bulletSoundPlayed = true
@@ -4160,10 +4173,10 @@ class CinematicDiceStage {
     return sharedAudio
   }
 
-  // 全局仅维护 panel / banner 两个共享离屏 WebGL2 渲染器，绘制后极速 Blit 到各楼层轻量 2D 画布！
-  const sharedRenderers = { panel: null, banner: null }
+  // 全局维护 panel / banner / theater 三个共享离屏 WebGL2 渲染器，互不抢占 FBO 尺寸，绘制后极速 Blit 到 2D 画布！
+  const sharedRenderers = { panel: null, banner: null, theater: null }
   function getSharedRenderer(kind, w, h) {
-    const key = kind === "banner" ? "banner" : "panel"
+    const key = kind === "theater" ? "theater" : (kind === "banner" ? "banner" : "panel")
     if (!sharedRenderers[key]) {
       const offCanvas = document.createElement("canvas")
       sharedRenderers[key] = new WebGLDiceRenderer(offCanvas)
@@ -4287,9 +4300,9 @@ class CinematicDiceStage {
    */
   class SharedBlitDiceStage extends CinematicDiceStage {
     constructor(displayCanvas, options = {}) {
-      const bucket = options.banner ? "banner" : "panel"
-      const initW = options.banner ? 360 : 680
-      const initH = options.banner ? 148 : 272
+      const bucket = options.theater ? "theater" : (options.banner ? "banner" : "panel")
+      const initW = options.theater ? 1080 : (options.banner ? 360 : 680)
+      const initH = options.theater ? 340 : (options.banner ? 148 : 272)
       const sharedR = getSharedRenderer(bucket, initW, initH)
       // 传入一个虚拟 canvas 占位避免父类重复 new WebGLDiceRenderer
       super(sharedR.canvas, null, { ...options, interactive: false, _preRenderer: sharedR })
@@ -4405,14 +4418,16 @@ class CinematicDiceStage {
         }
       }
 
-      if (this.settled && !hiddenMask && this.settleTime < 2.5 && !this.compactMode) {
+      const sealWindow = this.theaterMode ? 3.5 : 2.5
+      if (this.settled && !hiddenMask && this.settleTime < sealWindow && !this.compactMode) {
         drawThemeSealOverlay(ctx, {
           themeIndex: this.theme.themeIndex,
           tier: this.tier,
           settleTime: this.settleTime,
-          sx: W - 46,
-          sy: Math.max(44, H * 0.36),
-          scaleMul: 0.78
+          sx: this.theaterMode ? Math.min(W - 96, Math.round(W * 0.5 + Math.min(295, W * 0.27))) : W - 46,
+          sy: this.theaterMode ? Math.round(H * 0.42) : Math.max(44, H * 0.36),
+          scaleMul: this.theaterMode ? 1.04 : 0.78,
+          fadeStart: this.theaterMode ? 2.85 : 1.9
         })
       }
 

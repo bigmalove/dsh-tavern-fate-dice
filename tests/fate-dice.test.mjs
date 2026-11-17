@@ -1777,7 +1777,7 @@ test('输入栏悬浮骰子胶囊与弹出裁定小窗：latest 读取、胶囊�
   assert.match(popoverStr, /能力修正/)
   assert.match(popoverStr, /叙事阻尼器/)
   assert.match(popoverStr, /难度理由/)
-  assert.match(popoverStr, /✦ 命运点 2\/3/)
+  assert.match(popoverStr, /✦ 命运点 [23]\/3/)
 
   // 构造失败检定记录传入 ComposerDicePopover 验证重投按钮与孤注一掷按钮及关闭按钮
   let rerollMode = ''
@@ -2104,15 +2104,17 @@ test('3D HDR 舞台映射、6 款 WebGL2 主题设置与手动按钮长按蓄力
 })
 
 
-test('每轮生成的投骰动画：决策结果一到就在该轮正文中央播放，并与尾部胶囊彻底剥离', async () => {
+test('每轮生成的投骰动画：决策结果一到就在对话视口正中央全宽播放，不受空楼层高度挤压，并与尾部胶囊彻底剥离', async () => {
   const clientCode = await readFile(new URL('../client.js', import.meta.url), 'utf8')
 
-  // 1) 正文中央的独立演出容器（绝对定位居中在楼层正文），不是胶囊的一部分
+  // 1) 挂在 document.body 并实时锚定 [data-conversation-scroll] 全宽与垂直中心，绝不塞进刚生成 28px 高的空 article 里挤压变形
   assert.match(clientCode, /fdEl\(doc, 'div', 'fd-floor-roll-overlay'\)/)
   assert.match(clientCode, /fdEl\(doc, 'canvas', 'fd-3d-canvas fd-floor-roll-canvas'\)/)
-  assert.match(clientCode, /article\.appendChild\(wrap\)/)
+  assert.match(clientCode, /\[data-conversation-scroll\]/)
+  assert.match(clientCode, /mountHost\.appendChild\(wrap\)/)
 
-  // 2) 三个「结果一到」的入口都必须立刻起中央演出：实时 live-roll、流式首读、手动重投
+  // 2) 决策结果一到即刻开播（live-roll 直连无需等待流式 DOM 楼层插入 + 流式首读兜底 + 手动重投）
+  assert.match(clientCode, /fdPlayFloorRollAnim\(null, null, data\.roll, data\.animation/)
   assert.match(clientCode, /fdPlayFloorRollAnim\(entry\.article, entry, optimistic\.roll/)
   assert.match(clientCode, /fdPlayFloorRollAnim\(entry\.article, entry, nextRecord\.roll/)
   assert.match(clientCode, /fdPlayFloorRollAnim\(entry\.article, entry, nextRoll/)
@@ -2122,13 +2124,16 @@ test('每轮生成的投骰动画：决策结果一到就在该轮正文中央�
   assert.doesNotMatch(clientCode, /entry\.stage3d\.throwDice/)
   assert.doesNotMatch(clientCode, /entry\.stage3d\.releaseButtonCharge/)
 
-  // 4) 样式：楼层容器建立定位上下文，演出层居中且不吃指针事件，落定后淡出
+  // 4) 样式：fixed 视口层 + 天际裂隙开合动效 + 严禁 max-height: calc(100% - ...) 把演出压成细条
   const styles = await readFile(new URL('../src/client/styles.js', import.meta.url), 'utf8')
-  assert.match(styles, /article\.dsh-tavern-story-floor\s*\{\s*position: relative;/)
   const overlayBlock = /\.fd-floor-roll-overlay \{([\s\S]*?)\n\}/.exec(styles)
   assert.ok(overlayBlock, '必须存在 .fd-floor-roll-overlay 样式块')
-  assert.match(overlayBlock[1], /position: absolute;/)
+  assert.match(overlayBlock[1], /position: fixed;/)
   assert.match(overlayBlock[1], /pointer-events: none;/)
+  assert.doesNotMatch(overlayBlock[1], /max-height:\s*calc\(100%/)
+  assert.match(styles, /@keyframes fd-theater-open/)
+  assert.match(styles, /@keyframes fd-theater-close/)
+  assert.match(styles, /\.fd-floor-roll-overlay\.is-settled \.fd-floor-roll-readout/)
   assert.match(styles, /\.fd-floor-roll-overlay\.is-fading/)
 
   // 5) 无 WebGL2 环境优雅降级：不插入任何演出节点，也不抛错

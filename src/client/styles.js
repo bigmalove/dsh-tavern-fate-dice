@@ -1246,120 +1246,269 @@ const CSS_TEXT = `
   word-break: break-word;
 }
 
-/* ---------- 每轮对话正文中央的投骰演出（与尾部胶囊彻底剥离） ----------
- * 判定结果一到（决策模型给出 roll）就在该楼层正文中间、占满整列宽度地起一枚临时
- * 3D 舞台：横向光幕向两侧拉开入场 → 慢镜投掷 → 落定定格 → 收束成中线离场。
- * 尾部胶囊只负责常驻读数、详情与重投，不再自动播任何动画。 */
+/* ---------- 对话视口正中央的全宽宽银幕投骰剧场（与尾部胶囊彻底剥离） ----------
+ * 挂在 document.body 并实时锚定对话滚动容器（[data-conversation-scroll]）的视口几何：
+ *   - 横向 100% 占满整个对话区宽度，纵向稳居对话视口正中央（绝不受刚生成楼层 28px 空高度挤压）
+ *   - 入场：一道横贯全宽的流光裂隙自中线向上下豁然拉开（clip-path 帷幕 + 双轨天际线外扩）
+ *   - 投掷：两侧大翼展高弧线慢镜抛入，临近落定自动进入凝滞慢镜
+ *   - 落定：真骰拍案瞬间印章盖落 + 底部裁定铭牌点亮定格展示 2.45s
+ *   - 离场：上下天际光轨向内收拢，整幅宽银幕沿中线柔和收束为一道余晖细线消散 */
 article.dsh-tavern-story-floor {
   position: relative;
 }
 .fd-floor-roll-overlay {
-  position: absolute;
+  --fd-theater-accent: #f5b942;
+  --fd-theater-glow: rgba(245, 185, 66, 0.42);
+  position: fixed;
   left: 0;
-  right: 0;
   top: 50%;
-  width: auto;
-  height: clamp(280px, 48vh, 480px);
-  max-height: calc(100% - 20px);
+  width: 100vw;
+  height: clamp(290px, 42vh, 385px);
   transform: translateY(-50%);
   pointer-events: none;
-  z-index: 6;
-  border-radius: 18px;
+  z-index: 42;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: 0 26px 64px -20px rgba(4, 6, 12, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-  background:
-    radial-gradient(115% 92% at 50% 48%, rgba(6, 8, 14, 0.40) 0%, rgba(6, 8, 14, 0.18) 52%, rgba(6, 8, 14, 0) 78%),
-    linear-gradient(180deg, rgba(6, 8, 14, 0.10), rgba(6, 8, 14, 0));
+  clip-path: inset(49.4% 0 49.4% 0);
   opacity: 0;
-  animation: fd-floor-roll-in 0.62s cubic-bezier(0.16, 0.84, 0.24, 1) forwards;
+  animation: fd-theater-open 0.68s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   contain: layout paint;
-  will-change: opacity, transform, filter;
+  will-change: clip-path, opacity, filter;
 }
-/* 上下两道横向光幕：入场从中心向两侧拉开，离场反向收拢 */
-.fd-floor-roll-overlay::before,
-.fd-floor-roll-overlay::after {
-  content: "";
+.fd-floor-roll-overlay[data-tier="critical"] {
+  --fd-theater-accent: #ffcf5c;
+  --fd-theater-glow: rgba(255, 207, 92, 0.56);
+}
+.fd-floor-roll-overlay[data-tier="success"] {
+  --fd-theater-accent: #4ad295;
+  --fd-theater-glow: rgba(74, 210, 149, 0.46);
+}
+.fd-floor-roll-overlay[data-tier="costly"] {
+  --fd-theater-accent: #f59e42;
+  --fd-theater-glow: rgba(245, 158, 66, 0.48);
+}
+.fd-floor-roll-overlay[data-tier="failure"] {
+  --fd-theater-accent: #f06a54;
+  --fd-theater-glow: rgba(240, 106, 84, 0.48);
+}
+.fd-floor-roll-overlay[data-tier="fumble"] {
+  --fd-theater-accent: #ff4757;
+  --fd-theater-glow: rgba(255, 71, 87, 0.58);
+}
+.fd-floor-roll-overlay[data-tier="hidden"] {
+  --fd-theater-accent: #a88beb;
+  --fd-theater-glow: rgba(168, 139, 235, 0.46);
+}
+
+/* 羽化暗幕衬底：上下边缘柔和融进浅色羊皮纸或深色背景，不切生硬黑砖 */
+.fd-floor-roll-backdrop {
   position: absolute;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent 0%, rgba(245, 185, 66, 0.55) 22%, rgba(214, 226, 255, 0.68) 50%, rgba(168, 120, 255, 0.45) 78%, transparent 100%);
-  transform: scaleX(0.12);
-  opacity: 0;
-  z-index: 2;
-  animation: fd-floor-roll-rule 0.9s cubic-bezier(0.16, 0.84, 0.24, 1) 0.06s forwards;
+  inset: 0;
+  background:
+    radial-gradient(68% 76% at 50% 50%, rgba(8, 10, 20, 0.86) 0%, rgba(8, 10, 20, 0.68) 54%, rgba(8, 10, 20, 0.34) 100%),
+    linear-gradient(90deg, rgba(6, 8, 16, 0.35) 0%, rgba(8, 11, 22, 0.72) 22%, rgba(8, 11, 22, 0.72) 78%, rgba(6, 8, 16, 0.35) 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.55) 7%, #000 16%, #000 84%, rgba(0, 0, 0, 0.55) 93%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.55) 7%, #000 16%, #000 84%, rgba(0, 0, 0, 0.55) 93%, transparent 100%);
 }
-.fd-floor-roll-overlay::before {
-  top: 0;
-}
-.fd-floor-roll-overlay::after {
-  bottom: 0;
-  animation-delay: 0.14s;
-}
-.fd-floor-roll-overlay.is-fading {
-  animation: fd-floor-roll-out 0.78s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-.fd-floor-roll-overlay.is-fading::before,
-.fd-floor-roll-overlay.is-fading::after {
-  animation: fd-floor-roll-rule-out 0.6s ease forwards;
+.fd-floor-roll-stage-mask {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.72) 8%, #000 17%, #000 83%, rgba(0, 0, 0, 0.72) 92%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.72) 8%, #000 17%, #000 83%, rgba(0, 0, 0, 0.72) 92%, transparent 100%);
 }
 .fd-floor-roll-canvas {
+  display: block;
   width: 100%;
   height: 100%;
 }
+
+/* 上下双轨天际流光尺：自中央向整幅对话左右边缘贯通展开 */
+.fd-floor-roll-rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1.5px;
+  z-index: 3;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 244, 214, 0.16) 8%,
+    var(--fd-theater-accent) 32%,
+    #fff8e7 50%,
+    var(--fd-theater-accent) 68%,
+    rgba(255, 244, 214, 0.16) 92%,
+    transparent 100%
+  );
+  box-shadow: 0 0 14px var(--fd-theater-glow);
+  transform: scaleX(0.03);
+  opacity: 0;
+  animation: fd-theater-rail-in 0.82s cubic-bezier(0.16, 1, 0.3, 1) 0.05s forwards;
+}
+.fd-floor-roll-rail.is-top {
+  top: 10%;
+}
+.fd-floor-roll-rail.is-bottom {
+  bottom: 10%;
+  animation-delay: 0.11s;
+}
+.fd-floor-roll-rail::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  background: #fff8e7;
+  border: 1px solid var(--fd-theater-accent);
+  box-shadow: 0 0 10px var(--fd-theater-accent);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.fd-floor-roll-overlay.is-settled .fd-floor-roll-rail {
+  box-shadow: 0 0 22px var(--fd-theater-glow), 0 0 6px var(--fd-theater-accent);
+}
+
+/* 顶部剧场眉题：字距收拢浮现 */
+.fd-floor-roll-kicker {
+  position: absolute;
+  left: 50%;
+  top: calc(10% + 9px);
+  transform: translateX(-50%);
+  z-index: 4;
+  max-width: 90%;
+  padding: 2.5px 15px;
+  border-radius: 999px;
+  background: rgba(8, 10, 20, 0.52);
+  border: 1px solid rgba(255, 244, 214, 0.14);
+  color: rgba(255, 248, 232, 0.94);
+  font: 600 11.5px/1.45 system-ui, -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+  letter-spacing: 0.18em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.88);
+  opacity: 0;
+  animation: fd-theater-kicker-in 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.18s forwards;
+}
+
+/* 底部裁定铭牌：真骰拍案落定瞬间（.is-settled）点亮浮出 */
 .fd-floor-roll-readout {
   position: absolute;
   left: 50%;
-  bottom: 12px;
-  transform: translate(-50%, 0);
+  bottom: calc(10% + 10px);
+  transform: translate(-50%, 8px) scale(0.94);
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   max-width: 92%;
-  padding: 3px 13px;
+  padding: 5px 18px;
   border-radius: 999px;
-  background: rgba(8, 10, 16, 0.46);
-  color: rgba(255, 246, 232, 0.96);
-  font: 650 12.5px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: linear-gradient(90deg, rgba(10, 13, 24, 0.72) 0%, rgba(16, 20, 36, 0.90) 50%, rgba(10, 13, 24, 0.72) 100%);
+  border: 1px solid color-mix(in srgb, var(--fd-theater-accent) 62%, rgba(255, 255, 255, 0.18));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.52), 0 0 22px var(--fd-theater-glow);
+  color: #fff8eb;
+  font: 650 13px/1.5 system-ui, -apple-system, "PingFang SC", "Segoe UI", sans-serif;
   letter-spacing: 0.05em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.72);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 6px 18px rgba(0, 0, 0, 0.32);
-  z-index: 3;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.85);
   opacity: 0;
-  animation: fd-floor-roll-readout-in 0.5s cubic-bezier(0.16, 0.84, 0.24, 1) 2.75s forwards;
 }
-@keyframes fd-floor-roll-in {
-  0% { opacity: 0; transform: translateY(-50%) scaleX(0.34) scaleY(0.78); filter: blur(16px) brightness(1.9); }
-  55% { opacity: 1; filter: blur(0) brightness(1.12); }
-  100% { opacity: 1; transform: translateY(-50%) scaleX(1) scaleY(1); filter: blur(0) brightness(1); }
+.fd-floor-roll-readout-tier {
+  display: inline-block;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fd-theater-accent) 26%, rgba(255, 255, 255, 0.08));
+  color: var(--fd-theater-accent);
+  font-weight: 800;
+  letter-spacing: 0.08em;
 }
-@keyframes fd-floor-roll-out {
-  0% { opacity: 1; transform: translateY(-50%) scaleX(1) scaleY(1); filter: blur(0) brightness(1); }
-  32% { opacity: 0.94; transform: translateY(-50%) scaleX(1.015) scaleY(1.02); filter: blur(0) brightness(1.22); }
-  100% { opacity: 0; transform: translateY(-50%) scaleX(1.04) scaleY(0.16); filter: blur(10px) brightness(1.4); }
+.fd-floor-roll-overlay.is-settled .fd-floor-roll-readout {
+  animation: fd-theater-readout-in 0.46s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
-@keyframes fd-floor-roll-rule {
-  from { opacity: 0; transform: scaleX(0.12); }
-  to { opacity: 0.85; transform: scaleX(1); }
+
+/* 离场：天际线向中心回缩 + 宽银幕沿水平中线合拢消散 */
+.fd-floor-roll-overlay.is-fading {
+  animation: fd-theater-close 0.86s cubic-bezier(0.65, 0, 0.35, 1) forwards;
 }
-@keyframes fd-floor-roll-rule-out {
-  from { opacity: 0.85; transform: scaleX(1); }
-  to { opacity: 0; transform: scaleX(0.2); }
+.fd-floor-roll-overlay.is-fading .fd-floor-roll-rail {
+  animation: fd-theater-rail-out 0.72s cubic-bezier(0.55, 0, 0.25, 1) forwards;
 }
-@keyframes fd-floor-roll-readout-in {
-  0% { opacity: 0; transform: translate(-50%, 6px); }
-  60% { opacity: 1; transform: translate(-50%, -2px); }
-  100% { opacity: 1; transform: translate(-50%, 0); }
+.fd-floor-roll-overlay.is-fading .fd-floor-roll-kicker,
+.fd-floor-roll-overlay.is-fading .fd-floor-roll-readout {
+  opacity: 0 !important;
+  transition: opacity 0.26s ease;
+}
+
+@keyframes fd-theater-open {
+  0% {
+    opacity: 0;
+    clip-path: inset(49.5% 0 49.5% 0);
+    filter: brightness(2.25) saturate(1.25);
+  }
+  18% {
+    opacity: 1;
+    clip-path: inset(44% 0 44% 0);
+    filter: brightness(1.65) saturate(1.15);
+  }
+  100% {
+    opacity: 1;
+    clip-path: inset(0% 0 0% 0);
+    filter: brightness(1) saturate(1);
+  }
+}
+@keyframes fd-theater-close {
+  0% {
+    opacity: 1;
+    clip-path: inset(0% 0 0% 0);
+    filter: brightness(1);
+  }
+  24% {
+    opacity: 1;
+    clip-path: inset(6% 0 6% 0);
+    filter: brightness(1.26);
+  }
+  84% {
+    opacity: 0.88;
+    clip-path: inset(48.8% 0 48.8% 0);
+    filter: brightness(1.85);
+  }
+  100% {
+    opacity: 0;
+    clip-path: inset(49.8% 0 49.8% 0);
+    filter: brightness(2.1);
+  }
+}
+@keyframes fd-theater-rail-in {
+  0% { opacity: 0; transform: scaleX(0.02); }
+  35% { opacity: 1; }
+  100% { opacity: 0.92; transform: scaleX(1); }
+}
+@keyframes fd-theater-rail-out {
+  0% { opacity: 0.95; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(0.06); }
+}
+@keyframes fd-theater-kicker-in {
+  0% { opacity: 0; letter-spacing: 0.42em; transform: translate(-50%, -5px); }
+  100% { opacity: 0.88; letter-spacing: 0.18em; transform: translate(-50%, 0); }
+}
+@keyframes fd-theater-readout-in {
+  0% { opacity: 0; transform: translate(-50%, 10px) scale(0.90); filter: brightness(1.6); }
+  65% { opacity: 1; transform: translate(-50%, -1px) scale(1.02); filter: brightness(1.12); }
+  100% { opacity: 1; transform: translate(-50%, 0) scale(1); filter: brightness(1); }
 }
 @media (max-width: 640px) {
   .fd-floor-roll-overlay {
-    height: clamp(200px, 36vh, 300px);
-    border-radius: 14px;
+    height: clamp(220px, 36vh, 300px);
+  }
+  .fd-floor-roll-kicker {
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
   }
   .fd-floor-roll-readout {
-    font-size: 11px;
-    bottom: 8px;
+    font-size: 11.5px;
+    padding: 4px 13px;
+    gap: 7px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

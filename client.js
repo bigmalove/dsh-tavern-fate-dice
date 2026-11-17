@@ -1367,120 +1367,269 @@ const CSS_TEXT = `
   word-break: break-word;
 }
 
-/* ---------- 每轮对话正文中央的投骰演出（与尾部胶囊彻底剥离） ----------
- * 判定结果一到（决策模型给出 roll）就在该楼层正文中间、占满整列宽度地起一枚临时
- * 3D 舞台：横向光幕向两侧拉开入场 → 慢镜投掷 → 落定定格 → 收束成中线离场。
- * 尾部胶囊只负责常驻读数、详情与重投，不再自动播任何动画。 */
+/* ---------- 对话视口正中央的全宽宽银幕投骰剧场（与尾部胶囊彻底剥离） ----------
+ * 挂在 document.body 并实时锚定对话滚动容器（[data-conversation-scroll]）的视口几何：
+ *   - 横向 100% 占满整个对话区宽度，纵向稳居对话视口正中央（绝不受刚生成楼层 28px 空高度挤压）
+ *   - 入场：一道横贯全宽的流光裂隙自中线向上下豁然拉开（clip-path 帷幕 + 双轨天际线外扩）
+ *   - 投掷：两侧大翼展高弧线慢镜抛入，临近落定自动进入凝滞慢镜
+ *   - 落定：真骰拍案瞬间印章盖落 + 底部裁定铭牌点亮定格展示 2.45s
+ *   - 离场：上下天际光轨向内收拢，整幅宽银幕沿中线柔和收束为一道余晖细线消散 */
 article.dsh-tavern-story-floor {
   position: relative;
 }
 .fd-floor-roll-overlay {
-  position: absolute;
+  --fd-theater-accent: #f5b942;
+  --fd-theater-glow: rgba(245, 185, 66, 0.42);
+  position: fixed;
   left: 0;
-  right: 0;
   top: 50%;
-  width: auto;
-  height: clamp(280px, 48vh, 480px);
-  max-height: calc(100% - 20px);
+  width: 100vw;
+  height: clamp(290px, 42vh, 385px);
   transform: translateY(-50%);
   pointer-events: none;
-  z-index: 6;
-  border-radius: 18px;
+  z-index: 42;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: 0 26px 64px -20px rgba(4, 6, 12, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-  background:
-    radial-gradient(115% 92% at 50% 48%, rgba(6, 8, 14, 0.40) 0%, rgba(6, 8, 14, 0.18) 52%, rgba(6, 8, 14, 0) 78%),
-    linear-gradient(180deg, rgba(6, 8, 14, 0.10), rgba(6, 8, 14, 0));
+  clip-path: inset(49.4% 0 49.4% 0);
   opacity: 0;
-  animation: fd-floor-roll-in 0.62s cubic-bezier(0.16, 0.84, 0.24, 1) forwards;
+  animation: fd-theater-open 0.68s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   contain: layout paint;
-  will-change: opacity, transform, filter;
+  will-change: clip-path, opacity, filter;
 }
-/* 上下两道横向光幕：入场从中心向两侧拉开，离场反向收拢 */
-.fd-floor-roll-overlay::before,
-.fd-floor-roll-overlay::after {
-  content: "";
+.fd-floor-roll-overlay[data-tier="critical"] {
+  --fd-theater-accent: #ffcf5c;
+  --fd-theater-glow: rgba(255, 207, 92, 0.56);
+}
+.fd-floor-roll-overlay[data-tier="success"] {
+  --fd-theater-accent: #4ad295;
+  --fd-theater-glow: rgba(74, 210, 149, 0.46);
+}
+.fd-floor-roll-overlay[data-tier="costly"] {
+  --fd-theater-accent: #f59e42;
+  --fd-theater-glow: rgba(245, 158, 66, 0.48);
+}
+.fd-floor-roll-overlay[data-tier="failure"] {
+  --fd-theater-accent: #f06a54;
+  --fd-theater-glow: rgba(240, 106, 84, 0.48);
+}
+.fd-floor-roll-overlay[data-tier="fumble"] {
+  --fd-theater-accent: #ff4757;
+  --fd-theater-glow: rgba(255, 71, 87, 0.58);
+}
+.fd-floor-roll-overlay[data-tier="hidden"] {
+  --fd-theater-accent: #a88beb;
+  --fd-theater-glow: rgba(168, 139, 235, 0.46);
+}
+
+/* 羽化暗幕衬底：上下边缘柔和融进浅色羊皮纸或深色背景，不切生硬黑砖 */
+.fd-floor-roll-backdrop {
   position: absolute;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent 0%, rgba(245, 185, 66, 0.55) 22%, rgba(214, 226, 255, 0.68) 50%, rgba(168, 120, 255, 0.45) 78%, transparent 100%);
-  transform: scaleX(0.12);
-  opacity: 0;
-  z-index: 2;
-  animation: fd-floor-roll-rule 0.9s cubic-bezier(0.16, 0.84, 0.24, 1) 0.06s forwards;
+  inset: 0;
+  background:
+    radial-gradient(68% 76% at 50% 50%, rgba(8, 10, 20, 0.86) 0%, rgba(8, 10, 20, 0.68) 54%, rgba(8, 10, 20, 0.34) 100%),
+    linear-gradient(90deg, rgba(6, 8, 16, 0.35) 0%, rgba(8, 11, 22, 0.72) 22%, rgba(8, 11, 22, 0.72) 78%, rgba(6, 8, 16, 0.35) 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.55) 7%, #000 16%, #000 84%, rgba(0, 0, 0, 0.55) 93%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.55) 7%, #000 16%, #000 84%, rgba(0, 0, 0, 0.55) 93%, transparent 100%);
 }
-.fd-floor-roll-overlay::before {
-  top: 0;
-}
-.fd-floor-roll-overlay::after {
-  bottom: 0;
-  animation-delay: 0.14s;
-}
-.fd-floor-roll-overlay.is-fading {
-  animation: fd-floor-roll-out 0.78s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-.fd-floor-roll-overlay.is-fading::before,
-.fd-floor-roll-overlay.is-fading::after {
-  animation: fd-floor-roll-rule-out 0.6s ease forwards;
+.fd-floor-roll-stage-mask {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.72) 8%, #000 17%, #000 83%, rgba(0, 0, 0, 0.72) 92%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.72) 8%, #000 17%, #000 83%, rgba(0, 0, 0, 0.72) 92%, transparent 100%);
 }
 .fd-floor-roll-canvas {
+  display: block;
   width: 100%;
   height: 100%;
 }
+
+/* 上下双轨天际流光尺：自中央向整幅对话左右边缘贯通展开 */
+.fd-floor-roll-rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1.5px;
+  z-index: 3;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 244, 214, 0.16) 8%,
+    var(--fd-theater-accent) 32%,
+    #fff8e7 50%,
+    var(--fd-theater-accent) 68%,
+    rgba(255, 244, 214, 0.16) 92%,
+    transparent 100%
+  );
+  box-shadow: 0 0 14px var(--fd-theater-glow);
+  transform: scaleX(0.03);
+  opacity: 0;
+  animation: fd-theater-rail-in 0.82s cubic-bezier(0.16, 1, 0.3, 1) 0.05s forwards;
+}
+.fd-floor-roll-rail.is-top {
+  top: 10%;
+}
+.fd-floor-roll-rail.is-bottom {
+  bottom: 10%;
+  animation-delay: 0.11s;
+}
+.fd-floor-roll-rail::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  background: #fff8e7;
+  border: 1px solid var(--fd-theater-accent);
+  box-shadow: 0 0 10px var(--fd-theater-accent);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.fd-floor-roll-overlay.is-settled .fd-floor-roll-rail {
+  box-shadow: 0 0 22px var(--fd-theater-glow), 0 0 6px var(--fd-theater-accent);
+}
+
+/* 顶部剧场眉题：字距收拢浮现 */
+.fd-floor-roll-kicker {
+  position: absolute;
+  left: 50%;
+  top: calc(10% + 9px);
+  transform: translateX(-50%);
+  z-index: 4;
+  max-width: 90%;
+  padding: 2.5px 15px;
+  border-radius: 999px;
+  background: rgba(8, 10, 20, 0.52);
+  border: 1px solid rgba(255, 244, 214, 0.14);
+  color: rgba(255, 248, 232, 0.94);
+  font: 600 11.5px/1.45 system-ui, -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+  letter-spacing: 0.18em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.88);
+  opacity: 0;
+  animation: fd-theater-kicker-in 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.18s forwards;
+}
+
+/* 底部裁定铭牌：真骰拍案落定瞬间（.is-settled）点亮浮出 */
 .fd-floor-roll-readout {
   position: absolute;
   left: 50%;
-  bottom: 12px;
-  transform: translate(-50%, 0);
+  bottom: calc(10% + 10px);
+  transform: translate(-50%, 8px) scale(0.94);
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   max-width: 92%;
-  padding: 3px 13px;
+  padding: 5px 18px;
   border-radius: 999px;
-  background: rgba(8, 10, 16, 0.46);
-  color: rgba(255, 246, 232, 0.96);
-  font: 650 12.5px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: linear-gradient(90deg, rgba(10, 13, 24, 0.72) 0%, rgba(16, 20, 36, 0.90) 50%, rgba(10, 13, 24, 0.72) 100%);
+  border: 1px solid color-mix(in srgb, var(--fd-theater-accent) 62%, rgba(255, 255, 255, 0.18));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.52), 0 0 22px var(--fd-theater-glow);
+  color: #fff8eb;
+  font: 650 13px/1.5 system-ui, -apple-system, "PingFang SC", "Segoe UI", sans-serif;
   letter-spacing: 0.05em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.72);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 6px 18px rgba(0, 0, 0, 0.32);
-  z-index: 3;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.85);
   opacity: 0;
-  animation: fd-floor-roll-readout-in 0.5s cubic-bezier(0.16, 0.84, 0.24, 1) 2.75s forwards;
 }
-@keyframes fd-floor-roll-in {
-  0% { opacity: 0; transform: translateY(-50%) scaleX(0.34) scaleY(0.78); filter: blur(16px) brightness(1.9); }
-  55% { opacity: 1; filter: blur(0) brightness(1.12); }
-  100% { opacity: 1; transform: translateY(-50%) scaleX(1) scaleY(1); filter: blur(0) brightness(1); }
+.fd-floor-roll-readout-tier {
+  display: inline-block;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fd-theater-accent) 26%, rgba(255, 255, 255, 0.08));
+  color: var(--fd-theater-accent);
+  font-weight: 800;
+  letter-spacing: 0.08em;
 }
-@keyframes fd-floor-roll-out {
-  0% { opacity: 1; transform: translateY(-50%) scaleX(1) scaleY(1); filter: blur(0) brightness(1); }
-  32% { opacity: 0.94; transform: translateY(-50%) scaleX(1.015) scaleY(1.02); filter: blur(0) brightness(1.22); }
-  100% { opacity: 0; transform: translateY(-50%) scaleX(1.04) scaleY(0.16); filter: blur(10px) brightness(1.4); }
+.fd-floor-roll-overlay.is-settled .fd-floor-roll-readout {
+  animation: fd-theater-readout-in 0.46s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
-@keyframes fd-floor-roll-rule {
-  from { opacity: 0; transform: scaleX(0.12); }
-  to { opacity: 0.85; transform: scaleX(1); }
+
+/* 离场：天际线向中心回缩 + 宽银幕沿水平中线合拢消散 */
+.fd-floor-roll-overlay.is-fading {
+  animation: fd-theater-close 0.86s cubic-bezier(0.65, 0, 0.35, 1) forwards;
 }
-@keyframes fd-floor-roll-rule-out {
-  from { opacity: 0.85; transform: scaleX(1); }
-  to { opacity: 0; transform: scaleX(0.2); }
+.fd-floor-roll-overlay.is-fading .fd-floor-roll-rail {
+  animation: fd-theater-rail-out 0.72s cubic-bezier(0.55, 0, 0.25, 1) forwards;
 }
-@keyframes fd-floor-roll-readout-in {
-  0% { opacity: 0; transform: translate(-50%, 6px); }
-  60% { opacity: 1; transform: translate(-50%, -2px); }
-  100% { opacity: 1; transform: translate(-50%, 0); }
+.fd-floor-roll-overlay.is-fading .fd-floor-roll-kicker,
+.fd-floor-roll-overlay.is-fading .fd-floor-roll-readout {
+  opacity: 0 !important;
+  transition: opacity 0.26s ease;
+}
+
+@keyframes fd-theater-open {
+  0% {
+    opacity: 0;
+    clip-path: inset(49.5% 0 49.5% 0);
+    filter: brightness(2.25) saturate(1.25);
+  }
+  18% {
+    opacity: 1;
+    clip-path: inset(44% 0 44% 0);
+    filter: brightness(1.65) saturate(1.15);
+  }
+  100% {
+    opacity: 1;
+    clip-path: inset(0% 0 0% 0);
+    filter: brightness(1) saturate(1);
+  }
+}
+@keyframes fd-theater-close {
+  0% {
+    opacity: 1;
+    clip-path: inset(0% 0 0% 0);
+    filter: brightness(1);
+  }
+  24% {
+    opacity: 1;
+    clip-path: inset(6% 0 6% 0);
+    filter: brightness(1.26);
+  }
+  84% {
+    opacity: 0.88;
+    clip-path: inset(48.8% 0 48.8% 0);
+    filter: brightness(1.85);
+  }
+  100% {
+    opacity: 0;
+    clip-path: inset(49.8% 0 49.8% 0);
+    filter: brightness(2.1);
+  }
+}
+@keyframes fd-theater-rail-in {
+  0% { opacity: 0; transform: scaleX(0.02); }
+  35% { opacity: 1; }
+  100% { opacity: 0.92; transform: scaleX(1); }
+}
+@keyframes fd-theater-rail-out {
+  0% { opacity: 0.95; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(0.06); }
+}
+@keyframes fd-theater-kicker-in {
+  0% { opacity: 0; letter-spacing: 0.42em; transform: translate(-50%, -5px); }
+  100% { opacity: 0.88; letter-spacing: 0.18em; transform: translate(-50%, 0); }
+}
+@keyframes fd-theater-readout-in {
+  0% { opacity: 0; transform: translate(-50%, 10px) scale(0.90); filter: brightness(1.6); }
+  65% { opacity: 1; transform: translate(-50%, -1px) scale(1.02); filter: brightness(1.12); }
+  100% { opacity: 1; transform: translate(-50%, 0) scale(1); filter: brightness(1); }
 }
 @media (max-width: 640px) {
   .fd-floor-roll-overlay {
-    height: clamp(200px, 36vh, 300px);
-    border-radius: 14px;
+    height: clamp(220px, 36vh, 300px);
+  }
+  .fd-floor-roll-kicker {
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
   }
   .fd-floor-roll-readout {
-    font-size: 11px;
-    bottom: 8px;
+    font-size: 11.5px;
+    padding: 4px 13px;
+    gap: 7px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -5021,11 +5170,11 @@ const SEAL_TEXT_BY_TIER = {
   fumble: '大失败'
 }
 
-function drawThemeSealOverlay(ctx, { themeIndex, tier, settleTime, sx, sy, scaleMul = 1 }) {
+function drawThemeSealOverlay(ctx, { themeIndex, tier, settleTime, sx, sy, scaleMul = 1, fadeStart = 1.9 }) {
   const sealWord = SEAL_TEXT_BY_TIER[tier] || '成功'
   const slamT = Math.min(1, settleTime / 0.14)
   const scale = (slamT < 1 ? (2.1 - 1.1 * slamT) : 1.0) * scaleMul
-  const fade = settleTime > 1.9 ? Math.max(0, 1 - (settleTime - 1.9) / 0.6) : 1.0
+  const fade = settleTime > fadeStart ? Math.max(0, 1 - (settleTime - fadeStart) / 0.65) : 1.0
   const horizFontSize = sealWord.length >= 4 ? 19 : (sealWord.length === 3 ? 23 : 26)
 
   ctx.save()
@@ -5236,7 +5385,7 @@ function drawThemeSealOverlay(ctx, { themeIndex, tier, settleTime, sx, sy, scale
 }
 
 const SIM_DT = 1 / 120
-const MAX_STEPS = 240 // 2.0s 120Hz 高精度轨迹
+const MAX_STEPS = 320 // 2.67s 120Hz 高精度轨迹（支撑宽幅剧场长弧线投掷）
 const PARTICLE_CAP = 900
 
 function qMul(ax, ay, az, aw, bx, by, bz, bw, out) {
@@ -5318,6 +5467,7 @@ class CinematicDiceStage {
     this.onTelemetry = options.onTelemetry || null
     this.onRollSettled = options.onRollSettled || null
     this.compactMode = Boolean(options.compact)
+    this.theaterMode = Boolean(options.theater)
 
     this.theme = NEXTGEN_THEMES[0]
     this.quality = 'ultra' // 'ultra' | 'balanced' | 'lite'
@@ -5728,7 +5878,7 @@ class CinematicDiceStage {
 
     const baseR = count <= 1 ? 42 : count <= 2 ? 37 : count <= 4 ? 31 : count <= 8 ? 25 : count <= 14 ? 20 : 16
     const aspect = this.cssW / Math.max(1, this.cssH)
-    const boundX = Math.min(225, Math.max(92, 155 * aspect)) - baseR
+    const boundX = Math.min(this.theaterMode ? 285 : 225, Math.max(92, 155 * aspect)) - baseR
     const boundY = (this.compactMode ? 88 : 138) - baseR
 
     const dice = []
@@ -5754,20 +5904,25 @@ class CinematicDiceStage {
         vy = spec.launchVelocity.vy + (Math.random() - 0.5) * 95
         vz = 140 + Math.random() * 130
       } else {
-        // 默认从近景两侧帅气弧线抛入舞台中央！
-        const side = (i % 2 === 0 ? -1 : 1) * (0.72 + Math.random() * 0.28)
-        startX = side * boundX * 0.88
-        startY = -boundY * (0.75 + Math.random() * 0.35)
-        startZ = baseR + 105 + Math.random() * 75 + (i % 4) * 14
+        // 默认从近景两侧帅气弧线抛入舞台正中央星盘！剧场横幅模式从宽翼起跳，向中心黄金圆环精准聚拢碰撞
+        const side = (i % 2 === 0 ? -1 : 1) * (0.86 + Math.random() * 0.12)
+        startX = this.theaterMode ? side * boundX * 0.96 : side * boundX * 0.88
+        startY = -boundY * (0.72 + Math.random() * 0.30)
+        startZ = baseR + (this.theaterMode ? 132 : 105) + Math.random() * 68 + (i % 4) * 14
 
-        const ringR = count === 1 ? 0 : Math.min(boundX * 0.65, baseR * (1.65 + Math.sqrt(count) * 0.78))
-        const slotA = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.45
-        const aimX = Math.cos(slotA) * ringR * 0.85
-        const aimY = Math.sin(slotA) * ringR * 0.72 + 12
-        const tFlight = 0.38 + Math.random() * 0.08
-        vx = (aimX - startX) / tFlight + (Math.random() - 0.5) * 65
-        vy = (aimY - startY) / tFlight + (Math.random() - 0.5) * 65
-        vz = 135 + Math.random() * 115
+        const ringR = count === 1
+          ? 0
+          : (this.theaterMode
+            ? baseR * (1.05 + Math.sqrt(count) * 0.52)
+            : Math.min(boundX * 0.58, baseR * (1.65 + Math.sqrt(count) * 0.78)))
+        const slotA = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.35
+        const aimX = Math.cos(slotA) * ringR * (this.theaterMode ? 0.78 : 0.85)
+        const aimY = Math.sin(slotA) * ringR * 0.65 + (this.theaterMode ? 2 : 12)
+        const tFlight = (this.theaterMode ? 0.52 : 0.38) + Math.random() * 0.07
+        const jitter = this.theaterMode ? 36 : 65
+        vx = (aimX - startX) / tFlight + (Math.random() - 0.5) * jitter
+        vy = (aimY - startY) / tFlight + (Math.random() - 0.5) * jitter
+        vz = (this.theaterMode ? 168 : 135) + Math.random() * 105
       }
 
       dice.push({
@@ -5848,8 +6003,8 @@ class CinematicDiceStage {
             if (impV > 60 && d.bounces < 5) {
               const rest = Math.max(0.24, 0.58 - d.bounces * 0.09)
               d.vz = impV * rest
-              d.vx *= 0.75
-              d.vy *= 0.75
+              d.vx *= this.theaterMode ? 0.56 : 0.75
+              d.vy *= this.theaterMode ? 0.64 : 0.75
               d.wx = d.wx * 0.65 - d.vy * 0.05 + (Math.random() - 0.5) * 6.5
               d.wy = d.wy * 0.65 + d.vx * 0.05 + (Math.random() - 0.5) * 6.5
               d.wz *= 0.72
@@ -6178,10 +6333,11 @@ class CinematicDiceStage {
       const hasImpacts = this.impacts.some(imp => imp.strength > 0.001)
       const hasSlashes = this.slashes.some(sl => sl.active)
       const hiddenIdle = this.mode === 'hidden' && !this.revealed && this.settleTime < 3.2
+      const sleepAfter = this.theaterMode ? 3.8 : 2.6
       if (
         !this.charging &&
         this.settled &&
-        this.settleTime > 2.6 &&
+        this.settleTime > sleepAfter &&
         this.particles.aliveCount === 0 &&
         !hasImpacts &&
         !hasSlashes &&
@@ -6282,8 +6438,14 @@ class CinematicDiceStage {
         remainingSim > 0.03 &&
         remainingSim < 0.30 &&
         this.dice.length <= 6
+      const wantTheaterEase =
+        !wantBullet &&
+        this.theaterMode &&
+        remainingSim > 0.02 &&
+        remainingSim < 0.24 &&
+        this.dice.length <= 6
 
-      const targetBT = wantBullet ? 1.0 : 0.0
+      const targetBT = wantBullet ? 1.0 : (wantTheaterEase ? 0.56 : 0.0)
       this.bulletTimeAmount += (targetBT - this.bulletTimeAmount) * Math.min(1, rawDt * 12)
       if (wantBullet && !this.bulletSoundPlayed) {
         this.bulletSoundPlayed = true
@@ -6628,10 +6790,10 @@ class CinematicDiceStage {
     return sharedAudio
   }
 
-  // 全局仅维护 panel / banner 两个共享离屏 WebGL2 渲染器，绘制后极速 Blit 到各楼层轻量 2D 画布！
-  const sharedRenderers = { panel: null, banner: null }
+  // 全局维护 panel / banner / theater 三个共享离屏 WebGL2 渲染器，互不抢占 FBO 尺寸，绘制后极速 Blit 到 2D 画布！
+  const sharedRenderers = { panel: null, banner: null, theater: null }
   function getSharedRenderer(kind, w, h) {
-    const key = kind === "banner" ? "banner" : "panel"
+    const key = kind === "theater" ? "theater" : (kind === "banner" ? "banner" : "panel")
     if (!sharedRenderers[key]) {
       const offCanvas = document.createElement("canvas")
       sharedRenderers[key] = new WebGLDiceRenderer(offCanvas)
@@ -6755,9 +6917,9 @@ class CinematicDiceStage {
    */
   class SharedBlitDiceStage extends CinematicDiceStage {
     constructor(displayCanvas, options = {}) {
-      const bucket = options.banner ? "banner" : "panel"
-      const initW = options.banner ? 360 : 680
-      const initH = options.banner ? 148 : 272
+      const bucket = options.theater ? "theater" : (options.banner ? "banner" : "panel")
+      const initW = options.theater ? 1080 : (options.banner ? 360 : 680)
+      const initH = options.theater ? 340 : (options.banner ? 148 : 272)
       const sharedR = getSharedRenderer(bucket, initW, initH)
       // 传入一个虚拟 canvas 占位避免父类重复 new WebGLDiceRenderer
       super(sharedR.canvas, null, { ...options, interactive: false, _preRenderer: sharedR })
@@ -6873,14 +7035,16 @@ class CinematicDiceStage {
         }
       }
 
-      if (this.settled && !hiddenMask && this.settleTime < 2.5 && !this.compactMode) {
+      const sealWindow = this.theaterMode ? 3.5 : 2.5
+      if (this.settled && !hiddenMask && this.settleTime < sealWindow && !this.compactMode) {
         drawThemeSealOverlay(ctx, {
           themeIndex: this.theme.themeIndex,
           tier: this.tier,
           settleTime: this.settleTime,
-          sx: W - 46,
-          sy: Math.max(44, H * 0.36),
-          scaleMul: 0.78
+          sx: this.theaterMode ? Math.min(W - 96, Math.round(W * 0.5 + Math.min(295, W * 0.27))) : W - 46,
+          sy: this.theaterMode ? Math.round(H * 0.42) : Math.max(44, H * 0.36),
+          scaleMul: this.theaterMode ? 1.04 : 0.78,
+          fadeStart: this.theaterMode ? 2.85 : 1.9
         })
       }
 
@@ -8123,6 +8287,7 @@ function TurnRollCapsule(props) {
             fate: data.fate || (prev && prev.fate) || fate,
             rerollState: data.rerollState || { allowed: false, reason: '本轮已重投锁定（每轮限 1 次）' }
           }))
+          fdPlayFloorRollAnim(null, null, nextRoll, record && record.animation)
           setRerollHint(data.mode === 'push'
             ? '已孤注一掷并同步配额（点酒馆「重新生成」按新结果与代价重写正文）'
             : '已消耗 1 点命运点逆命重投（点酒馆「重新生成」按新点数重写正文）')
@@ -8544,13 +8709,16 @@ function fdRecordFromLiveEvent(gameId, fallbackTurn, data, prevRecord) {
 }
 
 /* ------------------------------------------------------------------ *
- * 每轮对话正文中央的投骰演出（与尾部胶囊完全剥离）
- * 决策模型一给出判定结果（live-roll 事件 / readTurn 首次拿到 roll）就在该楼层正文中央
- * 起一枚临时 3D 舞台，播完整投骰后淡出销毁；胶囊只负责常驻读数、详情与重投入口，
- * 不再承载任何自动播放的动画。
+ * 对话视口正中央的全宽宽银幕投骰剧场（与尾部胶囊彻底剥离）
+ * 决策模型一给出判定结果（live-roll 广播即刻触发，无需等流式 DOM 楼层插入），
+ * 直接在 document.body 上锚定对话滚动容器（[data-conversation-scroll]）起一枚横向 100% 占满对话区、
+ * 纵向稳居对话视口正中央的 WebGL2 HDR 宽银幕舞台：
+ *   天际裂隙拉开入场 -> 大翼展慢镜投骰 -> 拍案印章与铭牌定格 -> 中线合拢消散。
+ * 尾部胶囊只负责常驻读数、详情与重投入口，不再承载自动播放动画。
  * ------------------------------------------------------------------ */
 const fdFloorRollOverlays = new Set()
-const FD_FLOOR_ROLL_MAX = 3
+const fdPlayedRollAnimKeys = new Set()
+const FD_FLOOR_ROLL_MAX = 1
 
 function fdFloorRollAnimKey(roll) {
   if (!roll) return ''
@@ -8564,10 +8732,61 @@ function fdFloorRollAnimKey(roll) {
   ].join(':')
 }
 
+function fdRememberPlayedRollKey(key) {
+  if (!key) return
+  fdPlayedRollAnimKeys.add(key)
+  while (fdPlayedRollAnimKeys.size > 80) {
+    const first = fdPlayedRollAnimKeys.values().next().value
+    if (!first) break
+    fdPlayedRollAnimKeys.delete(first)
+  }
+}
+
+function fdResolveConversationPane(doc, hintNode) {
+  if (!doc) return hintNode || null
+  const isBoxVisible = node => {
+    if (!node || typeof node.getBoundingClientRect !== 'function') return false
+    const r = node.getBoundingClientRect()
+    return r.width > 120 && r.height > 96
+  }
+  if (hintNode && typeof hintNode.closest === 'function') {
+    const direct = hintNode.closest('[data-conversation-scroll]') || hintNode.closest('[data-conversation-content]')
+    if (direct && isBoxVisible(direct)) return direct
+  }
+  if (typeof doc.querySelectorAll === 'function') {
+    const activeId = fdGetActiveGameId()
+    const scrolls = Array.from(doc.querySelectorAll('[data-conversation-scroll]')).filter(isBoxVisible)
+    if (scrolls.length) {
+      if (activeId) {
+        const matched = scrolls.find(el => {
+          const owner = el.closest && el.closest('[data-conversation-session]')
+          return owner && owner.getAttribute('data-conversation-session') === activeId
+        })
+        if (matched) return matched
+      }
+      const primary = scrolls.find(el => {
+        const content = el.closest && el.closest('[data-conversation-content]')
+        return !(content && String(content.className || '').includes('embedded'))
+      })
+      return primary || scrolls[0]
+    }
+    const contents = Array.from(doc.querySelectorAll('[data-conversation-content], [data-chat-flow]')).filter(isBoxVisible)
+    if (contents.length) return contents[0]
+  }
+  if (hintNode && isBoxVisible(hintNode)) return hintNode
+  return null
+}
+
 function fdTeardownFloorRollOverlay(ov) {
   if (!ov) return
   try {
     for (let i = 0; i < ov.timers.length; i++) clearTimeout(ov.timers[i])
+  } catch {}
+  try { if (ov.ro) ov.ro.disconnect() } catch {}
+  try {
+    if (ov.onWinResize && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+      window.removeEventListener('resize', ov.onWinResize)
+    }
   } catch {}
   try { ov.stage.stop() } catch {}
   try { if (ov.wrap.parentNode) ov.wrap.parentNode.removeChild(ov.wrap) } catch {}
@@ -8582,10 +8801,14 @@ function fdDisposeFloorRollOverlay(entry) {
 }
 
 function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
-  if (!article || !roll || !entry || entry.disposed) return false
-  if (typeof article.appendChild !== 'function') return false
-  const key = fdFloorRollAnimKey(roll)
-  if (key && entry.rollAnimKey === key) return false
+  if (!roll) return false
+  if (entry && entry.disposed) return false
+  const baseKey = fdFloorRollAnimKey(roll)
+  const eventKey = options && options.eventKey ? String(options.eventKey) : ''
+  const dedupKey = eventKey || baseKey
+  if (entry && baseKey && entry.rollAnimKey === baseKey) return false
+  if (dedupKey && fdPlayedRollAnimKeys.has(dedupKey)) return false
+  if (baseKey && !eventKey && fdPlayedRollAnimKeys.has(baseKey)) return false
 
   const pref = String(animationPref || fdGetCachedAnimationPref() || 'bounce')
   const hidden = Boolean(roll.hidden)
@@ -8601,51 +8824,119 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
   /* 动画设置关掉（none/compact）或浏览器不支持 WebGL2 / 用户偏好减少动态时，胶囊依旧给出读数 */
   if (!supported) return false
 
-  const doc = article.ownerDocument || document
-  fdDisposeFloorRollOverlay(entry)
+  const doc = (article && article.ownerDocument) || (typeof document !== 'undefined' ? document : null)
+  const mountHost = (doc && doc.body && typeof doc.body.appendChild === 'function')
+    ? doc.body
+    : (article && typeof article.appendChild === 'function' ? article : null)
+  if (!doc || !mountHost) return false
+
+  if (entry) fdDisposeFloorRollOverlay(entry)
   while (fdFloorRollOverlays.size >= FD_FLOOR_ROLL_MAX) {
     const oldest = fdFloorRollOverlays.values().next().value
     if (!oldest) break
     fdTeardownFloorRollOverlay(oldest)
   }
 
+  const tier = hidden ? 'hidden' : fdTierOf(roll.tier)
   const wrap = fdEl(doc, 'div', 'fd-floor-roll-overlay')
   wrap.setAttribute('aria-hidden', 'true')
-  /* 楼层比视口高时，把演出夹到「当前可见的正文中间」，保证生成当下一定看得见；
-   * 同时按演出实际半高上下收边，短楼层也不会把光幕顶出正文。 */
-  try {
-    const rect = typeof article.getBoundingClientRect === 'function' ? article.getBoundingClientRect() : null
-    const viewportH = (typeof window !== 'undefined' && window.innerHeight) || 0
-    if (rect && rect.height > 0 && viewportH > 0) {
-      const visibleTop = Math.max(rect.top, 0)
-      const visibleBottom = Math.min(rect.bottom, viewportH)
-      const centerY = visibleBottom > visibleTop
-        ? (visibleTop + visibleBottom) / 2 - rect.top
-        : rect.height / 2
-      const half = Math.min(Number(wrap.offsetHeight) / 2 || 0, rect.height / 2)
-      const clampedY = half > 0
-        ? Math.max(half, Math.min(rect.height - half, centerY))
-        : Math.max(rect.height * 0.18, Math.min(rect.height * 0.82, centerY))
-      wrap.style.top = `${Math.round(clampedY)}px`
-    }
-  } catch {}
+  wrap.setAttribute('data-tier', tier)
+
+  const backdrop = fdEl(doc, 'div', 'fd-floor-roll-backdrop')
+  const stageMask = fdEl(doc, 'div', 'fd-floor-roll-stage-mask')
   const canvas = fdEl(doc, 'canvas', 'fd-3d-canvas fd-floor-roll-canvas')
-  wrap.appendChild(canvas)
+  stageMask.appendChild(canvas)
+
+  const topRail = fdEl(doc, 'div', 'fd-floor-roll-rail is-top')
+  const bottomRail = fdEl(doc, 'div', 'fd-floor-roll-rail is-bottom')
+
+  const checkTitle = String(roll.check || '行动')
+  const diffTitle = roll.difficultyLabel ? ` · ${roll.difficultyLabel}` : ''
+  const rerollBadge = mode === 'push' ? ' · 🔥孤注一掷' : (mode === 'fate' ? ' · ✦逆命重投' : '')
+  const kicker = fdEl(
+    doc,
+    'div',
+    'fd-floor-roll-kicker',
+    hidden ? `✦ 命运暗骰 · ${checkTitle}检定 ✦` : `✦ 命运真骰裁定 · ${checkTitle}检定${diffTitle}${rerollBadge} ✦`
+  )
+
   const readout = fdEl(doc, 'div', 'fd-floor-roll-readout')
-  readout.textContent = hidden
-    ? `暗骰 · ${roll.check || '检定'} · 结果封存`
-    : `${roll.check || '检定'} · ${roll.tierLabel || '判定'} · ${roll.total}`
+  if (hidden) {
+    readout.appendChild(fdEl(doc, 'span', 'fd-floor-roll-readout-formula', `${checkTitle}检定`))
+    readout.appendChild(fdEl(doc, 'span', 'fd-floor-roll-readout-tier', '暗骰封存'))
+  } else {
+    const rawDiceText = Array.isArray(roll.dice) && roll.dice.length ? `[${roll.dice.join('+')}]` : String(roll.total ?? '')
+    const netMod = fdNumber(roll.totalModifier ?? ((fdNumber(roll.skillBonus, 0)) + (fdNumber(roll.modifier, 0))), 0)
+    const modText = netMod ? (netMod > 0 ? ` +${netMod}` : ` ${netMod}`) : ''
+    const targetText = roll.target !== undefined && roll.target !== null
+      ? `（目标${roll.rule === 'd100' ? '≤' : '≥'}${roll.target}）`
+      : ''
+    readout.appendChild(fdEl(
+      doc,
+      'span',
+      'fd-floor-roll-readout-formula',
+      `${checkTitle} · ${roll.rule || '2d6'} ${rawDiceText}${modText} = ${roll.total}${targetText}`
+    ))
+    readout.appendChild(fdEl(doc, 'span', 'fd-floor-roll-readout-tier', roll.tierLabel || '判定'))
+  }
+
+  wrap.appendChild(backdrop)
+  wrap.appendChild(stageMask)
+  wrap.appendChild(topRail)
+  wrap.appendChild(bottomRail)
+  wrap.appendChild(kicker)
   wrap.appendChild(readout)
-  article.appendChild(wrap)
+
+  let paneEl = null
+  const syncPaneGeometry = () => {
+    paneEl = fdResolveConversationPane(doc, article)
+    if (paneEl && typeof paneEl.getBoundingClientRect === 'function') {
+      const r = paneEl.getBoundingClientRect()
+      if (r.width > 120 && r.height > 96) {
+        wrap.style.left = `${Math.round(r.left)}px`
+        wrap.style.width = `${Math.round(r.width)}px`
+        wrap.style.top = `${Math.round(r.top + r.height / 2)}px`
+        return
+      }
+    }
+    wrap.style.left = '0px'
+    wrap.style.width = '100vw'
+    wrap.style.top = '50%'
+  }
+  syncPaneGeometry()
+  mountHost.appendChild(wrap)
+
+  const ov = { wrap, stage: null, readout, timers: [], ro: null, onWinResize: null, closing: false }
+
+  const scheduleExit = afterMs => {
+    if (ov.closing) return
+    ov.closing = true
+    ov.timers.push(setTimeout(() => {
+      if (!fdFloorRollOverlays.has(ov)) return
+      wrap.classList.add('is-fading')
+    }, afterMs))
+    ov.timers.push(setTimeout(() => {
+      if (!fdFloorRollOverlays.has(ov)) return
+      if (entry && entry.rollOverlay === ov) entry.rollOverlay = null
+      fdTeardownFloorRollOverlay(ov)
+    }, afterMs + 880))
+  }
 
   let stage = null
   try {
     stage = new FD3D.SharedBlitDiceStage(canvas, {
       audio: FD3D.getAudio(),
       banner: false,
-      compact: false
+      compact: false,
+      theater: true,
+      onRollSettled: () => {
+        if (!fdFloorRollOverlays.has(ov)) return
+        wrap.classList.add('is-settled')
+        scheduleExit(2450)
+      }
     })
     stage.setTheme(theme)
+    ov.stage = stage
   } catch {
     try { if (wrap.parentNode) wrap.parentNode.removeChild(wrap) } catch {}
     return false
@@ -8654,50 +8945,76 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
   let spec = null
   try { spec = FD3D.rollToStageSpec({ ...roll, hidden }, false) } catch {}
   if (spec) {
-    /* 正文中央的演出走慢镜：投骰动作拉长到 ~2.9s，落定后再定格展示结果 */
-    spec = { ...spec, pace: 0.7 }
+    /* 宽银幕剧场慢镜：0.58x 舒展抛物线 + 落地凝滞慢镜，骰子飞行与碰撞弹跳约 2.7s */
+    spec = { ...spec, pace: 0.58 }
   }
   if (!spec) {
     spec = {
       diceSpecs: [{ meshKey: 'd20', sides: 20, targetValue: Math.max(1, Math.min(20, fdNumber(roll.total, 1))) }],
-      tier: fdTierOf(roll.tier),
+      tier,
       mode: hidden ? 'hidden' : 'normal',
       total: fdNumber(roll.total, 0),
-      checkName: roll.check || '检定'
+      checkName: roll.check || '检定',
+      pace: 0.58
     }
   }
 
   const power = Math.max(0, Math.min(1, fdNumber(options && options.power, 0)))
-  const ov = { wrap, stage, readout, timers: [] }
-  entry.rollOverlay = ov
-  entry.rollAnimKey = key
+  if (entry) {
+    entry.rollOverlay = ov
+    entry.rollAnimKey = baseKey
+  }
+  fdRememberPlayedRollKey(dedupKey)
+  if (baseKey && baseKey !== dedupKey) fdRememberPlayedRollKey(baseKey)
   fdFloorRollOverlays.add(ov)
 
-  const start = () => {
-    if (entry.rollOverlay !== ov) return
+  const handleResize = () => {
+    if (!fdFloorRollOverlays.has(ov)) return
+    syncPaneGeometry()
     try {
+      stage.resize()
+      stage.renderSingleFrame()
+    } catch {}
+  }
+  ov.onWinResize = handleResize
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('resize', handleResize)
+  }
+  if (paneEl && typeof ResizeObserver === 'function') {
+    try {
+      ov.ro = new ResizeObserver(handleResize)
+      ov.ro.observe(paneEl)
+    } catch {}
+  }
+
+  /* 第 0 帧先把宽银幕台面点亮，随裂隙拉开 180ms 后双翼抛入真骰，避免前半程被开场遮掉 */
+  const primeStage = () => {
+    if (!fdFloorRollOverlays.has(ov)) return
+    try {
+      syncPaneGeometry()
+      stage.resize()
+      stage.renderSingleFrame()
+    } catch {}
+  }
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(primeStage)
+  else setTimeout(primeStage, 16)
+
+  ov.timers.push(setTimeout(() => {
+    if (!fdFloorRollOverlays.has(ov)) return
+    try {
+      syncPaneGeometry()
       stage.resize()
       if (power > 0.1 && typeof stage.releaseButtonCharge === 'function') stage.releaseButtonCharge(spec, power)
       else stage.throwDice(spec)
     } catch {}
-  }
-  /* 入场光幕完全展开后再按最终布局尺寸对齐一次画布，保证 3D 画面锐利 */
-  ov.timers.push(setTimeout(() => {
-    if (entry.rollOverlay !== ov) return
-    try { stage.resize() } catch {}
-  }, 680))
-  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(start)
-  else setTimeout(start, 16)
+  }, 180))
 
-  /* 演出节奏：入场光幕 0.62s → 慢镜投骰 ~2.9s → 落定定格 ~2.5s → 6000ms 起 0.78s 收束离场 */
-  const holdMs = 6000 + Math.round(power * 600)
+  /* 后台标签页 rAF 节流兜底：最长 7.2s 必优雅收束离场，绝不残留遮挡 */
   ov.timers.push(setTimeout(() => {
-    if (entry.rollOverlay !== ov) return
-    wrap.classList.add('is-fading')
-  }, holdMs))
-  ov.timers.push(setTimeout(() => {
-    if (entry.rollOverlay === ov) fdDisposeFloorRollOverlay(entry)
-  }, holdMs + 820))
+    if (!fdFloorRollOverlays.has(ov)) return
+    wrap.classList.add('is-settled')
+    scheduleExit(0)
+  }, 7200 + Math.round(power * 500)))
   return true
 }
 
@@ -8740,13 +9057,26 @@ function fdMountImperativeFloorHeaders(ui) {
   const bindGameWatches = nextId => {
     const id = String(nextId || '').trim()
     if (!id || id === watchedGameId || disposed) return
+    if (watchedGameId && watchedGameId !== id) {
+      Array.from(fdFloorRollOverlays).forEach(ov => fdTeardownFloorRollOverlay(ov))
+    }
     stopWatches()
     watchedGameId = id
     latestLiveEvent = null
     const off1 = fdWatch(ui, id, 'turn-check', refreshAll)
     const off2 = fdWatch(ui, id, 'live-roll', data => {
       latestLiveEvent = data && typeof data === 'object' ? { gameId: id, data } : null
-      if (data && typeof data === 'object') applyLiveEventToStreamingEntries(id, data)
+      if (data && typeof data === 'object') {
+        /* 决策模型结果一落定即刻在对话视口正中央起全宽剧场，绝不等流式楼层 DOM 插入 */
+        if (data.kind === 'check' && data.roll) {
+          const ts = fdNumber(data.emittedAt, fdNumber(data.roll.rolledAt, 0))
+          const isFresh = !ts || Math.abs(Date.now() - ts) < 25000
+          if (isFresh) {
+            fdPlayFloorRollAnim(null, null, data.roll, data.animation, { eventKey: data.id || '' })
+          }
+        }
+        applyLiveEventToStreamingEntries(id, data)
+      }
       refreshAll()
     })
     const off3 = fdWatch(ui, id, 'workbench-sync', refreshAll)
@@ -9206,7 +9536,8 @@ function fdMountImperativeFloorHeaders(ui) {
           entry.disposed = true
           if (entry.retryTimer) clearTimeout(entry.retryTimer)
           clearMountedKey(entry)
-          fdDisposeFloorRollOverlay(entry)
+          /* 切宿主（流式 head -> 结算后 tailActions）绝不能中断正在对话中央播放的投骰剧场！ */
+          entry.rollOverlay = null
           try { if (entry.headSlot.parentNode) entry.headSlot.parentNode.removeChild(entry.headSlot) } catch {}
           try { if (entry.panelSlot.parentNode) entry.panelSlot.parentNode.removeChild(entry.panelSlot) } catch {}
         }
@@ -9282,7 +9613,7 @@ function fdMountImperativeFloorHeaders(ui) {
         entry.disposed = true
         if (entry.retryTimer) clearTimeout(entry.retryTimer)
         clearMountedKey(entry)
-        fdDisposeFloorRollOverlay(entry)
+        entry.rollOverlay = null
         try { if (entry.headSlot.parentNode) entry.headSlot.parentNode.removeChild(entry.headSlot) } catch {}
         try { if (entry.panelSlot.parentNode) entry.panelSlot.parentNode.removeChild(entry.panelSlot) } catch {}
         entries.delete(article)
@@ -9299,7 +9630,7 @@ function fdMountImperativeFloorHeaders(ui) {
   const observer = new MutationObserver(mutations => {
     for (let i = 0; i < mutations.length; i++) {
       const t = mutations[i].target
-      if (t && t.closest && (t.closest('.fd-floor-head-slot') || t.closest('.fd-floor-panel-slot'))) continue
+      if (t && t.closest && (t.closest('.fd-floor-head-slot') || t.closest('.fd-floor-panel-slot') || t.closest('.fd-floor-roll-overlay'))) continue
       schedule()
       break
     }
@@ -9326,10 +9657,11 @@ function fdMountImperativeFloorHeaders(ui) {
       entry.disposed = true
       if (entry.retryTimer) clearTimeout(entry.retryTimer)
       clearMountedKey(entry)
-      fdDisposeFloorRollOverlay(entry)
+      entry.rollOverlay = null
       try { if (entry.headSlot.parentNode) entry.headSlot.parentNode.removeChild(entry.headSlot) } catch {}
       try { if (entry.panelSlot.parentNode) entry.panelSlot.parentNode.removeChild(entry.panelSlot) } catch {}
     })
+    Array.from(fdFloorRollOverlays).forEach(ov => fdTeardownFloorRollOverlay(ov))
     fdFloorRollOverlays.clear()
     entries.clear()
   }
