@@ -41,6 +41,7 @@ const FD_RPC = {
   readTurn: 'fate-dice:read-turn',
   rerollTurn: 'fate-dice:reroll-turn',
   gateResolve: 'fate-dice:gate-resolve',
+  gatePeek: 'fate-dice:gate-peek',
   workbench: 'fate-dice:workbench',
   freeRoll: 'fate-dice:free-roll',
   saveSettings: 'fate-dice:save-global-settings',
@@ -1951,7 +1952,7 @@ function fdNoteActiveGameId(gameId) {
 function fdGetActiveGameId() {
   const detected = fdDetectUrlGameId()
   if (detected && detected !== '__fate_dice_global__') {
-    if (detected !== fdCurrentGameId) fdCurrentGameId = detected
+    if (detected !== fdCurrentGameId) fdNoteActiveGameId(detected)
     return detected
   }
   return fdCurrentGameId || ''
@@ -9074,6 +9075,10 @@ function fdMountImperativeFloorHeaders(ui) {
           if (isFresh) {
             fdPlayFloorRollAnim(null, null, data.roll, data.animation, { eventKey: data.id || '' })
           }
+          if (!data.roll.hidden && (data.roll.tier === 'failure' || data.roll.tier === 'fumble') && typeof fdProbePreSendGate === 'function') {
+            setTimeout(() => fdProbePreSendGate(id), 60)
+            setTimeout(() => fdProbePreSendGate(id), 260)
+          }
         }
         applyLiveEventToStreamingEntries(id, data)
       }
@@ -9759,8 +9764,10 @@ const fdPreSendGate = {
   gameId: '',
   busy: false,
   closeTimer: 0,
+  probeTimers: [],
   offWatch: fdNoop,
   offGame: fdNoop,
+  offEvents: fdNoop,
   disposed: false
 }
 
@@ -9887,6 +9894,16 @@ async function fdResolvePreSendGate(action) {
     fdPreSendGate.busy = false
     fdSetGateBusy(false, '')
     fdSetGateNotice((data && data.error) || (res && res.error) || '宿主未响应这次选择，请再点一次')
+    return
+  }
+  /* 接受命运后宿主立即放行：不等 SSE 回推即可收起覆层；重投则在短暂延时后主动核对一次闸门收口 */
+  if (data.action === 'accept' || action === 'accept') {
+    setTimeout(() => {
+      if (fdPreSendGate.payload && fdPreSendGate.payload.gateId === payload.gateId) fdClearPreSendGate()
+    }, 80)
+  } else {
+    setTimeout(() => fdProbePreSendGate(payload.gameId || fdPreSendGate.gameId), 420)
+    setTimeout(() => fdProbePreSendGate(payload.gameId || fdPreSendGate.gameId), 1250)
   }
 }
 
@@ -10000,12 +10017,52 @@ function fdApplyPreSendGatePayload(data, gameId) {
   fdRenderPreSendGate(data)
 }
 
+function fdClearGateProbeTimers() {
+  while (fdPreSendGate.probeTimers.length) {
+    const t = fdPreSendGate.probeTimers.pop()
+    if (t) clearTimeout(t)
+  }
+}
+
+function fdProbePreSendGate(hintGameId) {
+  const ui = fdPreSendGate.ui
+  if (!ui || fdPreSendGate.disposed) return Promise.resolve(null)
+  const gameId = String(hintGameId || fdGetActiveGameId() || fdPreSendGate.gameId || '').trim()
+  return fdCall(ui, FD_RPC.gatePeek, gameId ? { gameId } : {}).then(res => {
+    if (fdPreSendGate.disposed || !res || !res.ok || !res.data) return null
+    const nextGameId = String((res.data.gate && res.data.gate.gameId) || res.data.gameId || '').trim()
+    if (nextGameId) fdNoteActiveGameId(nextGameId)
+    if (res.data.gate && res.data.gate.gateId) {
+      fdApplyPreSendGatePayload(res.data.gate, nextGameId || gameId)
+      return res.data.gate
+    }
+    if (fdPreSendGate.payload && (!nextGameId || !fdPreSendGate.payload.gameId || fdPreSendGate.payload.gameId === nextGameId)) {
+      fdClearPreSendGate()
+    }
+    return null
+  }).catch(() => null)
+}
+
+function fdSchedulePreSendGateProbes(hintGameId) {
+  if (!fdPreSendGate.ui || fdPreSendGate.disposed) return
+  fdClearGateProbeTimers()
+  const delays = [180, 650, 1500, 2800]
+  for (let i = 0; i < delays.length; i++) {
+    const timer = setTimeout(() => {
+      if (!fdPreSendGate.disposed && !fdPreSendGate.payload) fdProbePreSendGate(hintGameId)
+    }, delays[i])
+    fdPreSendGate.probeTimers.push(timer)
+  }
+}
+
 function fdMountPreSendGate(ui) {
   if (typeof document === 'undefined' || !document.body) return fdNoop
   if (fdPreSendGate.ui && fdPreSendGate.ui !== ui) {
     /* 重新挂载：清掉上一份监听与覆层 */
     try { fdPreSendGate.offWatch() } catch {}
     try { fdPreSendGate.offGame() } catch {}
+    try { fdPreSendGate.offEvents() } catch {}
+    fdClearGateProbeTimers()
     fdClearPreSendGate()
   }
   const root = fdEnsureGateRoot()
@@ -10019,9 +10076,62 @@ function fdMountPreSendGate(ui) {
     try { fdPreSendGate.offWatch() } catch {}
     fdPreSendGate.gameId = id
     fdPreSendGate.offWatch = fdWatch(ui, id, FD_GATE_STATE, data => fdApplyPreSendGatePayload(data, id))
+    fdProbePreSendGate(id)
   }
 
   fdPreSendGate.offGame = fdSubscribeActiveGameId(bindGame)
+
+  const onSessionEvent = ev => {
+    const sid = ev && ev.detail && ev.detail.sessionId
+    if (sid) fdNoteActiveGameId(String(sid))
+    else {
+      const detected = fdGetActiveGameId()
+      if (detected) bindGame(detected)
+    }
+  }
+  const onComposerKeyDown = ev => {
+    if (!ev || ev.key !== 'Enter' || ev.shiftKey || ev.altKey || ev.isComposing) return
+    const target = ev.target
+    const tag = target && target.tagName ? String(target.tagName).toUpperCase() : ''
+    if (tag === 'TEXTAREA' || (target && target.isContentEditable)) {
+      fdSchedulePreSendGateProbes('')
+    }
+  }
+  const onActionClick = ev => {
+    const target = ev && ev.target && typeof ev.target.closest === 'function'
+      ? ev.target.closest('button, [role="button"]')
+      : null
+    if (!target || (fdPreSendGate.root && fdPreSendGate.root.contains(target))) return
+    const label = String(
+      (typeof target.getAttribute === 'function' && (target.getAttribute('aria-label') || target.getAttribute('title')))
+      || target.textContent
+      || ''
+    )
+    if (/发送|重新生成|重试|继续|send|regenerate|retry/i.test(label) || target.type === 'submit') {
+      fdSchedulePreSendGateProbes('')
+    }
+  }
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('dsh-tavern-session-changed', onSessionEvent)
+    window.addEventListener('popstate', onSessionEvent)
+    window.addEventListener('hashchange', onSessionEvent)
+  }
+  if (typeof document.addEventListener === 'function') {
+    document.addEventListener('keydown', onComposerKeyDown, true)
+    document.addEventListener('click', onActionClick, true)
+  }
+  fdPreSendGate.offEvents = () => {
+    if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+      window.removeEventListener('dsh-tavern-session-changed', onSessionEvent)
+      window.removeEventListener('popstate', onSessionEvent)
+      window.removeEventListener('hashchange', onSessionEvent)
+    }
+    if (typeof document.removeEventListener === 'function') {
+      document.removeEventListener('keydown', onComposerKeyDown, true)
+      document.removeEventListener('click', onActionClick, true)
+    }
+  }
+
   const active = fdGetActiveGameId()
   if (active) bindGame(active)
   else fdCall(ui, FD_RPC.status, {}).then(res => {
@@ -10031,10 +10141,13 @@ function fdMountPreSendGate(ui) {
 
   return () => {
     fdPreSendGate.disposed = true
+    fdClearGateProbeTimers()
     try { fdPreSendGate.offWatch() } catch {}
     try { fdPreSendGate.offGame() } catch {}
+    try { fdPreSendGate.offEvents() } catch {}
     fdPreSendGate.offWatch = fdNoop
     fdPreSendGate.offGame = fdNoop
+    fdPreSendGate.offEvents = fdNoop
     fdClearPreSendGate()
     const node = fdPreSendGate.root
     fdPreSendGate.root = null
@@ -11004,7 +11117,7 @@ exports.name = FD_PLUGIN_ID
 exports.inject = ['tavernUi']
 exports.apply = apply
 exports.WorkbenchPanel = WorkbenchPanel
-exports.__test = { fdMountPreSendGate, fdRenderPreSendGate, fdClearPreSendGate, fdGateSecondsLeft, fdGateDiceText, DieGlyph, formatRollSummary, LiveRollBanner, ComposerLiveDock, ComposerDicePopover, fdResolveFloorToneAndLabel, fdComputePopoverStyle, TurnRollCapsule, FdRerollActionBox, StoryFloorDiceItem, fdExtractFloorTurn, fdMountImperativeFloorHeaders, fdNoteActiveGameId, fdGetActiveGameId, WorkbenchPanel, ChecksTab, DecisionModelGuideBanner, FdHelp, SettingsTab, FD3D, Fd3DDiceStage, useFdHoldCharge, fdAttachHoldChargeToDomBtn, fdPlayFloorRollAnim, fdDisposeFloorRollOverlay, fdFloorRollAnimKey }
+exports.__test = { fdMountPreSendGate, fdProbePreSendGate, fdRenderPreSendGate, fdClearPreSendGate, fdGateSecondsLeft, fdGateDiceText, DieGlyph, formatRollSummary, LiveRollBanner, ComposerLiveDock, ComposerDicePopover, fdResolveFloorToneAndLabel, fdComputePopoverStyle, TurnRollCapsule, FdRerollActionBox, StoryFloorDiceItem, fdExtractFloorTurn, fdMountImperativeFloorHeaders, fdNoteActiveGameId, fdGetActiveGameId, WorkbenchPanel, ChecksTab, DecisionModelGuideBanner, FdHelp, SettingsTab, FD3D, Fd3DDiceStage, useFdHoldCharge, fdAttachHoldChargeToDomBtn, fdPlayFloorRollAnim, fdDisposeFloorRollOverlay, fdFloorRollAnimKey }
     return module.exports
   }
 })

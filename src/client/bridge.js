@@ -53,7 +53,7 @@ function fdNoteActiveGameId(gameId) {
 function fdGetActiveGameId() {
   const detected = fdDetectUrlGameId()
   if (detected && detected !== '__fate_dice_global__') {
-    if (detected !== fdCurrentGameId) fdCurrentGameId = detected
+    if (detected !== fdCurrentGameId) fdNoteActiveGameId(detected)
     return detected
   }
   return fdCurrentGameId || ''

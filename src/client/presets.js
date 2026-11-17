@@ -18,6 +18,7 @@ const FD_RPC = {
   readTurn: 'fate-dice:read-turn',
   rerollTurn: 'fate-dice:reroll-turn',
   gateResolve: 'fate-dice:gate-resolve',
+  gatePeek: 'fate-dice:gate-peek',
   workbench: 'fate-dice:workbench',
   freeRoll: 'fate-dice:free-roll',
   saveSettings: 'fate-dice:save-global-settings',

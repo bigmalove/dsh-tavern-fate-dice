@@ -1701,6 +1701,10 @@ function fdMountImperativeFloorHeaders(ui) {
           if (isFresh) {
             fdPlayFloorRollAnim(null, null, data.roll, data.animation, { eventKey: data.id || '' })
           }
+          if (!data.roll.hidden && (data.roll.tier === 'failure' || data.roll.tier === 'fumble') && typeof fdProbePreSendGate === 'function') {
+            setTimeout(() => fdProbePreSendGate(id), 60)
+            setTimeout(() => fdProbePreSendGate(id), 260)
+          }
         }
         applyLiveEventToStreamingEntries(id, data)
       }

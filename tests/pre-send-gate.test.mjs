@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import vm from 'node:vm'
 import { readFile } from 'node:fs/promises'
 import {
   PRE_SEND_GATE_WAIT_DEFAULT_SEC,
@@ -165,6 +166,9 @@ function mountGatePlugin({ fatePoints = 2, settings = {}, gameId = 'g-gate', jud
     summary: { total: 0, counts: { critical: 0, success: 0, costly: 0, failure: 0, fumble: 0 }, recent: [] }
   })
 
+  let liveTurnState = null
+  const turnDataMap = new Map()
+
   applyFateDicePlugin({
     inject(deps, cb) { if (Array.isArray(deps) && deps.includes('llm')) cb({ llm: null }) },
     tavern: {
@@ -184,8 +188,12 @@ function mountGatePlugin({ fatePoints = 2, settings = {}, gameId = 'g-gate', jud
         gameDataMap.set(id, structuredClone(data))
         gameWrites.push({ gameId: id, data: structuredClone(data) })
       },
-      async readTurnData() { return null },
-      async saveTurnData() { return {} },
+      async readTurnData({ gameId: id, turn }) { return structuredClone(turnDataMap.get(`${id}:${turn}`) || null) },
+      async saveTurnData({ gameId: id, turn, textVersion, data }) {
+        turnDataMap.set(`${id}:${turn}`, { turn, textVersion, data: structuredClone(data) })
+        return {}
+      },
+      async getTurnState() { return liveTurnState ? structuredClone(liveTurnState) : null },
       async getTurn() { return { turn: 1, text: '', variables: {} } },
       async publishState({ gameId: id, name, data }) { states.push({ gameId: id, name, data }) },
       async decisionJudgeStatus() {
@@ -216,6 +224,11 @@ function mountGatePlugin({ fatePoints = 2, settings = {}, gameId = 'g-gate', jud
     states,
     gameWrites,
     gameData: id => gameDataMap.get(id || gameId),
+    setGameData: (patch, id = gameId) => {
+      const prev = gameDataMap.get(id) || {}
+      gameDataMap.set(id, structuredClone({ ...prev, ...patch }))
+    },
+    setLiveTurnState: next => { liveTurnState = next },
     gateStates: () => states.filter(item => item.name === 'pre-send-gate')
   }
 }
@@ -382,4 +395,238 @@ test('浏览器端打包产物：包含发前逆命弹窗、闸门 RPC 与挂载
   assert.ok(clientCode.includes('fd-presend-btn is-fate'), '弹窗必须提供命运点重投按钮')
   assert.ok(clientCode.includes('fd-presend-btn is-push'), '弹窗必须提供孤注一掷按钮')
   assert.ok(clientCode.includes('接受命运'), '弹窗必须提供接受命运按钮')
+  assert.ok(clientCode.includes("'fate-dice:gate-peek'"), '必须带上闸门轮询兜底 RPC 名')
+})
+
+test('回归验证：回退/删楼导致 game.lastTurn(29) > 当前最新轮(23) 时，发前暂停与楼层重投绝不被误判为 HISTORY_LOCKED', async () => {
+  const harness = mountGatePlugin({ fatePoints: 1 })
+  /* 模拟真实存档：此前跑过原生 turn=29 后回退到第 23 轮，lastTurn 残留 29 */
+  harness.setGameData({
+    lastTurn: 29,
+    summary: {
+      total: 1,
+      counts: { critical: 0, success: 0, costly: 1, failure: 0, fumble: 0 },
+      recent: [{ turn: 29, check: '技艺', tier: 'costly', tierLabel: '代价成功', total: 6, target: 6, rolledAt: 100 }]
+    }
+  })
+  harness.setLiveTurnState({ turn: 23, settled: true, generating: false, greeting: false })
+
+  let hit = null
+  for (const input of GATE_INPUTS) {
+    const before = harness.states.length
+    const promise = harness.turnSections[0].text({ gameId: 'g-gate', turn: 23, input })
+    for (let i = 0; i < 60; i += 1) {
+      await sleep(5)
+      const gate = harness.states
+        .slice(before)
+        .filter(item => item.name === 'pre-send-gate' && item.data && item.data.gateId)
+        .pop()
+      if (gate) {
+        hit = { promise, gate: gate.data }
+        break
+      }
+    }
+    if (hit) break
+    await promise
+  }
+  assert.ok(hit && hit.gate, '即使 game.lastTurn=29 大于当前 turn=23，发前失败也必须成功暂停并广播闸门')
+  assert.equal(hit.gate.turn, 23)
+
+  /* 验证 gate-peek 在无 gameId 参数时也能返回当前唯一挂起的闸门 */
+  const peeked = await harness.handlers.get('fate-dice:gate-peek')({})
+  assert.equal(peeked.ok, true)
+  assert.equal(peeked.gate?.gateId, hit.gate.gateId)
+
+  await harness.handlers.get('fate-dice:gate-resolve')({
+    gameId: 'g-gate',
+    gateId: hit.gate.gateId,
+    action: 'accept'
+  })
+  await hit.promise
+  await harness.settledHooks[0]({ gameId: 'g-gate', turn: 23, textVersion: 'v23-1' })
+
+  assert.equal(harness.gameData().lastTurn, 23, '结算后 lastTurn 必须对齐回当前最新轮 23，不再卡在 29')
+  const read23 = await harness.handlers.get('fate-dice:read-turn')({ gameId: 'g-gate', turn: 23 })
+  assert.equal(read23.rerollState.allowed, true, '接受失败结算后，当前最新第 23 楼胶囊仍允许手动重投 1 次')
+})
+
+test('回归验证：失败楼层尚未走过发前闸门时，开启开关后点重新生成也必须暂停；接受后再重新生成则不再重复打扰', async () => {
+  const harness = mountGatePlugin({ settings: { preSendPause: false }, fatePoints: 2 })
+  let failedInput = ''
+  for (const input of GATE_INPUTS) {
+    const inj = await harness.turnSections[0].text({ gameId: 'g-gate', turn: 5, input })
+    if (inj.includes('渐进失败') || inj.includes('大失败')) {
+      failedInput = input
+      await harness.settledHooks[0]({ gameId: 'g-gate', turn: 5, textVersion: 'v5-init' })
+      break
+    }
+  }
+  assert.ok(failedInput, '预置一轮未开启发前暂停时落盘的失败楼层')
+
+  /* 玩家开启「失败 / 大失败时暂停正文发送」，对同一轮点击重新生成 */
+  await harness.handlers.get('fate-dice:save-global-settings')({ settings: { preSendPause: true } })
+  const before = harness.states.length
+  const regenPromise = harness.turnSections[0].text({ gameId: 'g-gate', turn: 5, input: failedInput })
+  let gate = null
+  for (let i = 0; i < 60; i += 1) {
+    await sleep(5)
+    gate = harness.states.slice(before).filter(s => s.name === 'pre-send-gate' && s.data?.gateId).pop()?.data || null
+    if (gate) break
+  }
+  assert.ok(gate, '此前未经过发前闸门的失败楼层，开启开关后重新生成必须暂停询问')
+  await harness.handlers.get('fate-dice:gate-resolve')({ gameId: 'g-gate', gateId: gate.gateId, action: 'accept' })
+  await regenPromise
+  await harness.settledHooks[0]({ gameId: 'g-gate', turn: 5, textVersion: 'v5-accepted' })
+
+  /* 已经在发前闸门确认接受过命运：再次同文重新生成直接复用，不再二次弹窗 */
+  const secondBefore = harness.states.length
+  const secondInj = await harness.turnSections[0].text({ gameId: 'g-gate', turn: 5, input: failedInput })
+  assert.ok(secondInj.includes('本轮客观检定'))
+  const secondGates = harness.states.slice(secondBefore).filter(s => s.name === 'pre-send-gate' && s.data?.gateId)
+  assert.equal(secondGates.length, 0, '已确认接受过的同一楼层再次重新生成不再重复弹窗')
+})
+
+test('回归验证：浏览器侧 fdGetActiveGameId 通知监听且 fdProbePreSendGate 在会话未知时也能拉起逆命弹窗', async () => {
+  const harness = mountGatePlugin({ fatePoints: 2 })
+  const hit = await reachGate(harness)
+  assert.ok(hit && hit.gate)
+
+  const clientCode = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+  let loadedModule = null
+  function makeEl(tag) {
+    const attrs = new Map()
+    const listeners = new Map()
+    const el = {
+      tagName: String(tag || '').toUpperCase(),
+      className: '',
+      hidden: false,
+      disabled: false,
+      title: '',
+      type: '',
+      style: {},
+      parentNode: null,
+      children: [],
+      get isConnected() { return Boolean(this.parentNode || this === fakeBody) },
+      setAttribute(k, v) { attrs.set(k, String(v)) },
+      getAttribute(k) { return attrs.has(k) ? attrs.get(k) : null },
+      appendChild(child) { child.parentNode = el; el.children.push(child); return child },
+      removeChild(child) {
+        const idx = el.children.indexOf(child)
+        if (idx >= 0) el.children.splice(idx, 1)
+        child.parentNode = null
+        return child
+      },
+      contains(node) {
+        let cur = node
+        while (cur) { if (cur === el) return true; cur = cur.parentNode }
+        return false
+      },
+      querySelector(sel) {
+        const match = node => {
+          const cls = String(node.className || '').split(/\s+/).filter(Boolean)
+          if (sel === '.fd-presend-count') return cls.includes('fd-presend-count')
+          if (sel === '.fd-presend-hint') return cls.includes('fd-presend-hint')
+          if (sel === '.fd-presend-notice') return cls.includes('fd-presend-notice')
+          if (sel === '.fd-presend-btn.is-fate') return cls.includes('fd-presend-btn') && cls.includes('is-fate')
+          if (sel === '.fd-presend-btn.is-push') return cls.includes('fd-presend-btn') && cls.includes('is-push')
+          return false
+        }
+        const walk = node => {
+          for (const ch of node.children) {
+            if (match(ch)) return ch
+            const found = walk(ch)
+            if (found) return found
+          }
+          return null
+        }
+        return walk(el)
+      },
+      querySelectorAll(sel) {
+        const out = []
+        const walk = node => {
+          for (const ch of node.children) {
+            if (sel === '.fd-presend-btn' && String(ch.className || '').includes('fd-presend-btn')) out.push(ch)
+            walk(ch)
+          }
+        }
+        walk(el)
+        return out
+      },
+      addEventListener(ev, fn) { listeners.set(ev, fn) },
+      click() { const fn = listeners.get('click'); if (fn) fn({}) }
+    }
+    return el
+  }
+  const fakeBody = makeEl('body')
+  const fakeDoc = {
+    head: makeEl('head'),
+    body: fakeBody,
+    getElementById: () => null,
+    createElement: tag => makeEl(tag),
+    querySelectorAll: () => [],
+    addEventListener() {},
+    removeEventListener() {}
+  }
+  const fakeReact = {
+    Fragment: Symbol('Fragment'),
+    createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+    useState: init => [typeof init === 'function' ? init() : init, () => {}],
+    useEffect: () => {},
+    useMemo: fn => fn(),
+    useRef: val => ({ current: val })
+  }
+  let locationSearch = ''
+  const sandbox = {
+    window: {
+      __ModuleLoader__: { load(def) { loadedModule = def } },
+      get location() { return { search: locationSearch, hash: '', pathname: '/' } },
+      localStorage: { getItem: () => null, setItem: () => {} },
+      addEventListener() {},
+      removeEventListener() {}
+    },
+    document: fakeDoc,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    console
+  }
+  vm.runInNewContext(clientCode, sandbox, { filename: 'client.js' })
+  const exported = loadedModule.factory(mod => {
+    if (mod === 'react') return fakeReact
+    throw new Error('unexpected module ' + mod)
+  })
+
+  const watchedIds = []
+  const fakeUi = {
+    callHost: (name, args) => {
+      const fn = harness.handlers.get(name)
+      if (!fn) return Promise.reject(new Error('missing rpc ' + name))
+      return Promise.resolve(fn(args || {}))
+    },
+    watchState: (gid) => {
+      watchedIds.push(gid)
+      return () => {}
+    }
+  }
+
+  /* 挂载时 URL 无会话 ID、watchState 暂未收到推送；随后通过 fdProbePreSendGate 兜底探出挂起闸门并弹出覆层 */
+  const unmount = exported.__test.fdMountPreSendGate(fakeUi)
+  const probed = await exported.__test.fdProbePreSendGate('')
+  assert.equal(probed?.gateId, hit.gate.gateId, '客户端未获知 gameId 时也能经 gate-peek 发现挂起闸门')
+  assert.ok(watchedIds.includes('g-gate'), '探出闸门后自动绑定对应会话 watchState')
+  const overlay = fakeBody.children.find(c => String(c.className || '').includes('fd-presend-overlay'))
+  assert.ok(overlay && overlay.hidden === false, '逆命弹窗覆层必须已弹出显示')
+
+  /* 同时验证 URL 变化后先调 fdGetActiveGameId 也会触发监听绑定 */
+  locationSearch = '?sessionId=session-url-next'
+  assert.equal(exported.__test.fdGetActiveGameId(), 'session-url-next')
+  assert.ok(watchedIds.includes('session-url-next'), 'fdGetActiveGameId 首次检出新 URL 会话时必须通知订阅者重绑')
+
+  /* 点击弹窗里的「接受命运」释放宿主请求 */
+  const btns = overlay.querySelectorAll('.fd-presend-btn')
+  btns[btns.length - 1].click()
+  const finalInj = await hit.promise
+  assert.ok(finalInj.includes('本轮客观检定'))
+  unmount()
 })
