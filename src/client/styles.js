@@ -1246,6 +1246,76 @@ const CSS_TEXT = `
   word-break: break-word;
 }
 
+/* ---------- 每轮对话正文中央的投骰演出（与尾部胶囊彻底剥离） ----------
+ * 判定结果一到（决策模型给出 roll）就在该楼层正文中间起一枚临时 3D 舞台播完整投骰，
+ * 落定后淡出销毁；尾部胶囊只负责常驻读数、详情与重投，不再自动播任何动画。 */
+article.dsh-tavern-story-floor {
+  position: relative;
+}
+.fd-floor-roll-overlay {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(560px, 92%);
+  height: clamp(190px, 30vh, 300px);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 6;
+  border-radius: 20px;
+  background: radial-gradient(58% 60% at 50% 48%, rgba(6, 8, 14, 0.42) 0%, rgba(6, 8, 14, 0.18) 56%, rgba(6, 8, 14, 0) 100%);
+  opacity: 0;
+  animation: fd-floor-roll-in 0.2s ease forwards;
+  transition: opacity 0.42s ease;
+  contain: layout paint;
+  will-change: opacity;
+}
+.fd-floor-roll-overlay.is-fading {
+  opacity: 0 !important;
+  animation: none;
+}
+.fd-floor-roll-canvas {
+  width: 100%;
+  height: 100%;
+}
+.fd-floor-roll-readout {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translate(-50%, 0);
+  max-width: 92%;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(8, 10, 16, 0.44);
+  color: rgba(255, 246, 232, 0.94);
+  font: 650 12px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.72);
+  opacity: 0;
+  animation: fd-floor-roll-readout-in 0.34s ease 0.86s forwards;
+}
+@keyframes fd-floor-roll-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fd-floor-roll-readout-in {
+  from { opacity: 0; transform: translate(-50%, 4px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+@media (max-width: 640px) {
+  .fd-floor-roll-overlay {
+    width: 94%;
+    height: clamp(150px, 24vh, 220px);
+    border-radius: 16px;
+  }
+  .fd-floor-roll-readout { font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fd-floor-roll-overlay { display: none; }
+}
+
 /* ---------- WebGL2 HDR 3D 命运真骰内嵌舞台 & 手动按钮长按蓄力进度 ---------- */
 .fd-3d-stage {
   position: relative;

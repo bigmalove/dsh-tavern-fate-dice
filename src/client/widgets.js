@@ -1334,6 +1334,150 @@ function fdRecordFromLiveEvent(gameId, fallbackTurn, data, prevRecord) {
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * 每轮对话正文中央的投骰演出（与尾部胶囊完全剥离）
+ * 决策模型一给出判定结果（live-roll 事件 / readTurn 首次拿到 roll）就在该楼层正文中央
+ * 起一枚临时 3D 舞台，播完整投骰后淡出销毁；胶囊只负责常驻读数、详情与重投入口，
+ * 不再承载任何自动播放的动画。
+ * ------------------------------------------------------------------ */
+const fdFloorRollOverlays = new Set()
+const FD_FLOOR_ROLL_MAX = 3
+
+function fdFloorRollAnimKey(roll) {
+  if (!roll) return ''
+  const mode = roll.rerollMeta && roll.rerollMeta.mode ? roll.rerollMeta.mode : ''
+  return [
+    roll.rolledAt || '',
+    roll.total === undefined || roll.total === null ? '' : String(roll.total),
+    Array.isArray(roll.dice) ? roll.dice.join(',') : '',
+    String(roll.tier || ''),
+    mode
+  ].join(':')
+}
+
+function fdTeardownFloorRollOverlay(ov) {
+  if (!ov) return
+  try {
+    for (let i = 0; i < ov.timers.length; i++) clearTimeout(ov.timers[i])
+  } catch {}
+  try { ov.stage.stop() } catch {}
+  try { if (ov.wrap.parentNode) ov.wrap.parentNode.removeChild(ov.wrap) } catch {}
+  fdFloorRollOverlays.delete(ov)
+}
+
+function fdDisposeFloorRollOverlay(entry) {
+  if (!entry || !entry.rollOverlay) return
+  const ov = entry.rollOverlay
+  entry.rollOverlay = null
+  fdTeardownFloorRollOverlay(ov)
+}
+
+function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
+  if (!article || !roll || !entry || entry.disposed) return false
+  if (typeof article.appendChild !== 'function') return false
+  const key = fdFloorRollAnimKey(roll)
+  if (key && entry.rollAnimKey === key) return false
+
+  const pref = String(animationPref || fdGetCachedAnimationPref() || 'bounce')
+  const hidden = Boolean(roll.hidden)
+  const mode = (roll.rerollMeta && roll.rerollMeta.mode) || 'normal'
+  let theme = null
+  let supported = false
+  try {
+    theme = FD3D.resolveTheme(pref, mode, hidden)
+    supported = Boolean(theme) && FD3D.canUseWebGL2()
+  } catch {
+    supported = false
+  }
+  /* 动画设置关掉（none/compact）或浏览器不支持 WebGL2 / 用户偏好减少动态时，胶囊依旧给出读数 */
+  if (!supported) return false
+
+  const doc = article.ownerDocument || document
+  fdDisposeFloorRollOverlay(entry)
+  while (fdFloorRollOverlays.size >= FD_FLOOR_ROLL_MAX) {
+    const oldest = fdFloorRollOverlays.values().next().value
+    if (!oldest) break
+    fdTeardownFloorRollOverlay(oldest)
+  }
+
+  const wrap = fdEl(doc, 'div', 'fd-floor-roll-overlay')
+  wrap.setAttribute('aria-hidden', 'true')
+  /* 楼层比视口高时，把演出夹到「当前可见的正文中间」，保证生成当下一定看得见 */
+  try {
+    const rect = typeof article.getBoundingClientRect === 'function' ? article.getBoundingClientRect() : null
+    const viewportH = (typeof window !== 'undefined' && window.innerHeight) || 0
+    if (rect && rect.height > 0 && viewportH > 0) {
+      const visibleTop = Math.max(rect.top, 0)
+      const visibleBottom = Math.min(rect.bottom, viewportH)
+      if (visibleBottom > visibleTop) {
+        const centerY = (visibleTop + visibleBottom) / 2 - rect.top
+        const clampedY = Math.max(rect.height * 0.18, Math.min(rect.height * 0.82, centerY))
+        wrap.style.top = `${Math.round(clampedY)}px`
+      }
+    }
+  } catch {}
+  const canvas = fdEl(doc, 'canvas', 'fd-3d-canvas fd-floor-roll-canvas')
+  wrap.appendChild(canvas)
+  const readout = fdEl(doc, 'div', 'fd-floor-roll-readout')
+  readout.textContent = hidden
+    ? `暗骰 · ${roll.check || '检定'} · 结果封存`
+    : `${roll.check || '检定'} · ${roll.tierLabel || '判定'} · ${roll.total}`
+  wrap.appendChild(readout)
+  article.appendChild(wrap)
+
+  let stage = null
+  try {
+    stage = new FD3D.SharedBlitDiceStage(canvas, {
+      audio: FD3D.getAudio(),
+      banner: false,
+      compact: false
+    })
+    stage.setTheme(theme)
+  } catch {
+    try { if (wrap.parentNode) wrap.parentNode.removeChild(wrap) } catch {}
+    return false
+  }
+
+  let spec = null
+  try { spec = FD3D.rollToStageSpec({ ...roll, hidden }, false) } catch {}
+  if (!spec) {
+    spec = {
+      diceSpecs: [{ meshKey: 'd20', sides: 20, targetValue: Math.max(1, Math.min(20, fdNumber(roll.total, 1))) }],
+      tier: fdTierOf(roll.tier),
+      mode: hidden ? 'hidden' : 'normal',
+      total: fdNumber(roll.total, 0),
+      checkName: roll.check || '检定'
+    }
+  }
+
+  const power = Math.max(0, Math.min(1, fdNumber(options && options.power, 0)))
+  const ov = { wrap, stage, readout, timers: [] }
+  entry.rollOverlay = ov
+  entry.rollAnimKey = key
+  fdFloorRollOverlays.add(ov)
+
+  const start = () => {
+    if (entry.rollOverlay !== ov) return
+    try {
+      stage.resize()
+      if (power > 0.1 && typeof stage.releaseButtonCharge === 'function') stage.releaseButtonCharge(spec, power)
+      else stage.throwDice(spec)
+    } catch {}
+  }
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(start)
+  else setTimeout(start, 16)
+
+  const holdMs = 2100 + Math.round(power * 420)
+  ov.timers.push(setTimeout(() => {
+    if (entry.rollOverlay !== ov) return
+    wrap.classList.add('is-fading')
+  }, holdMs))
+  ov.timers.push(setTimeout(() => {
+    if (entry.rollOverlay === ov) fdDisposeFloorRollOverlay(entry)
+  }, holdMs + 640))
+  return true
+}
+
 /* 纯原生 DOM 楼层顶栏挂载：不依赖宿主未暴露的 react-dom/client，任何浏览器页面加载即刻生效 */
 function fdMountImperativeFloorHeaders(ui) {
   if (typeof document === 'undefined' || !document.body || typeof MutationObserver !== 'function') return fdNoop
@@ -1361,6 +1505,11 @@ function fdMountImperativeFloorHeaders(ui) {
       if (!optimistic) return
       entry.record = optimistic
       entry.gotLiveStreamRecord = true
+      /* 判定结果一落定立刻在正文中央投骰，不等正文写完、也不进胶囊 */
+      const evTurn = fdNumber(data && data.turn, 0)
+      if (optimistic.roll && (!evTurn || !entry.turn || evTurn === entry.turn)) {
+        fdPlayFloorRollAnim(entry.article, entry, optimistic.roll, data.animation)
+      }
       renderEntry(entry)
     })
   }
@@ -1600,20 +1749,12 @@ function fdMountImperativeFloorHeaders(ui) {
         const spec = FD3D.rollToStageSpec({ ...roll, hidden: false }, false)
         entry.stage3d.setTheme(theme3d)
         if (spec && entry.lastStageRollKey !== rKey) {
-          const wasFirst = !entry.lastStageRollKey
           entry.lastStageRollKey = rKey
           requestAnimationFrame(() => {
             if (!entry.stage3d) return
             entry.stage3d.resize()
-            if (wasFirst && !entry.pendingChargePower && !entry.justRerolled) {
-              entry.stage3d.setStaticRoll(spec)
-            } else {
-              const pwr = entry.pendingChargePower || 0
-              entry.pendingChargePower = 0
-              entry.justRerolled = false
-              if (pwr > 0.1) entry.stage3d.releaseButtonCharge(spec, pwr)
-              else entry.stage3d.throwDice(spec)
-            }
+            /* 胶囊内只出静态骰面：投骰动画已从胶囊剥离，改由正文中央的 fd-floor-roll-overlay 播 */
+            entry.stage3d.setStaticRoll(spec)
           })
         }
       }
@@ -1658,10 +1799,9 @@ function fdMountImperativeFloorHeaders(ui) {
         bar.appendChild(prompt)
 
         const grid = fdEl(doc, 'div', 'fd-reroll-grid')
-        const triggerReroll = mode => {
+        const triggerReroll = (mode, power) => {
           if (entry.rerolling || !effectiveTurn) return
           entry.rerolling = true
-          entry.justRerolled = true
           entry.rerollHint = ''
           renderEntry(entry)
           fdCall(ui, FD_RPC.rerollTurn, { gameId: fdGetActiveGameId(), turn: effectiveTurn, mode })
@@ -1675,6 +1815,8 @@ function fdMountImperativeFloorHeaders(ui) {
                   fate: data.fate || fate,
                   rerollState: data.rerollState || { allowed: false, reason: '本轮已重投锁定（每轮限 1 次）' }
                 }
+                /* 重投同样是「结果一到就投」：中央爆发，胶囊里只更新静态骰面 */
+                fdPlayFloorRollAnim(entry.article, entry, nextRoll, entry.record.animation, { power })
                 entry.rerollHint = data.mode === 'push'
                   ? '🔥 已孤注一掷并同步配额！现在点下方「重新生成正文」即可按新结果与代价改写剧情'
                   : '✦ 已消耗 1 点命运点逆命重投！现在点下方「重新生成正文」即可按新点数改写剧情'
@@ -1705,10 +1847,7 @@ function fdMountImperativeFloorHeaders(ui) {
           fdAttachHoldChargeToDomBtn(btn, {
             mode,
             getStage: () => entry.stage3d,
-            onTrigger: (m, power) => {
-              entry.pendingChargePower = power
-              triggerReroll(m)
-            },
+            onTrigger: (m, power) => triggerReroll(m, power),
             baseLabel: titleText
           })
           return btn
@@ -1780,6 +1919,10 @@ function fdMountImperativeFloorHeaders(ui) {
         if (nextRecord.streaming === true) entry.gotLiveStreamRecord = true
         entry.justFinishedStream = false
         entry.record = nextRecord
+        /* 生成期间首次读到本轮真骰（实时事件可能先到）：同样在正文中央补播一次 */
+        if (nextRecord.roll && (nextRecord.streaming === true || entry.streaming)) {
+          fdPlayFloorRollAnim(entry.article, entry, nextRecord.roll, nextRecord.animation)
+        }
       } else if (entry.streaming && entry.gotLiveStreamRecord && entry.record) {
         /* 保持已收到的实时检定快照，避免轮询间隙闪回「定难中」 */
       } else if (!entry.streaming && entry.justFinishedStream && entry.gotLiveStreamRecord && entry.record && (entry.retryCount || 0) < 8) {
@@ -1835,6 +1978,7 @@ function fdMountImperativeFloorHeaders(ui) {
           entry.disposed = true
           if (entry.retryTimer) clearTimeout(entry.retryTimer)
           clearMountedKey(entry)
+          fdDisposeFloorRollOverlay(entry)
           try { if (entry.headSlot.parentNode) entry.headSlot.parentNode.removeChild(entry.headSlot) } catch {}
           try { if (entry.panelSlot.parentNode) entry.panelSlot.parentNode.removeChild(entry.panelSlot) } catch {}
         }
@@ -1854,6 +1998,7 @@ function fdMountImperativeFloorHeaders(ui) {
         entry = {
           head,
           host,
+          article,
           headSlot,
           panelSlot,
           turn,
@@ -1869,10 +2014,15 @@ function fdMountImperativeFloorHeaders(ui) {
           retryCount: 0,
           retryTimer: 0,
           reqSeq: 0,
+          rollOverlay: null,
+          rollAnimKey: '',
           disposed: false
         }
         entries.set(article, entry)
-        if (seedRecord) renderEntry(entry)
+        if (seedRecord) {
+          if (seedRecord.roll && streaming) fdPlayFloorRollAnim(article, entry, seedRecord.roll, seedRecord.animation)
+          renderEntry(entry)
+        }
         loadEntry(entry)
       } else {
         const prevStreaming = entry.streaming
@@ -1904,6 +2054,7 @@ function fdMountImperativeFloorHeaders(ui) {
         entry.disposed = true
         if (entry.retryTimer) clearTimeout(entry.retryTimer)
         clearMountedKey(entry)
+        fdDisposeFloorRollOverlay(entry)
         try { if (entry.headSlot.parentNode) entry.headSlot.parentNode.removeChild(entry.headSlot) } catch {}
         try { if (entry.panelSlot.parentNode) entry.panelSlot.parentNode.removeChild(entry.panelSlot) } catch {}
         entries.delete(article)
@@ -1947,9 +2098,11 @@ function fdMountImperativeFloorHeaders(ui) {
       entry.disposed = true
       if (entry.retryTimer) clearTimeout(entry.retryTimer)
       clearMountedKey(entry)
+      fdDisposeFloorRollOverlay(entry)
       try { if (entry.headSlot.parentNode) entry.headSlot.parentNode.removeChild(entry.headSlot) } catch {}
       try { if (entry.panelSlot.parentNode) entry.panelSlot.parentNode.removeChild(entry.panelSlot) } catch {}
     })
+    fdFloorRollOverlays.clear()
     entries.clear()
   }
 }

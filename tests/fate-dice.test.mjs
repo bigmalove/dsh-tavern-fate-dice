@@ -2091,3 +2091,100 @@ test('3D HDR 舞台映射、6 款 WebGL2 主题设置与手动按钮长按蓄力
   assert.equal(saved.settings.animation, 'jianxin', '后端设置白名单必须持久化 3D 动效主题值')
 })
 
+
+test('每轮生成的投骰动画：决策结果一到就在该轮正文中央播放，并与尾部胶囊彻底剥离', async () => {
+  const clientCode = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+
+  // 1) 正文中央的独立演出容器（绝对定位居中在楼层正文），不是胶囊的一部分
+  assert.match(clientCode, /fdEl\(doc, 'div', 'fd-floor-roll-overlay'\)/)
+  assert.match(clientCode, /fdEl\(doc, 'canvas', 'fd-3d-canvas fd-floor-roll-canvas'\)/)
+  assert.match(clientCode, /article\.appendChild\(wrap\)/)
+
+  // 2) 三个「结果一到」的入口都必须立刻起中央演出：实时 live-roll、流式首读、手动重投
+  assert.match(clientCode, /fdPlayFloorRollAnim\(entry\.article, entry, optimistic\.roll/)
+  assert.match(clientCode, /fdPlayFloorRollAnim\(entry\.article, entry, nextRecord\.roll/)
+  assert.match(clientCode, /fdPlayFloorRollAnim\(entry\.article, entry, nextRoll/)
+
+  // 3) 胶囊里只剩静态骰面，不再自己播投骰/蓄力爆发动画
+  assert.match(clientCode, /entry\.stage3d\.setStaticRoll\(spec\)/)
+  assert.doesNotMatch(clientCode, /entry\.stage3d\.throwDice/)
+  assert.doesNotMatch(clientCode, /entry\.stage3d\.releaseButtonCharge/)
+
+  // 4) 样式：楼层容器建立定位上下文，演出层居中且不吃指针事件，落定后淡出
+  const styles = await readFile(new URL('../src/client/styles.js', import.meta.url), 'utf8')
+  assert.match(styles, /article\.dsh-tavern-story-floor\s*\{\s*position: relative;/)
+  const overlayBlock = /\.fd-floor-roll-overlay \{([\s\S]*?)\n\}/.exec(styles)
+  assert.ok(overlayBlock, '必须存在 .fd-floor-roll-overlay 样式块')
+  assert.match(overlayBlock[1], /position: absolute;/)
+  assert.match(overlayBlock[1], /pointer-events: none;/)
+  assert.match(styles, /\.fd-floor-roll-overlay\.is-fading/)
+
+  // 5) 无 WebGL2 环境优雅降级：不插入任何演出节点，也不抛错
+  const el = {
+    className: '',
+    children: [],
+    ownerDocument: { createElement: () => ({ className: '', children: [], appendChild(c) { this.children.push(c) }, setAttribute() {} }) },
+    appendChild(child) { this.children.push(child); child.parentNode = this },
+    removeChild(child) { this.children = this.children.filter(c => c !== child) }
+  }
+  const mod = await loadClientModuleForTest()
+  const roll = { check: '通用·体魄', rule: '2d6', dice: [6, 4], total: 10 + 2, tier: 'success', tierLabel: '成功', rolledAt: 1700000000000 }
+  assert.equal(mod.__test.fdFloorRollAnimKey(roll), '1700000000000:12:6,4:success:')
+  const played = mod.__test.fdPlayFloorRollAnim(el, { disposed: false }, roll, 'bounce')
+  assert.equal(played, false, '没有 WebGL2 时中央演出必须静默跳过')
+  assert.equal(el.children.length, 0, '没有 WebGL2 时不得往楼层里插入空演出节点')
+})
+
+async function loadClientModuleForTest () {
+  const clientCode = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+  let loadedModule = null
+  const makeEl = tag => ({
+    tagName: String(tag || '').toUpperCase(),
+    className: '',
+    style: {},
+    children: [],
+    parentNode: null,
+    setAttribute() {},
+    appendChild(child) { this.children.push(child); child.parentNode = this; return child },
+    removeChild(child) { this.children = this.children.filter(c => c !== child); child.parentNode = null; return child },
+    querySelector: () => null,
+    addEventListener() {},
+    getBoundingClientRect: () => ({ width: 0, height: 0, left: 0, top: 0 })
+  })
+  const body = makeEl('body')
+  const fakeDoc = {
+    head: makeEl('head'),
+    body,
+    getElementById: () => null,
+    createElement: tag => makeEl(tag),
+    querySelectorAll: () => []
+  }
+  const fakeReact = {
+    Fragment: Symbol('Fragment'),
+    createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+    useState: init => [typeof init === 'function' ? init() : init, () => {}],
+    useEffect: () => {},
+    useMemo: fn => fn(),
+    useRef: val => ({ current: val })
+  }
+  const sandbox = {
+    window: {
+      __ModuleLoader__: { load(def) { loadedModule = def } },
+      localStorage: { getItem: () => null, setItem: () => {} },
+      devicePixelRatio: 1
+    },
+    document: fakeDoc,
+    MutationObserver: class { observe() {} disconnect() {} },
+    requestAnimationFrame: fn => setTimeout(fn, 0),
+    cancelAnimationFrame: id => clearTimeout(id),
+    setTimeout,
+    clearTimeout,
+    performance: { now: () => Date.now() },
+    console
+  }
+  vm.runInNewContext(clientCode, sandbox, { filename: 'client.js' })
+  return loadedModule.factory(mod => {
+    if (mod === 'react') return fakeReact
+    throw new Error('host exposes no ' + mod)
+  })
+}
