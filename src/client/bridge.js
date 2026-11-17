@@ -146,7 +146,7 @@ function fdNumber(value, fallback) {
   return Number.isFinite(num) ? num : fallback
 }
 
-/* 仅保留 6 项检定参数；其余历史字段一律丢弃 */
+/* 仅保留白名单内的检定参数（含发前暂停闸门）；其余历史字段一律丢弃 */
 function fdNormalizeSettings(raw) {
   const src = raw && typeof raw === 'object' ? raw : {}
   const settings = { ...FD_DEFAULT_SETTINGS }
@@ -159,6 +159,10 @@ function fdNormalizeSettings(raw) {
   if (typeof src.damperLinkage === 'boolean') settings.damperLinkage = src.damperLinkage
   if (typeof src.allowHeuristicFallback === 'boolean') settings.allowHeuristicFallback = src.allowHeuristicFallback
   else if (typeof src.heuristicFallback === 'boolean') settings.allowHeuristicFallback = src.heuristicFallback
+  if (typeof src.preSendPause === 'boolean') settings.preSendPause = src.preSendPause
+  if (FD_PRE_SEND_SCOPE_OPTIONS.some(o => o.value === src.preSendScope)) settings.preSendScope = src.preSendScope
+  const waitSec = fdNumber(src.preSendWait, settings.preSendWait)
+  if (FD_PRE_SEND_WAIT_OPTIONS.some(o => Number(o.value) === Math.round(waitSec))) settings.preSendWait = Math.round(waitSec)
   return settings
 }
 

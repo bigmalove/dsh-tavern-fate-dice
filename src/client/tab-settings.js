@@ -106,5 +106,55 @@ function SettingsTab(props) {
       },
       h(FdSwitch, { on: Boolean(settings.allowHeuristicFallback), label: '无决策模型时使用本地关键词兜底', onChange: next => apply({ allowHeuristicFallback: next }) }))),
 
+    h(FdSection, {
+      title: '✦ 失败时暂停发送',
+      note: '默认关闭 · 开启后失败先问你要不要逆命',
+      help: [
+        '开启后，每一次自动检定只要掷出「失败」或「大失败」，正文请求会先被按住不发送：屏幕中央弹出「骰已落定 · 正文还没发送」小窗，让你当场决定 ✦ 消耗 1 点命运点逆命重投、🔥 零消耗孤注一掷，或者接受这次的坏运气照常推进。',
+        '和楼层胶囊里的重投按钮不同：胶囊是正文写完之后再重投（要再点一次重新生成），这里是发送前就拦下来，所以重投结果会直接决定这一段正文怎么写，不会白写一段再推翻。',
+        '暂停期间宿主请求处在等待状态，最多等 10~24 秒（见下方「暂停等待时长」）；倒计时结束会自动按原骰点发送，绝不会把正文卡死。',
+        '暗骰（感知/洞察类）不参与暂停：提前拦截会剧透成败，所以仍按原有规则只在正文里给主观感受。每轮最多重投 1 次的硬限制不变，孤注一掷失败照样会恶化为大失败。'
+      ].join('\n')
+    },
+    h(FdRow, {
+      plain: true,
+      title: '失败 / 大失败时暂停正文发送',
+      sub: '发送前弹窗询问：✦ 逆命重投 / 🔥 孤注一掷 / 接受命运',
+      help: [
+        '开启后，检定结果一落定为失败或大失败，就把这一轮的正文请求按住，先弹窗问你怎么处理：掷骰面板里那颗失败骰已经看得见，但字还没开始写。',
+        '选择「✦ 逆命重投」会立刻消耗 1 点命运点重新掷骰，新结果直接进入这一次正文生成；选择「🔥 孤注一掷」不耗命运点，但失败会强制恶化成大失败、翻盘成功也要背负挂彩代价；选择「接受命运」则按原骰点照常生成。',
+        '适合不想让「一段失败的正文」先写出来再推翻的玩法；如果你更喜欢读完整段再决定，保持关闭即可，楼层胶囊里的重投按钮随时可用。'
+      ].join('\n')
+    },
+    h(FdSwitch, { on: Boolean(settings.preSendPause), label: '失败 / 大失败时暂停正文发送', onChange: next => apply({ preSendPause: next }) })),
+
+    settings.preSendPause
+      ? h(FdField, {
+        label: '暂停触发范围',
+        help: [
+          '「失败与大失败都暂停」：只要没打出成功或代价成功，就停下来问你一次，最容易接住坏运气。',
+          '「仅大失败时暂停」：普通失败照常推进，只有骰子最狠的那种翻车才拦下来，正文节奏更连贯、打断更少。',
+          '代价成功算成功，不会触发暂停。'
+        ].join('\n')
+      },
+      h(FdSelect, { value: settings.preSendScope, options: FD_PRE_SEND_SCOPE_OPTIONS, onChange: value => apply({ preSendScope: value }) }))
+      : null,
+
+    settings.preSendPause
+      ? h(FdField, {
+        label: '暂停等待时长',
+        help: [
+          '弹窗最多等你多久，倒计时归零就按原骰点自动发送，不会让正文一直卡着。',
+          '宿主给插件组装提示词的时间上限是 30 秒，所以这里最长只到 24 秒，剩下的时间留给「重投后重新判难 + 阻尼器同步」。',
+          '拿不定主意时按默认 18 秒即可；手速党选 10 秒，边想剧情边决定选 24 秒。'
+        ].join('\n')
+      },
+      h(FdSelect, {
+        value: String(settings.preSendWait || 18),
+        options: FD_PRE_SEND_WAIT_OPTIONS,
+        onChange: value => apply({ preSendWait: Number(value) || 18 })
+      }))
+      : null),
+
     h('div', { className: 'fd-hint' }, '以上改动即时生效并自动保存，无需手动提交；面板重新打开或切换对话都会保留。'))
 }

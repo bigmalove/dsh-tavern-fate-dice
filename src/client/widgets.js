@@ -204,7 +204,7 @@ function LiveRollBanner(props) {
         ? (isReused ? '已复用本轮首次暗骰结果（轻触偷看）' : '结果已暗中注入本轮裁定（轻触偷看）')
         : (isReused ? `已锁定复用首次真骰 · ${formatRollSummary(roll, true)}` : `${formatRollSummary(roll, true)} · 轻触收起`)
 
-  const use3DBanner = Boolean(FD3D.canUseWebGL2() && FD3D.resolveTheme(animation, (roll && roll.rerollMeta && roll.rerollMeta.mode) || 'normal', hidden))
+  const use3DBanner = Boolean(FD3D.canUseWebGL2() && FD3D.resolveTheme(animation, FD3D.resolveThemeMode(roll, hidden), hidden))
 
   return h('div', {
     className: 'fd-root',
@@ -1380,7 +1380,7 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
 
   const pref = String(animationPref || fdGetCachedAnimationPref() || 'bounce')
   const hidden = Boolean(roll.hidden)
-  const mode = (roll.rerollMeta && roll.rerollMeta.mode) || 'normal'
+  const mode = FD3D.resolveThemeMode(roll, hidden)
   let theme = null
   let supported = false
   try {
@@ -1402,18 +1402,22 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
 
   const wrap = fdEl(doc, 'div', 'fd-floor-roll-overlay')
   wrap.setAttribute('aria-hidden', 'true')
-  /* 楼层比视口高时，把演出夹到「当前可见的正文中间」，保证生成当下一定看得见 */
+  /* 楼层比视口高时，把演出夹到「当前可见的正文中间」，保证生成当下一定看得见；
+   * 同时按演出实际半高上下收边，短楼层也不会把光幕顶出正文。 */
   try {
     const rect = typeof article.getBoundingClientRect === 'function' ? article.getBoundingClientRect() : null
     const viewportH = (typeof window !== 'undefined' && window.innerHeight) || 0
     if (rect && rect.height > 0 && viewportH > 0) {
       const visibleTop = Math.max(rect.top, 0)
       const visibleBottom = Math.min(rect.bottom, viewportH)
-      if (visibleBottom > visibleTop) {
-        const centerY = (visibleTop + visibleBottom) / 2 - rect.top
-        const clampedY = Math.max(rect.height * 0.18, Math.min(rect.height * 0.82, centerY))
-        wrap.style.top = `${Math.round(clampedY)}px`
-      }
+      const centerY = visibleBottom > visibleTop
+        ? (visibleTop + visibleBottom) / 2 - rect.top
+        : rect.height / 2
+      const half = Math.min(Number(wrap.offsetHeight) / 2 || 0, rect.height / 2)
+      const clampedY = half > 0
+        ? Math.max(half, Math.min(rect.height - half, centerY))
+        : Math.max(rect.height * 0.18, Math.min(rect.height * 0.82, centerY))
+      wrap.style.top = `${Math.round(clampedY)}px`
     }
   } catch {}
   const canvas = fdEl(doc, 'canvas', 'fd-3d-canvas fd-floor-roll-canvas')
@@ -1440,6 +1444,10 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
 
   let spec = null
   try { spec = FD3D.rollToStageSpec({ ...roll, hidden }, false) } catch {}
+  if (spec) {
+    /* 正文中央的演出走慢镜：投骰动作拉长到 ~2.9s，落定后再定格展示结果 */
+    spec = { ...spec, pace: 0.7 }
+  }
   if (!spec) {
     spec = {
       diceSpecs: [{ meshKey: 'd20', sides: 20, targetValue: Math.max(1, Math.min(20, fdNumber(roll.total, 1))) }],
@@ -1464,17 +1472,23 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
       else stage.throwDice(spec)
     } catch {}
   }
+  /* 入场光幕完全展开后再按最终布局尺寸对齐一次画布，保证 3D 画面锐利 */
+  ov.timers.push(setTimeout(() => {
+    if (entry.rollOverlay !== ov) return
+    try { stage.resize() } catch {}
+  }, 680))
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(start)
   else setTimeout(start, 16)
 
-  const holdMs = 2100 + Math.round(power * 420)
+  /* 演出节奏：入场光幕 0.62s → 慢镜投骰 ~2.9s → 落定定格 ~2.5s → 6000ms 起 0.78s 收束离场 */
+  const holdMs = 6000 + Math.round(power * 600)
   ov.timers.push(setTimeout(() => {
     if (entry.rollOverlay !== ov) return
     wrap.classList.add('is-fading')
   }, holdMs))
   ov.timers.push(setTimeout(() => {
     if (entry.rollOverlay === ov) fdDisposeFloorRollOverlay(entry)
-  }, holdMs + 640))
+  }, holdMs + 820))
   return true
 }
 
@@ -1728,8 +1742,13 @@ function fdMountImperativeFloorHeaders(ui) {
 
     if (roll) {
       const animPref = (record && record.animation) || fdGetCachedAnimationPref()
-      const rerollMode = roll.rerollMeta && roll.rerollMeta.mode
-      const theme3d = FD3D.resolveTheme(animPref, rerollMode || 'normal', false)
+      // 胶囊里只出静态骰面：智能切换（bounce）下重投专属皮肤不外带，静止展示一律回默认星穹
+      const animPrefStr = String(animPref || 'bounce')
+      const theme3d = FD3D.resolveTheme(
+        animPref,
+        animPrefStr === 'bounce' ? 'normal' : FD3D.resolveThemeMode(roll, false),
+        false
+      )
       if (theme3d && FD3D.canUseWebGL2()) {
         if (!entry.stageWrapEl || !entry.stage3d) {
           const wrap = fdEl(doc, 'div', 'fd-3d-stage is-compact')

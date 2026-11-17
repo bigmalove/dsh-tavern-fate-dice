@@ -40,6 +40,7 @@ const FD_RPC = {
   status: 'fate-dice:status',
   readTurn: 'fate-dice:read-turn',
   rerollTurn: 'fate-dice:reroll-turn',
+  gateResolve: 'fate-dice:gate-resolve',
   workbench: 'fate-dice:workbench',
   freeRoll: 'fate-dice:free-roll',
   saveSettings: 'fate-dice:save-global-settings',
@@ -79,6 +80,17 @@ const FD_ANIMATION_OPTIONS = [
   { value: 'none', label: '关闭动画（直接显示结果）' }
 ]
 
+const FD_PRE_SEND_SCOPE_OPTIONS = [
+  { value: 'both', label: '失败与大失败都暂停（推荐）' },
+  { value: 'fumble', label: '仅大失败时暂停' }
+]
+
+const FD_PRE_SEND_WAIT_OPTIONS = [
+  { value: '10', label: '10 秒（手快党）' },
+  { value: '18', label: '18 秒（默认）' },
+  { value: '24', label: '24 秒（慢慢想）' }
+]
+
 const FD_DEFAULT_SETTINGS = {
   sensitivity: 'normal',
   alwaysRoll: false,
@@ -86,7 +98,10 @@ const FD_DEFAULT_SETTINGS = {
   autoHidden: true,
   damperLinkage: true,
   allowHeuristicFallback: false,
-  animation: 'bounce'
+  animation: 'bounce',
+  preSendPause: false,
+  preSendScope: 'both',
+  preSendWait: 18
 }
 
 function fdUid(prefix) {
@@ -1353,31 +1368,62 @@ const CSS_TEXT = `
 }
 
 /* ---------- 每轮对话正文中央的投骰演出（与尾部胶囊彻底剥离） ----------
- * 判定结果一到（决策模型给出 roll）就在该楼层正文中间起一枚临时 3D 舞台播完整投骰，
- * 落定后淡出销毁；尾部胶囊只负责常驻读数、详情与重投，不再自动播任何动画。 */
+ * 判定结果一到（决策模型给出 roll）就在该楼层正文中间、占满整列宽度地起一枚临时
+ * 3D 舞台：横向光幕向两侧拉开入场 → 慢镜投掷 → 落定定格 → 收束成中线离场。
+ * 尾部胶囊只负责常驻读数、详情与重投，不再自动播任何动画。 */
 article.dsh-tavern-story-floor {
   position: relative;
 }
 .fd-floor-roll-overlay {
   position: absolute;
-  left: 50%;
+  left: 0;
+  right: 0;
   top: 50%;
-  width: min(560px, 92%);
-  height: clamp(190px, 30vh, 300px);
-  transform: translate(-50%, -50%);
+  width: auto;
+  height: clamp(280px, 48vh, 480px);
+  max-height: calc(100% - 20px);
+  transform: translateY(-50%);
   pointer-events: none;
   z-index: 6;
-  border-radius: 20px;
-  background: radial-gradient(58% 60% at 50% 48%, rgba(6, 8, 14, 0.42) 0%, rgba(6, 8, 14, 0.18) 56%, rgba(6, 8, 14, 0) 100%);
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 26px 64px -20px rgba(4, 6, 12, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  background:
+    radial-gradient(115% 92% at 50% 48%, rgba(6, 8, 14, 0.40) 0%, rgba(6, 8, 14, 0.18) 52%, rgba(6, 8, 14, 0) 78%),
+    linear-gradient(180deg, rgba(6, 8, 14, 0.10), rgba(6, 8, 14, 0));
   opacity: 0;
-  animation: fd-floor-roll-in 0.2s ease forwards;
-  transition: opacity 0.42s ease;
+  animation: fd-floor-roll-in 0.62s cubic-bezier(0.16, 0.84, 0.24, 1) forwards;
   contain: layout paint;
-  will-change: opacity;
+  will-change: opacity, transform, filter;
+}
+/* 上下两道横向光幕：入场从中心向两侧拉开，离场反向收拢 */
+.fd-floor-roll-overlay::before,
+.fd-floor-roll-overlay::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(245, 185, 66, 0.55) 22%, rgba(214, 226, 255, 0.68) 50%, rgba(168, 120, 255, 0.45) 78%, transparent 100%);
+  transform: scaleX(0.12);
+  opacity: 0;
+  z-index: 2;
+  animation: fd-floor-roll-rule 0.9s cubic-bezier(0.16, 0.84, 0.24, 1) 0.06s forwards;
+}
+.fd-floor-roll-overlay::before {
+  top: 0;
+}
+.fd-floor-roll-overlay::after {
+  bottom: 0;
+  animation-delay: 0.14s;
 }
 .fd-floor-roll-overlay.is-fading {
-  opacity: 0 !important;
-  animation: none;
+  animation: fd-floor-roll-out 0.78s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.fd-floor-roll-overlay.is-fading::before,
+.fd-floor-roll-overlay.is-fading::after {
+  animation: fd-floor-roll-rule-out 0.6s ease forwards;
 }
 .fd-floor-roll-canvas {
   width: 100%;
@@ -1386,38 +1432,209 @@ article.dsh-tavern-story-floor {
 .fd-floor-roll-readout {
   position: absolute;
   left: 50%;
-  bottom: 8px;
+  bottom: 12px;
   transform: translate(-50%, 0);
   max-width: 92%;
-  padding: 2px 10px;
+  padding: 3px 13px;
   border-radius: 999px;
-  background: rgba(8, 10, 16, 0.44);
-  color: rgba(255, 246, 232, 0.94);
-  font: 650 12px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-  letter-spacing: 0.03em;
+  background: rgba(8, 10, 16, 0.46);
+  color: rgba(255, 246, 232, 0.96);
+  font: 650 12.5px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0.05em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   text-shadow: 0 1px 5px rgba(0, 0, 0, 0.72);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 6px 18px rgba(0, 0, 0, 0.32);
+  z-index: 3;
   opacity: 0;
-  animation: fd-floor-roll-readout-in 0.34s ease 0.86s forwards;
+  animation: fd-floor-roll-readout-in 0.5s cubic-bezier(0.16, 0.84, 0.24, 1) 2.75s forwards;
 }
 @keyframes fd-floor-roll-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  0% { opacity: 0; transform: translateY(-50%) scaleX(0.34) scaleY(0.78); filter: blur(16px) brightness(1.9); }
+  55% { opacity: 1; filter: blur(0) brightness(1.12); }
+  100% { opacity: 1; transform: translateY(-50%) scaleX(1) scaleY(1); filter: blur(0) brightness(1); }
+}
+@keyframes fd-floor-roll-out {
+  0% { opacity: 1; transform: translateY(-50%) scaleX(1) scaleY(1); filter: blur(0) brightness(1); }
+  32% { opacity: 0.94; transform: translateY(-50%) scaleX(1.015) scaleY(1.02); filter: blur(0) brightness(1.22); }
+  100% { opacity: 0; transform: translateY(-50%) scaleX(1.04) scaleY(0.16); filter: blur(10px) brightness(1.4); }
+}
+@keyframes fd-floor-roll-rule {
+  from { opacity: 0; transform: scaleX(0.12); }
+  to { opacity: 0.85; transform: scaleX(1); }
+}
+@keyframes fd-floor-roll-rule-out {
+  from { opacity: 0.85; transform: scaleX(1); }
+  to { opacity: 0; transform: scaleX(0.2); }
 }
 @keyframes fd-floor-roll-readout-in {
-  from { opacity: 0; transform: translate(-50%, 4px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
+  0% { opacity: 0; transform: translate(-50%, 6px); }
+  60% { opacity: 1; transform: translate(-50%, -2px); }
+  100% { opacity: 1; transform: translate(-50%, 0); }
 }
 @media (max-width: 640px) {
   .fd-floor-roll-overlay {
-    width: 94%;
-    height: clamp(150px, 24vh, 220px);
-    border-radius: 16px;
+    height: clamp(200px, 36vh, 300px);
+    border-radius: 14px;
   }
-  .fd-floor-roll-readout { font-size: 11px; }
+  .fd-floor-roll-readout {
+    font-size: 11px;
+    bottom: 8px;
+  }
 }
+@media (prefers-reduced-motion: reduce) {
+  .fd-floor-roll-overlay {
+    display: none;
+  }
+}
+
+/* ---------- 发前暂停闸门：失败 / 大失败时的逆命弹窗 ----------
+ * 宿主在发送正文前把请求按住，这里盖一层固定覆层接管选择；
+ * 深浅主题都靠 --dsw 背景层 + currentColor 混合，不写死底色。 */
+.fd-presend-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(14, 14, 22, 0.52);
+  backdrop-filter: blur(3px);
+  animation: fd-presend-fade 0.14s ease-out;
+}
+.fd-presend-overlay[hidden] { display: none !important; }
+.fd-presend-card {
+  width: min(440px, 100%);
+  max-height: min(78vh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 16px 16px 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in oklab, currentColor 16%, transparent);
+  background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base, #fff));
+  color: var(--dsh-ink, inherit);
+  font-size: 13px;
+  line-height: 1.55;
+  box-shadow: 0 20px 48px rgba(16, 16, 26, 0.3), 0 2px 10px rgba(16, 16, 26, 0.12);
+  animation: fd-rise 0.18s ease-out;
+}
+.fd-presend-card.is-failure { border-left: 3px solid var(--fd-warn, #b9772f); }
+.fd-presend-card.is-fumble { border-left: 3px solid var(--fd-bad, #bb5044); }
+.fd-presend-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fd-presend-seal {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid color-mix(in oklab, currentColor 18%, transparent);
+}
+.fd-presend-seal.is-failure {
+  color: var(--fd-warn, #b9772f);
+  background: color-mix(in oklab, var(--fd-warn, #b9772f) 14%, transparent);
+}
+.fd-presend-seal.is-fumble {
+  color: var(--fd-bad, #bb5044);
+  background: color-mix(in oklab, var(--fd-bad, #bb5044) 16%, transparent);
+}
+.fd-presend-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 13.5px;
+}
+.fd-presend-count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  opacity: 0.72;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in oklab, currentColor 8%, transparent);
+}
+.fd-presend-check { font-weight: 600; }
+.fd-presend-dice {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in oklab, currentColor 6%, transparent);
+  border: 1px solid color-mix(in oklab, currentColor 10%, transparent);
+  word-break: break-word;
+}
+.fd-presend-fate { font-size: 12px; opacity: 0.82; }
+.fd-presend-notice {
+  font-size: 12px;
+  color: var(--fd-bad, #bb5044);
+  background: color-mix(in oklab, var(--fd-bad, #bb5044) 10%, transparent);
+  border-radius: 8px;
+  padding: 5px 8px;
+}
+.fd-presend-notice[hidden] { display: none !important; }
+.fd-presend-actions {
+  display: grid;
+  gap: 7px;
+  margin-top: 2px;
+}
+.fd-presend-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in oklab, currentColor 16%, transparent);
+  background: color-mix(in oklab, currentColor 7%, transparent);
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease, opacity 0.12s ease;
+}
+.fd-presend-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.fd-presend-btn:disabled { opacity: 0.55; cursor: progress; }
+.fd-presend-btn.is-fate {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, #7b5cc4, #4a3a86);
+  box-shadow: 0 6px 16px rgba(96, 70, 168, 0.28);
+}
+.fd-presend-btn.is-push {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, #d0872f, #a1452a);
+  box-shadow: 0 6px 16px rgba(178, 92, 40, 0.26);
+}
+.fd-presend-btn.is-accept {
+  background: transparent;
+  opacity: 0.86;
+  font-weight: 600;
+}
+.fd-presend-hint { font-size: 11.5px; opacity: 0.66; text-align: center; }
+@media (max-width: 480px) {
+  .fd-presend-card { width: 100%; padding: 14px 13px 12px; }
+  .fd-presend-title { font-size: 13px; }
+}
+@keyframes fd-presend-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fd-floor-roll-overlay { display: none; }
 }
@@ -1678,7 +1895,7 @@ function fdNumber(value, fallback) {
   return Number.isFinite(num) ? num : fallback
 }
 
-/* 仅保留 6 项检定参数；其余历史字段一律丢弃 */
+/* 仅保留白名单内的检定参数（含发前暂停闸门）；其余历史字段一律丢弃 */
 function fdNormalizeSettings(raw) {
   const src = raw && typeof raw === 'object' ? raw : {}
   const settings = { ...FD_DEFAULT_SETTINGS }
@@ -1691,6 +1908,10 @@ function fdNormalizeSettings(raw) {
   if (typeof src.damperLinkage === 'boolean') settings.damperLinkage = src.damperLinkage
   if (typeof src.allowHeuristicFallback === 'boolean') settings.allowHeuristicFallback = src.allowHeuristicFallback
   else if (typeof src.heuristicFallback === 'boolean') settings.allowHeuristicFallback = src.heuristicFallback
+  if (typeof src.preSendPause === 'boolean') settings.preSendPause = src.preSendPause
+  if (FD_PRE_SEND_SCOPE_OPTIONS.some(o => o.value === src.preSendScope)) settings.preSendScope = src.preSendScope
+  const waitSec = fdNumber(src.preSendWait, settings.preSendWait)
+  if (FD_PRE_SEND_WAIT_OPTIONS.some(o => Number(o.value) === Math.round(waitSec))) settings.preSendWait = Math.round(waitSec)
   return settings
 }
 
@@ -5130,6 +5351,7 @@ class CinematicDiceStage {
     this.rollTime = 0
     this.simTime = 0
     this.maxSimDuration = 1.2
+    this.simPace = 1
     this.climax = 0
     this.bulletTimeAmount = 0
     this.bulletSoundPlayed = false
@@ -5249,6 +5471,7 @@ class CinematicDiceStage {
    */
   startButtonCharge(modeHint) {
     if (this.charging) return
+    this.themeBeforeCharge = this.theme
     if (modeHint === 'fate') this.setTheme(NEXTGEN_THEMES[1])
     else if (modeHint === 'push') this.setTheme(NEXTGEN_THEMES[2])
     // 若舞台当前尚无骰子，先放置一颗默认多面体参与蓄力旋涡演出
@@ -5284,6 +5507,11 @@ class CinematicDiceStage {
       d.settled = true
     }
     this.settled = true
+    // 无损取消：蓄力期间临时换上的逆命/熔炉主题必须还原，否则这张卡片会一直停留在熔炉皮肤
+    if (this.themeBeforeCharge) {
+      this.theme = this.themeBeforeCharge
+      this.themeBeforeCharge = null
+    }
     this.wake()
   }
 
@@ -5294,6 +5522,7 @@ class CinematicDiceStage {
     const power = Math.max(0, Math.min(1, Number(charge01) || 0))
     this.charging = false
     this.buttonCharging = false
+    this.themeBeforeCharge = null
     if (this.audio) this.audio.stopChargeHum()
     const enriched = { ...(spec || {}) }
     if (power > 0.12) {
@@ -5473,6 +5702,8 @@ class CinematicDiceStage {
    * 触发一次高精度真骰投掷！
    */
   throwDice(spec = {}) {
+    /* pace < 1 = 慢镜投骰（正文中央的演出用它拉长整套投掷动作；胶囊/蓄力默认 1 保持原速） */
+    this.simPace = Math.max(0.45, Math.min(1.6, Number(spec.pace) || 1))
     const diceSpecs = spec.diceSpecs && spec.diceSpecs.length
       ? spec.diceSpecs
       : [{ meshKey: 'd20', sides: 20, targetValue: 20 }]
@@ -6064,7 +6295,7 @@ class CinematicDiceStage {
       const timeScale = 1.0 - this.bulletTimeAmount * 0.76 // 最低放慢至 0.24x 超清折射慢镜！
       const simDelta = rawDt * timeScale
       this.rollTime += rawDt
-      this.simTime += simDelta
+      this.simTime += simDelta * (this.simPace || 1)
 
       const fStep = this.simTime / SIM_DT
       const s0 = Math.min(MAX_STEPS - 2, Math.max(0, fStep | 0))
@@ -6410,6 +6641,15 @@ class CinematicDiceStage {
     return r
   }
 
+  // 复用锁定骰（重新生成 / 编辑正文后重放同一楼层）不是一次新的重投：
+  // 主题必须归位默认，否则 🔥孤注 的焚天熔炉会跟着锁定结果，复现在该楼层之后的每一次重放上。
+  function resolveThemeMode(roll, hidden) {
+    if (hidden) return "hidden"
+    if (roll && roll.reusedOnRegenerate) return "normal"
+    const rerollMode = roll && roll.rerollMeta && roll.rerollMeta.mode
+    return rerollMode === "fate" || rerollMode === "push" ? rerollMode : "normal"
+  }
+
   function resolveTheme(animationPref, mode, hidden) {
     const pref = String(animationPref || "bounce")
     if (pref === "none" || pref === "compact") return null
@@ -6473,8 +6713,7 @@ class CinematicDiceStage {
 
     const rule = String(roll.rule || "2d6")
     const rawDice = Array.isArray(roll.dice) && roll.dice.length ? roll.dice : [Number(roll.rawTotal ?? roll.total) || 1]
-    const rerollMode = roll.rerollMeta && roll.rerollMeta.mode
-    const mode = roll.hidden ? "hidden" : (rerollMode === "fate" ? "fate" : rerollMode === "push" ? "push" : "normal")
+    const mode = resolveThemeMode(roll, roll.hidden)
     const tier = fdTierOf(roll.tier)
 
     if (rule === "d100") {
@@ -6531,11 +6770,17 @@ class CinematicDiceStage {
 
     resize() {
       if (!this.displayCanvas) return
-      const rect = typeof this.displayCanvas.getBoundingClientRect === "function"
-        ? this.displayCanvas.getBoundingClientRect()
-        : null
-      const w = Math.max(130, Math.round((rect && rect.width) || this.displayCanvas.clientWidth || (this.bucket === "banner" ? 210 : 420)))
-      const h = Math.max(64, Math.round((rect && rect.height) || this.displayCanvas.clientHeight || (this.bucket === "banner" ? 76 : 152)))
+      /* 布局尺寸优先（clientWidth/Height）：入场 scaleX 变换期间 getBoundingClientRect 会缩水，
+       * 用它算分辨率会把 3D 画面糊掉，所以变换动画期间也必须按布局宽高开画布。 */
+      const layoutW = Number(this.displayCanvas.clientWidth) || 0
+      const layoutH = Number(this.displayCanvas.clientHeight) || 0
+      const rect = layoutW && layoutH
+        ? null
+        : (typeof this.displayCanvas.getBoundingClientRect === "function"
+          ? this.displayCanvas.getBoundingClientRect()
+          : null)
+      const w = Math.max(130, Math.round(layoutW || (rect && rect.width) || (this.bucket === "banner" ? 210 : 420)))
+      const h = Math.max(64, Math.round(layoutH || (rect && rect.height) || (this.bucket === "banner" ? 76 : 152)))
       const dpr = Math.min((typeof window !== "undefined" && window.devicePixelRatio) || 1, 2.0)
 
       this.cssW = w
@@ -6669,6 +6914,7 @@ class CinematicDiceStage {
     canUseWebGL2,
     getAudio,
     resolveTheme,
+    resolveThemeMode,
     rollToStageSpec,
     SharedBlitDiceStage,
     NEXTGEN_THEMES
@@ -6885,8 +7131,7 @@ function Fd3DDiceStage(props) {
 
   const animPref = animation || fdGetCachedAnimationPref()
   const hidden = Boolean(roll && roll.hidden && !revealed)
-  const rerollMode = roll && roll.rerollMeta && roll.rerollMeta.mode
-  const mode = hidden ? "hidden" : (rerollMode || "normal")
+  const mode = FD3D.resolveThemeMode(roll, hidden)
   const theme = FD3D.resolveTheme(animPref, mode, hidden)
   const supported = Boolean(theme && roll && FD3D.canUseWebGL2())
 
@@ -6924,7 +7169,6 @@ function Fd3DDiceStage(props) {
   useEffect(() => {
     const stg = internalStageRef.current
     if (!supported || !stg || !roll || !theme) return
-    stg.setTheme(theme)
     const spec = FD3D.rollToStageSpec(roll, Boolean(isFree))
     if (!spec) return
     if (revealed && spec.mode === "hidden") {
@@ -6934,8 +7178,14 @@ function Fd3DDiceStage(props) {
     const isFirst = lastRollKeyRef.current === ""
     const changed = lastRollKeyRef.current !== rollKey
     lastRollKeyRef.current = rollKey
+    const isStaticPlate = isFirst && !animateOnMount
 
-    if (isFirst && !animateOnMount) {
+    // 智能切换（bounce）下，✦逆命 / 🔥孤注 的专属皮肤只属于投掷那一刻：
+    // 重开楼层、复用锁定骰这类静态摆盘一律回到默认星穹，避免熔炉/棱镜皮肤长期滞留在卡片上
+    const pref = String(animPref || "bounce")
+    const staticTheme = pref === "bounce" ? FD3D.resolveTheme(pref, hidden ? "hidden" : "normal", hidden) : null
+    stg.setTheme((isStaticPlate && staticTheme) || theme)
+    if (isStaticPlate) {
       stg.setStaticRoll(spec)
     } else if (changed) {
       const power = stg.pendingChargePower || 0
@@ -6943,7 +7193,7 @@ function Fd3DDiceStage(props) {
       if (power > 0.1) stg.releaseButtonCharge(spec, power)
       else stg.throwDice(spec)
     }
-  }, [supported, rollKey, revealed, animPref])
+  }, [supported, rollKey, revealed, animPref, theme ? theme.id : ""])
 
   if (!supported) return null
 
@@ -7163,7 +7413,7 @@ function LiveRollBanner(props) {
         ? (isReused ? '已复用本轮首次暗骰结果（轻触偷看）' : '结果已暗中注入本轮裁定（轻触偷看）')
         : (isReused ? `已锁定复用首次真骰 · ${formatRollSummary(roll, true)}` : `${formatRollSummary(roll, true)} · 轻触收起`)
 
-  const use3DBanner = Boolean(FD3D.canUseWebGL2() && FD3D.resolveTheme(animation, (roll && roll.rerollMeta && roll.rerollMeta.mode) || 'normal', hidden))
+  const use3DBanner = Boolean(FD3D.canUseWebGL2() && FD3D.resolveTheme(animation, FD3D.resolveThemeMode(roll, hidden), hidden))
 
   return h('div', {
     className: 'fd-root',
@@ -8339,7 +8589,7 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
 
   const pref = String(animationPref || fdGetCachedAnimationPref() || 'bounce')
   const hidden = Boolean(roll.hidden)
-  const mode = (roll.rerollMeta && roll.rerollMeta.mode) || 'normal'
+  const mode = FD3D.resolveThemeMode(roll, hidden)
   let theme = null
   let supported = false
   try {
@@ -8361,18 +8611,22 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
 
   const wrap = fdEl(doc, 'div', 'fd-floor-roll-overlay')
   wrap.setAttribute('aria-hidden', 'true')
-  /* 楼层比视口高时，把演出夹到「当前可见的正文中间」，保证生成当下一定看得见 */
+  /* 楼层比视口高时，把演出夹到「当前可见的正文中间」，保证生成当下一定看得见；
+   * 同时按演出实际半高上下收边，短楼层也不会把光幕顶出正文。 */
   try {
     const rect = typeof article.getBoundingClientRect === 'function' ? article.getBoundingClientRect() : null
     const viewportH = (typeof window !== 'undefined' && window.innerHeight) || 0
     if (rect && rect.height > 0 && viewportH > 0) {
       const visibleTop = Math.max(rect.top, 0)
       const visibleBottom = Math.min(rect.bottom, viewportH)
-      if (visibleBottom > visibleTop) {
-        const centerY = (visibleTop + visibleBottom) / 2 - rect.top
-        const clampedY = Math.max(rect.height * 0.18, Math.min(rect.height * 0.82, centerY))
-        wrap.style.top = `${Math.round(clampedY)}px`
-      }
+      const centerY = visibleBottom > visibleTop
+        ? (visibleTop + visibleBottom) / 2 - rect.top
+        : rect.height / 2
+      const half = Math.min(Number(wrap.offsetHeight) / 2 || 0, rect.height / 2)
+      const clampedY = half > 0
+        ? Math.max(half, Math.min(rect.height - half, centerY))
+        : Math.max(rect.height * 0.18, Math.min(rect.height * 0.82, centerY))
+      wrap.style.top = `${Math.round(clampedY)}px`
     }
   } catch {}
   const canvas = fdEl(doc, 'canvas', 'fd-3d-canvas fd-floor-roll-canvas')
@@ -8399,6 +8653,10 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
 
   let spec = null
   try { spec = FD3D.rollToStageSpec({ ...roll, hidden }, false) } catch {}
+  if (spec) {
+    /* 正文中央的演出走慢镜：投骰动作拉长到 ~2.9s，落定后再定格展示结果 */
+    spec = { ...spec, pace: 0.7 }
+  }
   if (!spec) {
     spec = {
       diceSpecs: [{ meshKey: 'd20', sides: 20, targetValue: Math.max(1, Math.min(20, fdNumber(roll.total, 1))) }],
@@ -8423,17 +8681,23 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
       else stage.throwDice(spec)
     } catch {}
   }
+  /* 入场光幕完全展开后再按最终布局尺寸对齐一次画布，保证 3D 画面锐利 */
+  ov.timers.push(setTimeout(() => {
+    if (entry.rollOverlay !== ov) return
+    try { stage.resize() } catch {}
+  }, 680))
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(start)
   else setTimeout(start, 16)
 
-  const holdMs = 2100 + Math.round(power * 420)
+  /* 演出节奏：入场光幕 0.62s → 慢镜投骰 ~2.9s → 落定定格 ~2.5s → 6000ms 起 0.78s 收束离场 */
+  const holdMs = 6000 + Math.round(power * 600)
   ov.timers.push(setTimeout(() => {
     if (entry.rollOverlay !== ov) return
     wrap.classList.add('is-fading')
   }, holdMs))
   ov.timers.push(setTimeout(() => {
     if (entry.rollOverlay === ov) fdDisposeFloorRollOverlay(entry)
-  }, holdMs + 640))
+  }, holdMs + 820))
   return true
 }
 
@@ -8687,8 +8951,13 @@ function fdMountImperativeFloorHeaders(ui) {
 
     if (roll) {
       const animPref = (record && record.animation) || fdGetCachedAnimationPref()
-      const rerollMode = roll.rerollMeta && roll.rerollMeta.mode
-      const theme3d = FD3D.resolveTheme(animPref, rerollMode || 'normal', false)
+      // 胶囊里只出静态骰面：智能切换（bounce）下重投专属皮肤不外带，静止展示一律回默认星穹
+      const animPrefStr = String(animPref || 'bounce')
+      const theme3d = FD3D.resolveTheme(
+        animPref,
+        animPrefStr === 'bounce' ? 'normal' : FD3D.resolveThemeMode(roll, false),
+        false
+      )
       if (theme3d && FD3D.canUseWebGL2()) {
         if (!entry.stageWrapEl || !entry.stage3d) {
           const wrap = fdEl(doc, 'div', 'fd-3d-stage is-compact')
@@ -9131,6 +9400,314 @@ function StatusDiceSection(props) {
           h('span', null, `第 ${item.turn} 轮 · ${item.check}`),
           h('span', { className: 'fd-hint' }, item.hidden ? '暗骰' : `${item.total} ${item.tierLabel}`))))
       : h('div', { className: 'fd-hint' }, '本局尚无检定记录，发送一轮行动后开始记录'))
+}
+
+/* ===== src/client/pre-send-gate.js ===== */
+/* ------------------------------------------------------------------ *
+ * pre-send-gate.js —— 「失败 / 大失败时暂停发送」的发前逆命弹窗
+ *
+ * 宿主在正文请求组装阶段（turnSection）把真骰压住不发送，并广播 pre-send-gate；
+ * 这里用纯 DOM 覆层（不依赖 React 树、不受流式布局影响）把选择权交给玩家：
+ *   ✦ 逆命重投（消耗 1 点命运点） / 🔥 孤注一掷（0 点，败则恶化大失败） / 接受命运
+ * 选择经 fate-dice:gate-resolve 回传，宿主完成重投后清空状态，正文才真正发送。
+ * ------------------------------------------------------------------ */
+
+const FD_GATE_STATE = 'pre-send-gate'
+const FD_GATE_ACTION_LABEL = {
+  fate: '✦ 正在逆命重投…',
+  push: '🔥 正在孤注一掷…',
+  accept: '已记录：照常按原骰点发送正文…'
+}
+
+const fdPreSendGate = {
+  ui: null,
+  root: null,
+  ticker: 0,
+  payload: null,
+  gameId: '',
+  busy: false,
+  closeTimer: 0,
+  offWatch: fdNoop,
+  offGame: fdNoop,
+  disposed: false
+}
+
+function fdGateEl(tag, className, text) {
+  const node = document.createElement(tag)
+  if (className) node.className = className
+  if (text !== undefined && text !== null) node.textContent = String(text)
+  return node
+}
+
+function fdGateSecondsLeft(payload) {
+  const waitMs = Math.max(1000, fdNumber(payload && payload.waitMs, 18000))
+  const deadlineAt = fdNumber(payload && payload.deadlineAt, 0)
+  if (!deadlineAt) return Math.ceil(waitMs / 1000)
+  const left = Math.max(0, Math.min(waitMs, deadlineAt - Date.now()))
+  return Math.max(0, Math.ceil(left / 1000))
+}
+
+function fdGateDiceText(payload) {
+  if (!payload) return ''
+  const rule = String(payload.rule || '').trim()
+  const dice = Array.isArray(payload.dice) && payload.dice.length ? `[${payload.dice.join('+')}]` : ''
+  const modifier = fdNumber(payload.modifier, 0)
+  const modText = modifier ? (modifier > 0 ? ` +${modifier}` : ` ${modifier}`) : ''
+  const total = payload.total === undefined || payload.total === null ? '' : ` = ${payload.total}`
+  const target = payload.target === undefined || payload.target === null ? '' : ` vs 目标 ${payload.target}`
+  return [rule, dice + modText + total + target].filter(Boolean).join(' · ')
+}
+
+function fdGateBodyText(payload) {
+  if (!payload) return ''
+  const check = [payload.skillName, payload.check].filter(Boolean)[0] || '行动检定'
+  const difficulty = String(payload.difficultyLabel || '').trim()
+  return difficulty ? `${check} · ${difficulty}` : check
+}
+
+function fdEnsureGateRoot() {
+  if (typeof document === 'undefined' || !document.body) return null
+  const existing = fdPreSendGate.root
+  if (existing && existing.isConnected) return existing
+  const root = document.createElement('div')
+  root.className = 'fd-presend-overlay'
+  root.setAttribute('role', 'dialog')
+  root.setAttribute('aria-modal', 'true')
+  root.setAttribute('aria-live', 'polite')
+  root.setAttribute('aria-label', '检定失败：是否逆命重投')
+  root.hidden = true
+  document.body.appendChild(root)
+  fdPreSendGate.root = root
+  return root
+}
+
+function fdStopGateTicker() {
+  if (!fdPreSendGate.ticker) return
+  clearInterval(fdPreSendGate.ticker)
+  fdPreSendGate.ticker = 0
+}
+
+function fdStartGateTicker() {
+  fdStopGateTicker()
+  fdPreSendGate.ticker = setInterval(() => fdTickGateCountdown(), 250)
+}
+
+function fdGateCountNode() {
+  const root = fdPreSendGate.root
+  if (!root) return null
+  return root.querySelector('.fd-presend-count')
+}
+
+function fdTickGateCountdown() {
+  const payload = fdPreSendGate.payload
+  if (!payload) {
+    fdStopGateTicker()
+    return
+  }
+  const node = fdGateCountNode()
+  if (!node) return
+  const left = fdGateSecondsLeft(payload)
+  node.textContent = left > 0 ? `${left}s 后自动接受` : '超时：正在按原骰点发送…'
+  if (left > 0) return
+  fdStopGateTicker()
+  /* 兜底：宿主已收口或请求被中断时状态可能不再更新，超时后自行收掉覆层，绝不把界面钉死 */
+  if (!fdPreSendGate.closeTimer) {
+    fdPreSendGate.closeTimer = setTimeout(() => {
+      fdPreSendGate.closeTimer = 0
+      if (fdPreSendGate.payload && fdGateSecondsLeft(fdPreSendGate.payload) <= 0) fdClearPreSendGate()
+    }, 2500)
+  }
+}
+
+function fdSetGateBusy(busy, action) {
+  const root = fdPreSendGate.root
+  if (!root) return
+  root.querySelectorAll('.fd-presend-btn').forEach(btn => {
+    btn.disabled = Boolean(busy)
+  })
+  const hint = root.querySelector('.fd-presend-hint')
+  if (hint && busy) hint.textContent = FD_GATE_ACTION_LABEL[action] || '正在提交选择…'
+}
+
+function fdSetGateNotice(text) {
+  const root = fdPreSendGate.root
+  if (!root) return
+  const notice = root.querySelector('.fd-presend-notice')
+  if (!notice) return
+  notice.textContent = String(text || '')
+  notice.hidden = !text
+}
+
+async function fdResolvePreSendGate(action) {
+  const payload = fdPreSendGate.payload
+  const ui = fdPreSendGate.ui
+  if (!payload || !payload.gateId || fdPreSendGate.busy) return
+  fdPreSendGate.busy = true
+  fdSetGateBusy(true, action)
+  fdSetGateNotice('')
+  const res = await fdCall(ui, FD_RPC.gateResolve, {
+    gameId: payload.gameId || fdPreSendGate.gameId,
+    gateId: payload.gateId,
+    action
+  })
+  const data = res && res.ok ? res.data : null
+  if (!data || data.ok !== true) {
+    fdPreSendGate.busy = false
+    fdSetGateBusy(false, '')
+    fdSetGateNotice((data && data.error) || (res && res.error) || '宿主未响应这次选择，请再点一次')
+  }
+}
+
+function fdClearPreSendGate() {
+  fdStopGateTicker()
+  if (fdPreSendGate.closeTimer) {
+    clearTimeout(fdPreSendGate.closeTimer)
+    fdPreSendGate.closeTimer = 0
+  }
+  fdPreSendGate.payload = null
+  fdPreSendGate.busy = false
+  const root = fdPreSendGate.root
+  if (!root) return
+  root.hidden = true
+  root.textContent = ''
+}
+
+function fdRenderPreSendGate(payload) {
+  const root = fdEnsureGateRoot()
+  if (!root) return
+  if (!payload || !payload.gateId) {
+    fdClearPreSendGate()
+    return
+  }
+  fdPreSendGate.payload = payload
+  fdPreSendGate.busy = false
+  root.hidden = false
+  root.textContent = ''
+
+  const isFumble = payload.tier === 'fumble'
+  const tone = isFumble ? 'is-fumble' : 'is-failure'
+  const card = fdGateEl('div', 'fd-presend-card ' + tone)
+
+  const top = fdGateEl('div', 'fd-presend-top')
+  top.appendChild(fdGateEl('span', 'fd-presend-seal ' + tone, isFumble ? '💀 大失败' : '⚠️ 失败'))
+  top.appendChild(fdGateEl('span', 'fd-presend-title', '骰已落定 · 正文还没发送'))
+  const count = fdGateEl('span', 'fd-presend-count', '')
+  top.appendChild(count)
+  card.appendChild(top)
+
+  card.appendChild(fdGateEl('div', 'fd-presend-check', fdGateBodyText(payload)))
+  const diceText = fdGateDiceText(payload)
+  if (diceText) card.appendChild(fdGateEl('div', 'fd-presend-dice', diceText))
+
+  const fate = payload.fate && typeof payload.fate === 'object' ? payload.fate : {}
+  const points = Math.max(0, fdNumber(fate.points, 0))
+  const maxPoints = Math.max(1, fdNumber(fate.max, 3))
+  card.appendChild(fdGateEl(
+    'div',
+    'fd-presend-fate',
+    `✦ 命运点 ${points}/${maxPoints} · 本轮限重投 1 次 · 拒绝重投将按失败推进正文`
+  ))
+
+  const notice = fdGateEl('div', 'fd-presend-notice', payload.error || '')
+  if (!payload.error) notice.hidden = true
+  card.appendChild(notice)
+
+  const actions = fdGateEl('div', 'fd-presend-actions')
+  const modes = Array.isArray(payload.modes) && payload.modes.length ? payload.modes : ['push']
+  if (modes.includes('fate')) {
+    const fateBtn = fdGateEl('button', 'fd-presend-btn is-fate', '✦ 逆命重投 · -1 命运点')
+    fateBtn.type = 'button'
+    fateBtn.title = `消耗 1 点命运点稳妥重掷（当前 ${points}/${maxPoints}）`
+    fateBtn.addEventListener('click', () => fdResolvePreSendGate('fate'))
+    actions.appendChild(fateBtn)
+  } else if (points <= 0) {
+    const fateBtn = fdGateEl('button', 'fd-presend-btn is-fate', '✦ 命运点已耗尽')
+    fateBtn.type = 'button'
+    fateBtn.disabled = true
+    actions.appendChild(fateBtn)
+  }
+  if (modes.includes('push')) {
+    const pushBtn = fdGateEl('button', 'fd-presend-btn is-push', '🔥 孤注一掷 · 0 点')
+    pushBtn.type = 'button'
+    pushBtn.title = '不耗命运点强行一搏：失败会恶化为大失败，成功也要背负挂彩/透支代价'
+    pushBtn.addEventListener('click', () => fdResolvePreSendGate('push'))
+    actions.appendChild(pushBtn)
+  }
+  const acceptBtn = fdGateEl('button', 'fd-presend-btn is-accept', '接受命运 · 直接生成')
+  acceptBtn.type = 'button'
+  acceptBtn.title = '按本次失败结果照常推进正文，之后仍可在楼层胶囊里重投'
+  acceptBtn.addEventListener('click', () => fdResolvePreSendGate('accept'))
+  actions.appendChild(acceptBtn)
+  card.appendChild(actions)
+
+  card.appendChild(fdGateEl('div', 'fd-presend-hint', '正文请求被按住，你选完才发送'))
+  root.appendChild(card)
+
+  fdStartGateTicker()
+  fdTickGateCountdown()
+  const primary = actions.querySelector('.fd-presend-btn.is-fate') || actions.querySelector('.fd-presend-btn.is-push')
+  if (primary && typeof primary.focus === 'function') {
+    try { primary.focus({ preventScroll: true }) } catch {}
+  }
+}
+
+function fdApplyPreSendGatePayload(data, gameId) {
+  if (fdPreSendGate.disposed) return
+  if (!data || !data.gateId) {
+    if (fdPreSendGate.payload && (!gameId || !fdPreSendGate.payload.gameId || fdPreSendGate.payload.gameId === gameId)) {
+      fdClearPreSendGate()
+    }
+    return
+  }
+  if (fdPreSendGate.payload && fdPreSendGate.payload.gateId === data.gateId) {
+    /* 同一道闸门的重复广播（宿主重投过程中的补充信息）：只刷新计数与提示 */
+    fdPreSendGate.payload = { ...fdPreSendGate.payload, ...data }
+    if (!fdPreSendGate.busy) fdTickGateCountdown()
+    return
+  }
+  fdRenderPreSendGate(data)
+}
+
+function fdMountPreSendGate(ui) {
+  if (typeof document === 'undefined' || !document.body) return fdNoop
+  if (fdPreSendGate.ui && fdPreSendGate.ui !== ui) {
+    /* 重新挂载：清掉上一份监听与覆层 */
+    try { fdPreSendGate.offWatch() } catch {}
+    try { fdPreSendGate.offGame() } catch {}
+    fdClearPreSendGate()
+  }
+  const root = fdEnsureGateRoot()
+  if (!root) return fdNoop
+  fdPreSendGate.disposed = false
+  fdPreSendGate.ui = ui
+
+  const bindGame = nextId => {
+    const id = String(nextId || '').trim()
+    if (!id || id === fdPreSendGate.gameId || fdPreSendGate.disposed) return
+    try { fdPreSendGate.offWatch() } catch {}
+    fdPreSendGate.gameId = id
+    fdPreSendGate.offWatch = fdWatch(ui, id, FD_GATE_STATE, data => fdApplyPreSendGatePayload(data, id))
+  }
+
+  fdPreSendGate.offGame = fdSubscribeActiveGameId(bindGame)
+  const active = fdGetActiveGameId()
+  if (active) bindGame(active)
+  else fdCall(ui, FD_RPC.status, {}).then(res => {
+    const nextActive = res && res.ok && res.data && (res.data.activeGameId || res.data.gameId)
+    if (nextActive) fdNoteActiveGameId(String(nextActive))
+  }).catch(() => {})
+
+  return () => {
+    fdPreSendGate.disposed = true
+    try { fdPreSendGate.offWatch() } catch {}
+    try { fdPreSendGate.offGame() } catch {}
+    fdPreSendGate.offWatch = fdNoop
+    fdPreSendGate.offGame = fdNoop
+    fdClearPreSendGate()
+    const node = fdPreSendGate.root
+    fdPreSendGate.root = null
+    if (node && node.parentNode) node.parentNode.removeChild(node)
+  }
 }
 
 /* ===== src/client/workbench.js ===== */
@@ -9948,6 +10525,56 @@ function SettingsTab(props) {
       },
       h(FdSwitch, { on: Boolean(settings.allowHeuristicFallback), label: '无决策模型时使用本地关键词兜底', onChange: next => apply({ allowHeuristicFallback: next }) }))),
 
+    h(FdSection, {
+      title: '✦ 失败时暂停发送',
+      note: '默认关闭 · 开启后失败先问你要不要逆命',
+      help: [
+        '开启后，每一次自动检定只要掷出「失败」或「大失败」，正文请求会先被按住不发送：屏幕中央弹出「骰已落定 · 正文还没发送」小窗，让你当场决定 ✦ 消耗 1 点命运点逆命重投、🔥 零消耗孤注一掷，或者接受这次的坏运气照常推进。',
+        '和楼层胶囊里的重投按钮不同：胶囊是正文写完之后再重投（要再点一次重新生成），这里是发送前就拦下来，所以重投结果会直接决定这一段正文怎么写，不会白写一段再推翻。',
+        '暂停期间宿主请求处在等待状态，最多等 10~24 秒（见下方「暂停等待时长」）；倒计时结束会自动按原骰点发送，绝不会把正文卡死。',
+        '暗骰（感知/洞察类）不参与暂停：提前拦截会剧透成败，所以仍按原有规则只在正文里给主观感受。每轮最多重投 1 次的硬限制不变，孤注一掷失败照样会恶化为大失败。'
+      ].join('\n')
+    },
+    h(FdRow, {
+      plain: true,
+      title: '失败 / 大失败时暂停正文发送',
+      sub: '发送前弹窗询问：✦ 逆命重投 / 🔥 孤注一掷 / 接受命运',
+      help: [
+        '开启后，检定结果一落定为失败或大失败，就把这一轮的正文请求按住，先弹窗问你怎么处理：掷骰面板里那颗失败骰已经看得见，但字还没开始写。',
+        '选择「✦ 逆命重投」会立刻消耗 1 点命运点重新掷骰，新结果直接进入这一次正文生成；选择「🔥 孤注一掷」不耗命运点，但失败会强制恶化成大失败、翻盘成功也要背负挂彩代价；选择「接受命运」则按原骰点照常生成。',
+        '适合不想让「一段失败的正文」先写出来再推翻的玩法；如果你更喜欢读完整段再决定，保持关闭即可，楼层胶囊里的重投按钮随时可用。'
+      ].join('\n')
+    },
+    h(FdSwitch, { on: Boolean(settings.preSendPause), label: '失败 / 大失败时暂停正文发送', onChange: next => apply({ preSendPause: next }) })),
+
+    settings.preSendPause
+      ? h(FdField, {
+        label: '暂停触发范围',
+        help: [
+          '「失败与大失败都暂停」：只要没打出成功或代价成功，就停下来问你一次，最容易接住坏运气。',
+          '「仅大失败时暂停」：普通失败照常推进，只有骰子最狠的那种翻车才拦下来，正文节奏更连贯、打断更少。',
+          '代价成功算成功，不会触发暂停。'
+        ].join('\n')
+      },
+      h(FdSelect, { value: settings.preSendScope, options: FD_PRE_SEND_SCOPE_OPTIONS, onChange: value => apply({ preSendScope: value }) }))
+      : null,
+
+    settings.preSendPause
+      ? h(FdField, {
+        label: '暂停等待时长',
+        help: [
+          '弹窗最多等你多久，倒计时归零就按原骰点自动发送，不会让正文一直卡着。',
+          '宿主给插件组装提示词的时间上限是 30 秒，所以这里最长只到 24 秒，剩下的时间留给「重投后重新判难 + 阻尼器同步」。',
+          '拿不定主意时按默认 18 秒即可；手速党选 10 秒，边想剧情边决定选 24 秒。'
+        ].join('\n')
+      },
+      h(FdSelect, {
+        value: String(settings.preSendWait || 18),
+        options: FD_PRE_SEND_WAIT_OPTIONS,
+        onChange: value => apply({ preSendWait: Number(value) || 18 })
+      }))
+      : null),
+
     h('div', { className: 'fd-hint' }, '以上改动即时生效并自动保存，无需手动提交；面板重新打开或切换对话都会保留。'))
 }
 
@@ -10002,6 +10629,9 @@ function apply(ctx) {
   }
   fdRegisterSafely(ctx, 'fate-dice: floor header pill', () => fdMountImperativeFloorHeaders(ui))
 
+  // 0.5) 发前暂停闸门：失败 / 大失败时先按住正文请求，弹窗让玩家决定命运点重投或接受
+  fdRegisterSafely(ctx, 'fate-dice: pre-send reroll gate', () => fdMountPreSendGate(ui))
+
   // 1) 右侧栏「插件」卡片区：常驻双页签极简工作台（桌面与手机竖屏单列自适应）
   fdRegisterSafely(ctx, 'fate-dice: workbench panel', () => ui.registerPanel({
     id: FD_PANEL_ID,
@@ -10042,7 +10672,7 @@ exports.name = FD_PLUGIN_ID
 exports.inject = ['tavernUi']
 exports.apply = apply
 exports.WorkbenchPanel = WorkbenchPanel
-exports.__test = { DieGlyph, formatRollSummary, LiveRollBanner, ComposerLiveDock, ComposerDicePopover, fdResolveFloorToneAndLabel, fdComputePopoverStyle, TurnRollCapsule, FdRerollActionBox, StoryFloorDiceItem, fdExtractFloorTurn, fdMountImperativeFloorHeaders, fdNoteActiveGameId, fdGetActiveGameId, WorkbenchPanel, ChecksTab, DecisionModelGuideBanner, FdHelp, SettingsTab, FD3D, Fd3DDiceStage, useFdHoldCharge, fdAttachHoldChargeToDomBtn, fdPlayFloorRollAnim, fdDisposeFloorRollOverlay, fdFloorRollAnimKey }
+exports.__test = { fdMountPreSendGate, fdRenderPreSendGate, fdClearPreSendGate, fdGateSecondsLeft, fdGateDiceText, DieGlyph, formatRollSummary, LiveRollBanner, ComposerLiveDock, ComposerDicePopover, fdResolveFloorToneAndLabel, fdComputePopoverStyle, TurnRollCapsule, FdRerollActionBox, StoryFloorDiceItem, fdExtractFloorTurn, fdMountImperativeFloorHeaders, fdNoteActiveGameId, fdGetActiveGameId, WorkbenchPanel, ChecksTab, DecisionModelGuideBanner, FdHelp, SettingsTab, FD3D, Fd3DDiceStage, useFdHoldCharge, fdAttachHoldChargeToDomBtn, fdPlayFloorRollAnim, fdDisposeFloorRollOverlay, fdFloorRollAnimKey }
     return module.exports
   }
 })

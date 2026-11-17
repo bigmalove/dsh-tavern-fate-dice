@@ -1247,31 +1247,62 @@ const CSS_TEXT = `
 }
 
 /* ---------- 每轮对话正文中央的投骰演出（与尾部胶囊彻底剥离） ----------
- * 判定结果一到（决策模型给出 roll）就在该楼层正文中间起一枚临时 3D 舞台播完整投骰，
- * 落定后淡出销毁；尾部胶囊只负责常驻读数、详情与重投，不再自动播任何动画。 */
+ * 判定结果一到（决策模型给出 roll）就在该楼层正文中间、占满整列宽度地起一枚临时
+ * 3D 舞台：横向光幕向两侧拉开入场 → 慢镜投掷 → 落定定格 → 收束成中线离场。
+ * 尾部胶囊只负责常驻读数、详情与重投，不再自动播任何动画。 */
 article.dsh-tavern-story-floor {
   position: relative;
 }
 .fd-floor-roll-overlay {
   position: absolute;
-  left: 50%;
+  left: 0;
+  right: 0;
   top: 50%;
-  width: min(560px, 92%);
-  height: clamp(190px, 30vh, 300px);
-  transform: translate(-50%, -50%);
+  width: auto;
+  height: clamp(280px, 48vh, 480px);
+  max-height: calc(100% - 20px);
+  transform: translateY(-50%);
   pointer-events: none;
   z-index: 6;
-  border-radius: 20px;
-  background: radial-gradient(58% 60% at 50% 48%, rgba(6, 8, 14, 0.42) 0%, rgba(6, 8, 14, 0.18) 56%, rgba(6, 8, 14, 0) 100%);
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 26px 64px -20px rgba(4, 6, 12, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  background:
+    radial-gradient(115% 92% at 50% 48%, rgba(6, 8, 14, 0.40) 0%, rgba(6, 8, 14, 0.18) 52%, rgba(6, 8, 14, 0) 78%),
+    linear-gradient(180deg, rgba(6, 8, 14, 0.10), rgba(6, 8, 14, 0));
   opacity: 0;
-  animation: fd-floor-roll-in 0.2s ease forwards;
-  transition: opacity 0.42s ease;
+  animation: fd-floor-roll-in 0.62s cubic-bezier(0.16, 0.84, 0.24, 1) forwards;
   contain: layout paint;
-  will-change: opacity;
+  will-change: opacity, transform, filter;
+}
+/* 上下两道横向光幕：入场从中心向两侧拉开，离场反向收拢 */
+.fd-floor-roll-overlay::before,
+.fd-floor-roll-overlay::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(245, 185, 66, 0.55) 22%, rgba(214, 226, 255, 0.68) 50%, rgba(168, 120, 255, 0.45) 78%, transparent 100%);
+  transform: scaleX(0.12);
+  opacity: 0;
+  z-index: 2;
+  animation: fd-floor-roll-rule 0.9s cubic-bezier(0.16, 0.84, 0.24, 1) 0.06s forwards;
+}
+.fd-floor-roll-overlay::before {
+  top: 0;
+}
+.fd-floor-roll-overlay::after {
+  bottom: 0;
+  animation-delay: 0.14s;
 }
 .fd-floor-roll-overlay.is-fading {
-  opacity: 0 !important;
-  animation: none;
+  animation: fd-floor-roll-out 0.78s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.fd-floor-roll-overlay.is-fading::before,
+.fd-floor-roll-overlay.is-fading::after {
+  animation: fd-floor-roll-rule-out 0.6s ease forwards;
 }
 .fd-floor-roll-canvas {
   width: 100%;
@@ -1280,38 +1311,209 @@ article.dsh-tavern-story-floor {
 .fd-floor-roll-readout {
   position: absolute;
   left: 50%;
-  bottom: 8px;
+  bottom: 12px;
   transform: translate(-50%, 0);
   max-width: 92%;
-  padding: 2px 10px;
+  padding: 3px 13px;
   border-radius: 999px;
-  background: rgba(8, 10, 16, 0.44);
-  color: rgba(255, 246, 232, 0.94);
-  font: 650 12px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-  letter-spacing: 0.03em;
+  background: rgba(8, 10, 16, 0.46);
+  color: rgba(255, 246, 232, 0.96);
+  font: 650 12.5px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0.05em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   text-shadow: 0 1px 5px rgba(0, 0, 0, 0.72);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 6px 18px rgba(0, 0, 0, 0.32);
+  z-index: 3;
   opacity: 0;
-  animation: fd-floor-roll-readout-in 0.34s ease 0.86s forwards;
+  animation: fd-floor-roll-readout-in 0.5s cubic-bezier(0.16, 0.84, 0.24, 1) 2.75s forwards;
 }
 @keyframes fd-floor-roll-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  0% { opacity: 0; transform: translateY(-50%) scaleX(0.34) scaleY(0.78); filter: blur(16px) brightness(1.9); }
+  55% { opacity: 1; filter: blur(0) brightness(1.12); }
+  100% { opacity: 1; transform: translateY(-50%) scaleX(1) scaleY(1); filter: blur(0) brightness(1); }
+}
+@keyframes fd-floor-roll-out {
+  0% { opacity: 1; transform: translateY(-50%) scaleX(1) scaleY(1); filter: blur(0) brightness(1); }
+  32% { opacity: 0.94; transform: translateY(-50%) scaleX(1.015) scaleY(1.02); filter: blur(0) brightness(1.22); }
+  100% { opacity: 0; transform: translateY(-50%) scaleX(1.04) scaleY(0.16); filter: blur(10px) brightness(1.4); }
+}
+@keyframes fd-floor-roll-rule {
+  from { opacity: 0; transform: scaleX(0.12); }
+  to { opacity: 0.85; transform: scaleX(1); }
+}
+@keyframes fd-floor-roll-rule-out {
+  from { opacity: 0.85; transform: scaleX(1); }
+  to { opacity: 0; transform: scaleX(0.2); }
 }
 @keyframes fd-floor-roll-readout-in {
-  from { opacity: 0; transform: translate(-50%, 4px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
+  0% { opacity: 0; transform: translate(-50%, 6px); }
+  60% { opacity: 1; transform: translate(-50%, -2px); }
+  100% { opacity: 1; transform: translate(-50%, 0); }
 }
 @media (max-width: 640px) {
   .fd-floor-roll-overlay {
-    width: 94%;
-    height: clamp(150px, 24vh, 220px);
-    border-radius: 16px;
+    height: clamp(200px, 36vh, 300px);
+    border-radius: 14px;
   }
-  .fd-floor-roll-readout { font-size: 11px; }
+  .fd-floor-roll-readout {
+    font-size: 11px;
+    bottom: 8px;
+  }
 }
+@media (prefers-reduced-motion: reduce) {
+  .fd-floor-roll-overlay {
+    display: none;
+  }
+}
+
+/* ---------- 发前暂停闸门：失败 / 大失败时的逆命弹窗 ----------
+ * 宿主在发送正文前把请求按住，这里盖一层固定覆层接管选择；
+ * 深浅主题都靠 --dsw 背景层 + currentColor 混合，不写死底色。 */
+.fd-presend-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(14, 14, 22, 0.52);
+  backdrop-filter: blur(3px);
+  animation: fd-presend-fade 0.14s ease-out;
+}
+.fd-presend-overlay[hidden] { display: none !important; }
+.fd-presend-card {
+  width: min(440px, 100%);
+  max-height: min(78vh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 16px 16px 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in oklab, currentColor 16%, transparent);
+  background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base, #fff));
+  color: var(--dsh-ink, inherit);
+  font-size: 13px;
+  line-height: 1.55;
+  box-shadow: 0 20px 48px rgba(16, 16, 26, 0.3), 0 2px 10px rgba(16, 16, 26, 0.12);
+  animation: fd-rise 0.18s ease-out;
+}
+.fd-presend-card.is-failure { border-left: 3px solid var(--fd-warn, #b9772f); }
+.fd-presend-card.is-fumble { border-left: 3px solid var(--fd-bad, #bb5044); }
+.fd-presend-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fd-presend-seal {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid color-mix(in oklab, currentColor 18%, transparent);
+}
+.fd-presend-seal.is-failure {
+  color: var(--fd-warn, #b9772f);
+  background: color-mix(in oklab, var(--fd-warn, #b9772f) 14%, transparent);
+}
+.fd-presend-seal.is-fumble {
+  color: var(--fd-bad, #bb5044);
+  background: color-mix(in oklab, var(--fd-bad, #bb5044) 16%, transparent);
+}
+.fd-presend-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 13.5px;
+}
+.fd-presend-count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  opacity: 0.72;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in oklab, currentColor 8%, transparent);
+}
+.fd-presend-check { font-weight: 600; }
+.fd-presend-dice {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in oklab, currentColor 6%, transparent);
+  border: 1px solid color-mix(in oklab, currentColor 10%, transparent);
+  word-break: break-word;
+}
+.fd-presend-fate { font-size: 12px; opacity: 0.82; }
+.fd-presend-notice {
+  font-size: 12px;
+  color: var(--fd-bad, #bb5044);
+  background: color-mix(in oklab, var(--fd-bad, #bb5044) 10%, transparent);
+  border-radius: 8px;
+  padding: 5px 8px;
+}
+.fd-presend-notice[hidden] { display: none !important; }
+.fd-presend-actions {
+  display: grid;
+  gap: 7px;
+  margin-top: 2px;
+}
+.fd-presend-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in oklab, currentColor 16%, transparent);
+  background: color-mix(in oklab, currentColor 7%, transparent);
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease, opacity 0.12s ease;
+}
+.fd-presend-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.fd-presend-btn:disabled { opacity: 0.55; cursor: progress; }
+.fd-presend-btn.is-fate {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, #7b5cc4, #4a3a86);
+  box-shadow: 0 6px 16px rgba(96, 70, 168, 0.28);
+}
+.fd-presend-btn.is-push {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, #d0872f, #a1452a);
+  box-shadow: 0 6px 16px rgba(178, 92, 40, 0.26);
+}
+.fd-presend-btn.is-accept {
+  background: transparent;
+  opacity: 0.86;
+  font-weight: 600;
+}
+.fd-presend-hint { font-size: 11.5px; opacity: 0.66; text-align: center; }
+@media (max-width: 480px) {
+  .fd-presend-card { width: 100%; padding: 14px 13px 12px; }
+  .fd-presend-title { font-size: 13px; }
+}
+@keyframes fd-presend-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fd-floor-roll-overlay { display: none; }
 }

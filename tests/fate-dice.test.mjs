@@ -1661,7 +1661,8 @@ test('输入栏悬浮骰子胶囊与弹出裁定小窗：latest 读取、胶囊�
   const latestRecord = await handlers.get('fate-dice:read-turn')({ gameId: 'g-dock', turn: 0, latest: true })
   assert.equal(latestRecord.turn, 5)
   assert.ok(latestRecord.roll)
-  assert.equal(latestRecord.fate.points, 2)
+  /* 真骰是加密随机：掷出大失败时结算会回充 +1 命运点（2 → 3），两种都合法 */
+  assert.equal(latestRecord.fate.points, latestRecord.roll.tier === 'fumble' ? 3 : 2)
 
   // 3) 校验浏览器端悬浮胶囊渲染、Portal 弹窗与按钮回调
   const clientCode = await readFile(new URL('../client.js', import.meta.url), 'utf8')
@@ -1999,6 +2000,17 @@ test('3D HDR 舞台映射、6 款 WebGL2 主题设置与手动按钮长按蓄力
   assert.equal(FD3D.resolveTheme('cyber', 'fate', false).id, 'cyber')
   assert.equal(FD3D.resolveTheme('compact', 'normal', false), null)
   assert.equal(FD3D.resolveTheme('none', 'normal', false), null)
+
+  // 复用锁定骰（重新生成 / 编辑正文后重放同一楼层）不是一次新的重投：
+  // 主题必须归位默认，否则 🔥孤注 的焚天熔炉会跟着锁定结果一直复现在后续重放上
+  assert.equal(FD3D.resolveThemeMode({ rerollMeta: { mode: 'push' } }, false), 'push')
+  assert.equal(FD3D.resolveThemeMode({ rerollMeta: { mode: 'push' }, reusedOnRegenerate: true }, false), 'normal')
+  assert.equal(FD3D.resolveThemeMode({ rerollMeta: { mode: 'fate' }, reusedOnRegenerate: true }, false), 'normal')
+  assert.equal(FD3D.resolveThemeMode({ hidden: true }, true), 'hidden')
+  assert.equal(
+    FD3D.resolveTheme('bounce', FD3D.resolveThemeMode({ rerollMeta: { mode: 'push' }, reusedOnRegenerate: true }, false), false).id,
+    'astral'
+  )
 
   // 骰制到 3D 多面体规格转换（含 d100 -> 00+0）
   const d100Spec = FD3D.rollToStageSpec({ rule: 'd100', dice: [100], total: 100, tier: 'fumble', check: '克苏鲁神话' }, false)

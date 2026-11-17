@@ -13,6 +13,7 @@ export const CLIENT_SOURCE_FILES = [
   'uikit.js',
   'dice-3d.js',
   'widgets.js',
+  'pre-send-gate.js',
   'workbench.js',
   'tab-checks.js',
   'tab-settings.js',

@@ -17,6 +17,7 @@ const FD_RPC = {
   status: 'fate-dice:status',
   readTurn: 'fate-dice:read-turn',
   rerollTurn: 'fate-dice:reroll-turn',
+  gateResolve: 'fate-dice:gate-resolve',
   workbench: 'fate-dice:workbench',
   freeRoll: 'fate-dice:free-roll',
   saveSettings: 'fate-dice:save-global-settings',
@@ -56,6 +57,17 @@ const FD_ANIMATION_OPTIONS = [
   { value: 'none', label: '关闭动画（直接显示结果）' }
 ]
 
+const FD_PRE_SEND_SCOPE_OPTIONS = [
+  { value: 'both', label: '失败与大失败都暂停（推荐）' },
+  { value: 'fumble', label: '仅大失败时暂停' }
+]
+
+const FD_PRE_SEND_WAIT_OPTIONS = [
+  { value: '10', label: '10 秒（手快党）' },
+  { value: '18', label: '18 秒（默认）' },
+  { value: '24', label: '24 秒（慢慢想）' }
+]
+
 const FD_DEFAULT_SETTINGS = {
   sensitivity: 'normal',
   alwaysRoll: false,
@@ -63,7 +75,10 @@ const FD_DEFAULT_SETTINGS = {
   autoHidden: true,
   damperLinkage: true,
   allowHeuristicFallback: false,
-  animation: 'bounce'
+  animation: 'bounce',
+  preSendPause: false,
+  preSendScope: 'both',
+  preSendWait: 18
 }
 
 function fdUid(prefix) {

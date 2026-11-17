@@ -2883,6 +2883,7 @@ class CinematicDiceStage {
     this.rollTime = 0
     this.simTime = 0
     this.maxSimDuration = 1.2
+    this.simPace = 1
     this.climax = 0
     this.bulletTimeAmount = 0
     this.bulletSoundPlayed = false
@@ -3002,6 +3003,7 @@ class CinematicDiceStage {
    */
   startButtonCharge(modeHint) {
     if (this.charging) return
+    this.themeBeforeCharge = this.theme
     if (modeHint === 'fate') this.setTheme(NEXTGEN_THEMES[1])
     else if (modeHint === 'push') this.setTheme(NEXTGEN_THEMES[2])
     // 若舞台当前尚无骰子，先放置一颗默认多面体参与蓄力旋涡演出
@@ -3037,6 +3039,11 @@ class CinematicDiceStage {
       d.settled = true
     }
     this.settled = true
+    // 无损取消：蓄力期间临时换上的逆命/熔炉主题必须还原，否则这张卡片会一直停留在熔炉皮肤
+    if (this.themeBeforeCharge) {
+      this.theme = this.themeBeforeCharge
+      this.themeBeforeCharge = null
+    }
     this.wake()
   }
 
@@ -3047,6 +3054,7 @@ class CinematicDiceStage {
     const power = Math.max(0, Math.min(1, Number(charge01) || 0))
     this.charging = false
     this.buttonCharging = false
+    this.themeBeforeCharge = null
     if (this.audio) this.audio.stopChargeHum()
     const enriched = { ...(spec || {}) }
     if (power > 0.12) {
@@ -3226,6 +3234,8 @@ class CinematicDiceStage {
    * 触发一次高精度真骰投掷！
    */
   throwDice(spec = {}) {
+    /* pace < 1 = 慢镜投骰（正文中央的演出用它拉长整套投掷动作；胶囊/蓄力默认 1 保持原速） */
+    this.simPace = Math.max(0.45, Math.min(1.6, Number(spec.pace) || 1))
     const diceSpecs = spec.diceSpecs && spec.diceSpecs.length
       ? spec.diceSpecs
       : [{ meshKey: 'd20', sides: 20, targetValue: 20 }]
@@ -3817,7 +3827,7 @@ class CinematicDiceStage {
       const timeScale = 1.0 - this.bulletTimeAmount * 0.76 // 最低放慢至 0.24x 超清折射慢镜！
       const simDelta = rawDt * timeScale
       this.rollTime += rawDt
-      this.simTime += simDelta
+      this.simTime += simDelta * (this.simPace || 1)
 
       const fStep = this.simTime / SIM_DT
       const s0 = Math.min(MAX_STEPS - 2, Math.max(0, fStep | 0))
@@ -4163,6 +4173,15 @@ class CinematicDiceStage {
     return r
   }
 
+  // 复用锁定骰（重新生成 / 编辑正文后重放同一楼层）不是一次新的重投：
+  // 主题必须归位默认，否则 🔥孤注 的焚天熔炉会跟着锁定结果，复现在该楼层之后的每一次重放上。
+  function resolveThemeMode(roll, hidden) {
+    if (hidden) return "hidden"
+    if (roll && roll.reusedOnRegenerate) return "normal"
+    const rerollMode = roll && roll.rerollMeta && roll.rerollMeta.mode
+    return rerollMode === "fate" || rerollMode === "push" ? rerollMode : "normal"
+  }
+
   function resolveTheme(animationPref, mode, hidden) {
     const pref = String(animationPref || "bounce")
     if (pref === "none" || pref === "compact") return null
@@ -4226,8 +4245,7 @@ class CinematicDiceStage {
 
     const rule = String(roll.rule || "2d6")
     const rawDice = Array.isArray(roll.dice) && roll.dice.length ? roll.dice : [Number(roll.rawTotal ?? roll.total) || 1]
-    const rerollMode = roll.rerollMeta && roll.rerollMeta.mode
-    const mode = roll.hidden ? "hidden" : (rerollMode === "fate" ? "fate" : rerollMode === "push" ? "push" : "normal")
+    const mode = resolveThemeMode(roll, roll.hidden)
     const tier = fdTierOf(roll.tier)
 
     if (rule === "d100") {
@@ -4284,11 +4302,17 @@ class CinematicDiceStage {
 
     resize() {
       if (!this.displayCanvas) return
-      const rect = typeof this.displayCanvas.getBoundingClientRect === "function"
-        ? this.displayCanvas.getBoundingClientRect()
-        : null
-      const w = Math.max(130, Math.round((rect && rect.width) || this.displayCanvas.clientWidth || (this.bucket === "banner" ? 210 : 420)))
-      const h = Math.max(64, Math.round((rect && rect.height) || this.displayCanvas.clientHeight || (this.bucket === "banner" ? 76 : 152)))
+      /* 布局尺寸优先（clientWidth/Height）：入场 scaleX 变换期间 getBoundingClientRect 会缩水，
+       * 用它算分辨率会把 3D 画面糊掉，所以变换动画期间也必须按布局宽高开画布。 */
+      const layoutW = Number(this.displayCanvas.clientWidth) || 0
+      const layoutH = Number(this.displayCanvas.clientHeight) || 0
+      const rect = layoutW && layoutH
+        ? null
+        : (typeof this.displayCanvas.getBoundingClientRect === "function"
+          ? this.displayCanvas.getBoundingClientRect()
+          : null)
+      const w = Math.max(130, Math.round(layoutW || (rect && rect.width) || (this.bucket === "banner" ? 210 : 420)))
+      const h = Math.max(64, Math.round(layoutH || (rect && rect.height) || (this.bucket === "banner" ? 76 : 152)))
       const dpr = Math.min((typeof window !== "undefined" && window.devicePixelRatio) || 1, 2.0)
 
       this.cssW = w
@@ -4422,6 +4446,7 @@ class CinematicDiceStage {
     canUseWebGL2,
     getAudio,
     resolveTheme,
+    resolveThemeMode,
     rollToStageSpec,
     SharedBlitDiceStage,
     NEXTGEN_THEMES
@@ -4638,8 +4663,7 @@ function Fd3DDiceStage(props) {
 
   const animPref = animation || fdGetCachedAnimationPref()
   const hidden = Boolean(roll && roll.hidden && !revealed)
-  const rerollMode = roll && roll.rerollMeta && roll.rerollMeta.mode
-  const mode = hidden ? "hidden" : (rerollMode || "normal")
+  const mode = FD3D.resolveThemeMode(roll, hidden)
   const theme = FD3D.resolveTheme(animPref, mode, hidden)
   const supported = Boolean(theme && roll && FD3D.canUseWebGL2())
 
@@ -4677,7 +4701,6 @@ function Fd3DDiceStage(props) {
   useEffect(() => {
     const stg = internalStageRef.current
     if (!supported || !stg || !roll || !theme) return
-    stg.setTheme(theme)
     const spec = FD3D.rollToStageSpec(roll, Boolean(isFree))
     if (!spec) return
     if (revealed && spec.mode === "hidden") {
@@ -4687,8 +4710,14 @@ function Fd3DDiceStage(props) {
     const isFirst = lastRollKeyRef.current === ""
     const changed = lastRollKeyRef.current !== rollKey
     lastRollKeyRef.current = rollKey
+    const isStaticPlate = isFirst && !animateOnMount
 
-    if (isFirst && !animateOnMount) {
+    // 智能切换（bounce）下，✦逆命 / 🔥孤注 的专属皮肤只属于投掷那一刻：
+    // 重开楼层、复用锁定骰这类静态摆盘一律回到默认星穹，避免熔炉/棱镜皮肤长期滞留在卡片上
+    const pref = String(animPref || "bounce")
+    const staticTheme = pref === "bounce" ? FD3D.resolveTheme(pref, hidden ? "hidden" : "normal", hidden) : null
+    stg.setTheme((isStaticPlate && staticTheme) || theme)
+    if (isStaticPlate) {
       stg.setStaticRoll(spec)
     } else if (changed) {
       const power = stg.pendingChargePower || 0
@@ -4696,7 +4725,7 @@ function Fd3DDiceStage(props) {
       if (power > 0.1) stg.releaseButtonCharge(spec, power)
       else stg.throwDice(spec)
     }
-  }, [supported, rollKey, revealed, animPref])
+  }, [supported, rollKey, revealed, animPref, theme ? theme.id : ""])
 
   if (!supported) return null
 
