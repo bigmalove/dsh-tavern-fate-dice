@@ -630,3 +630,248 @@ test('回归验证：浏览器侧 fdGetActiveGameId 通知监听且 fdProbePreSe
   assert.ok(finalInj.includes('本轮客观检定'))
   unmount()
 })
+
+test('回归验证：逆命弹窗与投骰剧场同源暗金视觉、锚定于动画正下方，且弹窗存在期间剧场动画绝不关闭', async () => {
+  const styles = await readFile(new URL('../src/client/styles.js', import.meta.url), 'utf8')
+  assert.match(styles, /\.fd-presend-overlay\.is-docked\s*\{[\s\S]*?background:\s*transparent;/, '锚定态不得遮罩模糊上方投骰动画')
+  assert.match(styles, /\.fd-presend-overlay\.is-docked\s*\{[\s\S]*?pointer-events:\s*none;/, '锚定态覆层空白区必须透传')
+  assert.match(styles, /\.fd-presend-card\s*\{[\s\S]*?--fd-theater-accent:/, '弹窗卡片必须复用剧场同源强调色变量')
+  assert.match(styles, /\.fd-floor-roll-overlay\.has-presend-gate/, '剧场存在发前弹窗时应切换到联排紧凑高度')
+
+  const clientCode = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+  let loadedModule = null
+  const paneRect = { left: 40, top: 20, width: 960, height: 800 }
+  function makeNode(tag) {
+    const attrs = new Map()
+    const listeners = new Map()
+    const node = {
+      tagName: String(tag || '').toUpperCase(),
+      className: '',
+      hidden: false,
+      disabled: false,
+      style: {},
+      offsetHeight: 0,
+      parentNode: null,
+      children: [],
+      get isConnected() { return Boolean(this.parentNode || this === fakeBody) },
+      setAttribute(k, v) { attrs.set(k, String(v)) },
+      getAttribute(k) { return attrs.has(k) ? attrs.get(k) : null },
+      appendChild(ch) {
+        if (String(ch.className || '').includes('fd-floor-roll-overlay')) ch.offsetHeight = 280
+        if (String(ch.className || '').includes('fd-presend-card')) ch.offsetHeight = 196
+        ch.parentNode = node
+        node.children.push(ch)
+        return ch
+      },
+      removeChild(ch) {
+        const idx = node.children.indexOf(ch)
+        if (idx >= 0) node.children.splice(idx, 1)
+        ch.parentNode = null
+        return ch
+      },
+      contains(target) {
+        let cur = target
+        while (cur) { if (cur === node) return true; cur = cur.parentNode }
+        return false
+      },
+      getBoundingClientRect() {
+        if (attrs.get('data-conversation-scroll')) return paneRect
+        return { left: 0, top: 0, width: 540, height: node.offsetHeight || 200 }
+      },
+      querySelector(sel) {
+        const match = el => {
+          const cls = String(el.className || '').split(/\s+/).filter(Boolean)
+          if (sel === '.fd-presend-card') return cls.includes('fd-presend-card')
+          if (sel === '.fd-presend-count') return cls.includes('fd-presend-count')
+          if (sel === '.fd-presend-hint') return cls.includes('fd-presend-hint')
+          if (sel === '.fd-presend-notice') return cls.includes('fd-presend-notice')
+          if (sel === '.fd-reroll-btn-title') return cls.includes('fd-reroll-btn-title')
+          if (sel === '.fd-presend-btn.is-fate') return cls.includes('fd-presend-btn') && cls.includes('is-fate')
+          if (sel === '.fd-presend-btn.is-push') return cls.includes('fd-presend-btn') && cls.includes('is-push')
+          return false
+        }
+        const walk = root => {
+          for (const ch of root.children) {
+            if (match(ch)) return ch
+            const hit = walk(ch)
+            if (hit) return hit
+          }
+          return null
+        }
+        return walk(node)
+      },
+      querySelectorAll(sel) {
+        const out = []
+        const walk = root => {
+          for (const ch of root.children) {
+            if (sel === '.fd-presend-btn' && String(ch.className || '').includes('fd-presend-btn')) out.push(ch)
+            walk(ch)
+          }
+        }
+        walk(node)
+        return out
+      },
+      addEventListener(ev, fn) { listeners.set(ev, fn) },
+      click() { const fn = listeners.get('click'); if (fn) fn({}) }
+    }
+    return node
+  }
+
+  const fakeBody = makeNode('body')
+  const convScroll = makeNode('div')
+  convScroll.setAttribute('data-conversation-scroll', '1')
+  fakeBody.appendChild(convScroll)
+
+  const fakeDoc = {
+    head: makeNode('head'),
+    body: fakeBody,
+    getElementById: () => null,
+    createElement: tag => makeNode(tag),
+    querySelectorAll: sel => (sel === '[data-conversation-scroll]' ? [convScroll] : []),
+    addEventListener() {},
+    removeEventListener() {}
+  }
+  const fakeReact = {
+    Fragment: Symbol('Fragment'),
+    createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+    useState: init => [typeof init === 'function' ? init() : init, () => {}],
+    useEffect: () => {},
+    useMemo: fn => fn(),
+    useRef: val => ({ current: val })
+  }
+  const sandbox = {
+    window: {
+      __ModuleLoader__: { load(def) { loadedModule = def } },
+      innerWidth: 1360,
+      innerHeight: 860,
+      location: { search: '?sessionId=g-dock', hash: '', pathname: '/' },
+      localStorage: { getItem: () => null, setItem: () => {} },
+      addEventListener() {},
+      removeEventListener() {}
+    },
+    document: fakeDoc,
+    requestAnimationFrame: fn => setTimeout(fn, 0),
+    cancelAnimationFrame: id => clearTimeout(id),
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    performance: { now: () => Date.now() },
+    console
+  }
+  vm.runInNewContext(clientCode, sandbox, { filename: 'client.js' })
+  const exported = loadedModule.factory(mod => {
+    if (mod === 'react') return fakeReact
+    throw new Error('unexpected module ' + mod)
+  })
+
+  let lastStage = null
+  class StubStage {
+    constructor(_canvas, opts) {
+      this.onRollSettled = opts.onRollSettled
+      this.pinSettled = false
+      this.charging = false
+      this.throwCalls = []
+      this.releaseCalls = []
+      lastStage = this
+    }
+    setTheme() {}
+    resize() {}
+    renderSingleFrame() {}
+    startButtonCharge() { this.charging = true }
+    cancelButtonCharge() { this.charging = false }
+    throwDice(spec) { this.throwCalls.push(spec) }
+    releaseButtonCharge(spec, power) { this.charging = false; this.releaseCalls.push({ spec, power }) }
+    stop() {}
+  }
+
+  const unmount = exported.__test.fdMountPreSendGate({
+    callHost: () => Promise.resolve({ ok: true, data: { ok: true, action: 'accept' } }),
+    watchState: () => () => {}
+  })
+
+  const initialRoll = {
+    rule: '2d6', check: '体魄', difficultyLabel: '中等',
+    dice: [5, 2], modifier: -1, totalModifier: -1, total: 6, target: 7,
+    tier: 'failure', tierLabel: '失败', hidden: false, rolledAt: 1700001000
+  }
+  const played = exported.__test.fdPlayFloorRollAnim(null, null, initialRoll, 'bounce', {
+    _testForceSupported: true,
+    _testStageCtor: StubStage
+  })
+  assert.equal(played, true, '测试桩下应成功拉起中央投骰剧场')
+  const ov = exported.__test.fdGetPrimaryFloorRollOverlay()
+  assert.ok(ov && ov.wrap.isConnected, '剧场节点必须已挂载到 body')
+
+  exported.__test.fdRenderPreSendGate({
+    gateId: 'g-dock#2',
+    gameId: 'g-dock',
+    turn: 2,
+    rule: '2d6',
+    check: '体魄',
+    skillName: '体魄',
+    tier: 'failure',
+    tierLabel: '失败',
+    total: 6,
+    target: 7,
+    dice: [5, 2],
+    modifier: -1,
+    difficultyLabel: '中等',
+    rolledAt: initialRoll.rolledAt,
+    fate: { points: 1, max: 3 },
+    modes: ['fate', 'push'],
+    waitMs: 18000,
+    deadlineAt: Date.now() + 18000
+  })
+
+  const gateOverlay = fakeBody.children.find(c => String(c.className || '').includes('fd-presend-overlay'))
+  assert.ok(String(gateOverlay.className).includes('is-docked'), '存在投骰剧场时弹窗必须进入下方锚定态 is-docked')
+  assert.ok(String(ov.wrap.className).includes('has-presend-gate'), '剧场必须感知到下方逆命弹窗')
+  assert.equal(ov.stage.pinSettled, true, '弹窗等待期间剧场印章必须常驻不淡出')
+
+  /* 校验空间位置：两者水平严格对齐对话区，且弹窗起始 Y 位于剧场底边正下方 */
+  assert.equal(ov.wrap.style.left, '40px')
+  assert.equal(ov.wrap.style.width, '960px')
+  assert.equal(gateOverlay.style['--fd-presend-left'], '40px')
+  assert.equal(gateOverlay.style['--fd-presend-width'], '960px')
+  const stageCenterY = parseInt(ov.wrap.style.top, 10)
+  const stageBottomY = stageCenterY + 140
+  const gateTopY = parseInt(gateOverlay.style['--fd-presend-top'], 10)
+  assert.ok(gateTopY >= stageBottomY, `弹窗顶部(${gateTopY})必须位于剧场底缘(${stageBottomY})下方，绝不遮挡动画`)
+
+  /* 骰子落定后：即便立即触发 scheduleExit(0)，只要弹窗未关，剧场动画绝不淡出或移除 */
+  lastStage.onRollSettled()
+  ov.scheduleExit(0)
+  await sleep(30)
+  assert.equal(ov.wrap.isConnected, true, '弹窗展示期间剧场动画绝不能自行关闭移除')
+  assert.ok(!String(ov.wrap.className).includes('is-fading'), '弹窗展示期间剧场动画绝不能进入淡出态')
+
+  /* 若玩家触发逆命重投并收到新骰：直接在已展开的同一剧场内无缝抛新骰，并自动收起弹窗 */
+  const rerolled = {
+    ...initialRoll,
+    dice: [6, 5],
+    total: 10,
+    tier: 'success',
+    tierLabel: '成功',
+    rolledAt: 1700002000,
+    rerollMeta: { count: 1, mode: 'fate', label: '逆命重投' }
+  }
+  const replayed = exported.__test.fdPlayFloorRollAnim(null, null, rerolled, 'bounce', {
+    _testForceSupported: true,
+    _testStageCtor: StubStage,
+    power: 0.65
+  })
+  assert.equal(replayed, true)
+  assert.equal(exported.__test.fdGetPrimaryFloorRollOverlay(), ov, '重投应复用当前已打开的剧场，不闪断重建')
+  assert.equal(lastStage.releaseCalls.length, 1, '带蓄力重投应直接在剧场舞台爆发新骰')
+  assert.equal(ov.wrap.getAttribute('data-tier'), 'success')
+
+  /* 关闭弹窗且新骰落定后，剧场才允许正常进入离场倒计时 */
+  exported.__test.fdClearPreSendGate()
+  lastStage.onRollSettled()
+  assert.equal(ov.closing, true, '弹窗已关闭且新骰落定后，剧场应正常安排谢幕离场')
+
+  unmount()
+  ov.clearExitTimers()
+  exported.__test.fdDisposeFloorRollOverlay({ rollOverlay: ov })
+})

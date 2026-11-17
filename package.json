@@ -1,6 +1,6 @@
 {
   "name": "dsh-tavern-fate-dice",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "DSH Tavern 命运之骰：插件区极简工作台、无感自动真骰检定、LLM 四源（角色卡/世界书/MVU/正文）动态角色能力推演与叙事阻尼器单趟双向联动。",
   "type": "module",
   "main": "lib/index.js",

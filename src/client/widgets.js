@@ -1404,11 +1404,104 @@ function fdResolveConversationPane(doc, hintNode) {
   return null
 }
 
+function fdToggleNodeClass(node, cls, on) {
+  if (!node || !cls) return
+  const next = Boolean(on)
+  if (node.classList) {
+    if (next && typeof node.classList.add === 'function') { node.classList.add(cls); return }
+    if (!next && typeof node.classList.remove === 'function') { node.classList.remove(cls); return }
+    if (typeof node.classList.toggle === 'function') { node.classList.toggle(cls, next); return }
+  }
+  const list = String(node.className || '').split(/\s+/).filter(Boolean).filter(c => c !== cls)
+  if (next) list.push(cls)
+  node.className = list.join(' ')
+}
+
+function fdSetNodeCssVar(node, name, value) {
+  if (!node || !node.style || !name) return
+  if (value === null || value === undefined || value === '') {
+    if (typeof node.style.removeProperty === 'function') node.style.removeProperty(name)
+    else delete node.style[name]
+    return
+  }
+  const str = String(value)
+  if (typeof node.style.setProperty === 'function') node.style.setProperty(name, str)
+  else node.style[name] = str
+}
+
+function fdGetPrimaryFloorRollOverlay() {
+  for (const ov of fdFloorRollOverlays) {
+    if (ov && ov.wrap) return ov
+  }
+  return null
+}
+
+function fdGetActiveFloorRollStage() {
+  const ov = fdGetPrimaryFloorRollOverlay()
+  return ov && ov.stage ? ov.stage : null
+}
+
+function fdBuildFloorRollKickerText(roll, hidden, mode) {
+  const checkTitle = String((roll && roll.check) || '行动')
+  if (hidden) return `✦ 命运暗骰 · ${checkTitle}检定 ✦`
+  const diffTitle = roll && roll.difficultyLabel ? ` · ${roll.difficultyLabel}` : ''
+  const rerollBadge = mode === 'push' ? ' · 🔥孤注一掷' : (mode === 'fate' ? ' · ✦逆命重投' : '')
+  return `✦ 命运真骰裁定 · ${checkTitle}检定${diffTitle}${rerollBadge} ✦`
+}
+
+function fdPopulateFloorRollReadout(doc, readout, roll, hidden) {
+  if (!doc || !readout || !roll) return
+  readout.textContent = ''
+  if (Array.isArray(readout.children)) readout.children.length = 0
+  const checkTitle = String(roll.check || '行动')
+  if (hidden) {
+    readout.appendChild(fdEl(doc, 'span', 'fd-floor-roll-readout-formula', `${checkTitle}检定`))
+    readout.appendChild(fdEl(doc, 'span', 'fd-floor-roll-readout-tier', '暗骰封存'))
+    return
+  }
+  const rawDiceText = Array.isArray(roll.dice) && roll.dice.length ? `[${roll.dice.join('+')}]` : String(roll.total ?? '')
+  const netMod = fdNumber(roll.totalModifier ?? ((fdNumber(roll.skillBonus, 0)) + (fdNumber(roll.modifier, 0))), 0)
+  const modText = netMod ? (netMod > 0 ? ` +${netMod}` : ` ${netMod}`) : ''
+  const targetText = roll.target !== undefined && roll.target !== null
+    ? `（目标${roll.rule === 'd100' ? '≤' : '≥'}${roll.target}）`
+    : ''
+  readout.appendChild(fdEl(
+    doc,
+    'span',
+    'fd-floor-roll-readout-formula',
+    `${checkTitle} · ${roll.rule || '2d6'} ${rawDiceText}${modText} = ${roll.total}${targetText}`
+  ))
+  readout.appendChild(fdEl(doc, 'span', 'fd-floor-roll-readout-tier', roll.tierLabel || '判定'))
+}
+
+function fdBuildFloorRollStageSpec(roll, hidden, tier) {
+  let spec = null
+  try { spec = FD3D.rollToStageSpec({ ...roll, hidden }, false) } catch {}
+  if (spec) {
+    /* 宽银幕剧场慢镜：0.58x 舒展抛物线 + 落地凝滞慢镜，骰子飞行与碰撞弹跳约 2.7s */
+    return { ...spec, pace: 0.58 }
+  }
+  return {
+    diceSpecs: [{ meshKey: 'd20', sides: 20, targetValue: Math.max(1, Math.min(20, fdNumber(roll && roll.total, 1))) }],
+    tier,
+    mode: hidden ? 'hidden' : 'normal',
+    total: fdNumber(roll && roll.total, 0),
+    checkName: (roll && roll.check) || '检定',
+    pace: 0.58
+  }
+}
+
 function fdTeardownFloorRollOverlay(ov) {
   if (!ov) return
   try {
     for (let i = 0; i < ov.timers.length; i++) clearTimeout(ov.timers[i])
   } catch {}
+  try {
+    if (ov.exitTimers) {
+      for (let i = 0; i < ov.exitTimers.length; i++) clearTimeout(ov.exitTimers[i])
+    }
+  } catch {}
+  try { if (ov.safetyTimer) clearTimeout(ov.safetyTimer) } catch {}
   try { if (ov.ro) ov.ro.disconnect() } catch {}
   try {
     if (ov.onWinResize && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
@@ -1418,6 +1511,9 @@ function fdTeardownFloorRollOverlay(ov) {
   try { ov.stage.stop() } catch {}
   try { if (ov.wrap.parentNode) ov.wrap.parentNode.removeChild(ov.wrap) } catch {}
   fdFloorRollOverlays.delete(ov)
+  if (typeof fdSyncPreSendGateLayout === 'function') {
+    try { fdSyncPreSendGateLayout() } catch {}
+  }
 }
 
 function fdDisposeFloorRollOverlay(entry) {
@@ -1433,9 +1529,21 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
   const baseKey = fdFloorRollAnimKey(roll)
   const eventKey = options && options.eventKey ? String(options.eventKey) : ''
   const dedupKey = eventKey || baseKey
-  if (entry && baseKey && entry.rollAnimKey === baseKey) return false
-  if (dedupKey && fdPlayedRollAnimKeys.has(dedupKey)) return false
-  if (baseKey && !eventKey && fdPlayedRollAnimKeys.has(baseKey)) return false
+  const forceGatePin = Boolean(options && options.forceGatePin)
+
+  const existingOv = fdGetPrimaryFloorRollOverlay()
+  if (existingOv && baseKey && existingOv.baseKey === baseKey) {
+    if (forceGatePin && typeof existingOv.setGatePinned === 'function') existingOv.setGatePinned(true)
+    fdRememberPlayedRollKey(dedupKey)
+    if (baseKey !== dedupKey) fdRememberPlayedRollKey(baseKey)
+    return true
+  }
+
+  if (!forceGatePin) {
+    if (entry && baseKey && entry.rollAnimKey === baseKey) return false
+    if (dedupKey && fdPlayedRollAnimKeys.has(dedupKey)) return false
+    if (baseKey && !eventKey && fdPlayedRollAnimKeys.has(baseKey)) return false
+  }
 
   const pref = String(animationPref || fdGetCachedAnimationPref() || 'bounce')
   const hidden = Boolean(roll.hidden)
@@ -1444,7 +1552,7 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
   let supported = false
   try {
     theme = FD3D.resolveTheme(pref, mode, hidden)
-    supported = Boolean(theme) && FD3D.canUseWebGL2()
+    supported = Boolean(theme) && (Boolean(options && options._testForceSupported) || FD3D.canUseWebGL2())
   } catch {
     supported = false
   }
@@ -1457,6 +1565,31 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
     : (article && typeof article.appendChild === 'function' ? article : null)
   if (!doc || !mountHost) return false
 
+  const tier = hidden ? 'hidden' : fdTierOf(roll.tier)
+  const spec = fdBuildFloorRollStageSpec(roll, hidden, tier)
+  const rawPower = fdNumber(options && options.power, 0)
+  const gatePower = rawPower > 0 ? 0 : (typeof fdConsumePreSendGatePower === 'function' ? fdConsumePreSendGatePower() : 0)
+  const power = Math.max(0, Math.min(1, rawPower || gatePower || 0))
+
+  /* 若当前剧场仍敞开（例如发前逆命弹窗刚刚触发了重投），直接在已展开的剧场内无缝抛入新骰，绝不闪断合幕 */
+  if (existingOv && existingOv.stage && (existingOv.wrap.isConnected || existingOv.wrap.parentNode)) {
+    if (typeof fdNotifyPreSendGateRerollLaunched === 'function') {
+      try { fdNotifyPreSendGateRerollLaunched(roll) } catch {}
+    }
+    if (existingOv.entry && existingOv.entry !== entry && existingOv.entry.rollOverlay === existingOv) {
+      existingOv.entry.rollOverlay = null
+    }
+    if (entry) {
+      if (entry.rollOverlay && entry.rollOverlay !== existingOv) fdDisposeFloorRollOverlay(entry)
+      entry.rollOverlay = existingOv
+      entry.rollAnimKey = baseKey
+    }
+    existingOv.rethrow({ entry, article, roll, hidden, mode, tier, theme, spec, power, baseKey, forceGatePin })
+    fdRememberPlayedRollKey(dedupKey)
+    if (baseKey && baseKey !== dedupKey) fdRememberPlayedRollKey(baseKey)
+    return true
+  }
+
   if (entry) fdDisposeFloorRollOverlay(entry)
   while (fdFloorRollOverlays.size >= FD_FLOOR_ROLL_MAX) {
     const oldest = fdFloorRollOverlays.values().next().value
@@ -1464,7 +1597,6 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
     fdTeardownFloorRollOverlay(oldest)
   }
 
-  const tier = hidden ? 'hidden' : fdTierOf(roll.tier)
   const wrap = fdEl(doc, 'div', 'fd-floor-roll-overlay')
   wrap.setAttribute('aria-hidden', 'true')
   wrap.setAttribute('data-tier', tier)
@@ -1476,36 +1608,9 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
 
   const topRail = fdEl(doc, 'div', 'fd-floor-roll-rail is-top')
   const bottomRail = fdEl(doc, 'div', 'fd-floor-roll-rail is-bottom')
-
-  const checkTitle = String(roll.check || '行动')
-  const diffTitle = roll.difficultyLabel ? ` · ${roll.difficultyLabel}` : ''
-  const rerollBadge = mode === 'push' ? ' · 🔥孤注一掷' : (mode === 'fate' ? ' · ✦逆命重投' : '')
-  const kicker = fdEl(
-    doc,
-    'div',
-    'fd-floor-roll-kicker',
-    hidden ? `✦ 命运暗骰 · ${checkTitle}检定 ✦` : `✦ 命运真骰裁定 · ${checkTitle}检定${diffTitle}${rerollBadge} ✦`
-  )
-
+  const kicker = fdEl(doc, 'div', 'fd-floor-roll-kicker', fdBuildFloorRollKickerText(roll, hidden, mode))
   const readout = fdEl(doc, 'div', 'fd-floor-roll-readout')
-  if (hidden) {
-    readout.appendChild(fdEl(doc, 'span', 'fd-floor-roll-readout-formula', `${checkTitle}检定`))
-    readout.appendChild(fdEl(doc, 'span', 'fd-floor-roll-readout-tier', '暗骰封存'))
-  } else {
-    const rawDiceText = Array.isArray(roll.dice) && roll.dice.length ? `[${roll.dice.join('+')}]` : String(roll.total ?? '')
-    const netMod = fdNumber(roll.totalModifier ?? ((fdNumber(roll.skillBonus, 0)) + (fdNumber(roll.modifier, 0))), 0)
-    const modText = netMod ? (netMod > 0 ? ` +${netMod}` : ` ${netMod}`) : ''
-    const targetText = roll.target !== undefined && roll.target !== null
-      ? `（目标${roll.rule === 'd100' ? '≤' : '≥'}${roll.target}）`
-      : ''
-    readout.appendChild(fdEl(
-      doc,
-      'span',
-      'fd-floor-roll-readout-formula',
-      `${checkTitle} · ${roll.rule || '2d6'} ${rawDiceText}${modText} = ${roll.total}${targetText}`
-    ))
-    readout.appendChild(fdEl(doc, 'span', 'fd-floor-roll-readout-tier', roll.tierLabel || '判定'))
-  }
+  fdPopulateFloorRollReadout(doc, readout, roll, hidden)
 
   wrap.appendChild(backdrop)
   wrap.appendChild(stageMask)
@@ -1514,54 +1619,261 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
   wrap.appendChild(kicker)
   wrap.appendChild(readout)
 
+  const initialPinned = Boolean(
+    forceGatePin || (typeof fdIsPreSendGateHoldingOverlay === 'function' && fdIsPreSendGateHoldingOverlay())
+  )
+  if (initialPinned) fdToggleNodeClass(wrap, 'has-presend-gate', true)
+
   let paneEl = null
+  const ov = {
+    doc,
+    article: article || null,
+    entry: entry || null,
+    baseKey,
+    wrap,
+    kicker,
+    readout,
+    stage: null,
+    timers: [],
+    exitTimers: [],
+    safetyTimer: 0,
+    ro: null,
+    onWinResize: null,
+    settled: false,
+    closing: false,
+    exitDeferred: false,
+    pinnedByGate: initialPinned,
+    dockBottomPx: 0,
+    paneLeftPx: 0,
+    paneWidthPx: 0,
+    isHeldByGate: null,
+    clearExitTimers: null,
+    scheduleExit: null,
+    armSafetyTimer: null,
+    syncGeometry: null,
+    setGatePinned: null,
+    rethrow: null
+  }
+
+  ov.isHeldByGate = () => Boolean(
+    ov.pinnedByGate || (typeof fdIsPreSendGateHoldingOverlay === 'function' && fdIsPreSendGateHoldingOverlay())
+  )
+
+  ov.clearExitTimers = () => {
+    while (ov.exitTimers.length) {
+      const t = ov.exitTimers.pop()
+      if (t) clearTimeout(t)
+    }
+    ov.closing = false
+    fdToggleNodeClass(wrap, 'is-fading', false)
+  }
+
+  ov.scheduleExit = afterMs => {
+    /* 发前逆命弹窗展示期间：剧场动画必须常驻保持敞开，绝不自行倒计时关闭 */
+    if (ov.isHeldByGate()) {
+      ov.exitDeferred = true
+      ov.clearExitTimers()
+      return
+    }
+    if (ov.closing) return
+    ov.closing = true
+    ov.exitDeferred = false
+    const delay = Math.max(0, Number(afterMs) || 0)
+    ov.exitTimers.push(setTimeout(() => {
+      if (!fdFloorRollOverlays.has(ov)) return
+      if (ov.isHeldByGate()) {
+        ov.exitDeferred = true
+        ov.clearExitTimers()
+        return
+      }
+      fdToggleNodeClass(wrap, 'is-fading', true)
+    }, delay))
+    ov.exitTimers.push(setTimeout(() => {
+      if (!fdFloorRollOverlays.has(ov)) return
+      if (ov.isHeldByGate()) {
+        ov.exitDeferred = true
+        ov.clearExitTimers()
+        return
+      }
+      if (ov.entry && ov.entry.rollOverlay === ov) ov.entry.rollOverlay = null
+      fdTeardownFloorRollOverlay(ov)
+    }, delay + 880))
+  }
+
+  ov.armSafetyTimer = powerVal => {
+    if (ov.safetyTimer) {
+      clearTimeout(ov.safetyTimer)
+      ov.safetyTimer = 0
+    }
+    ov.safetyTimer = setTimeout(() => {
+      ov.safetyTimer = 0
+      if (!fdFloorRollOverlays.has(ov)) return
+      ov.settled = true
+      fdToggleNodeClass(wrap, 'is-settled', true)
+      ov.scheduleExit(0)
+    }, 7200 + Math.round(Math.max(0, Number(powerVal) || 0) * 500))
+  }
+
   const syncPaneGeometry = () => {
-    paneEl = fdResolveConversationPane(doc, article)
+    paneEl = fdResolveConversationPane(doc, ov.article)
+    const winW = (typeof window !== 'undefined' && Number(window.innerWidth)) || 1280
+    const winH = (typeof window !== 'undefined' && Number(window.innerHeight)) || 820
+    let paneLeft = 0
+    let paneTop = 0
+    let paneWidth = winW
+    let paneHeight = winH
+    let hasPane = false
     if (paneEl && typeof paneEl.getBoundingClientRect === 'function') {
       const r = paneEl.getBoundingClientRect()
       if (r.width > 120 && r.height > 96) {
-        wrap.style.left = `${Math.round(r.left)}px`
-        wrap.style.width = `${Math.round(r.width)}px`
-        wrap.style.top = `${Math.round(r.top + r.height / 2)}px`
-        return
+        paneLeft = r.left
+        paneTop = r.top
+        paneWidth = r.width
+        paneHeight = r.height
+        hasPane = true
       }
     }
-    wrap.style.left = '0px'
-    wrap.style.width = '100vw'
-    wrap.style.top = '50%'
+
+    const held = ov.isHeldByGate()
+    fdToggleNodeClass(wrap, 'has-presend-gate', held)
+
+    const measuredStageH = Number(wrap.offsetHeight)
+      || (typeof wrap.getBoundingClientRect === 'function' ? Number(wrap.getBoundingClientRect().height) : 0)
+    const fallbackStageH = held
+      ? Math.min(326, Math.max(232, Math.round(winH * 0.34)))
+      : Math.min(385, Math.max(290, Math.round(winH * 0.42)))
+    const stageH = Math.max(180, Math.round(measuredStageH || fallbackStageH))
+
+    if (held) {
+      const gateCardH = typeof fdMeasurePreSendGateCardHeight === 'function'
+        ? fdMeasurePreSendGateCardHeight()
+        : 204
+      /* 逆命弹窗紧贴剧场下缘正下方展开，剧场与弹窗整体在对话视口中垂直居中 */
+      const stageVisualSpan = stageH
+      const gapPx = 4
+      const totalStackH = stageVisualSpan + gapPx + gateCardH
+      const idealTop = paneTop + (paneHeight - totalStackH) * 0.5
+      const maxTop = Math.max(8, winH - 12 - gateCardH - gapPx - stageVisualSpan)
+      const stageTop = Math.round(Math.max(8, Math.min(maxTop, idealTop)))
+      const stageCenterY = Math.round(stageTop + stageH * 0.5)
+      wrap.style.left = `${Math.round(paneLeft)}px`
+      wrap.style.width = `${Math.round(paneWidth)}px`
+      wrap.style.top = `${stageCenterY}px`
+      ov.dockBottomPx = stageTop + stageVisualSpan + gapPx
+      ov.paneLeftPx = Math.round(paneLeft)
+      ov.paneWidthPx = Math.round(paneWidth)
+      if (typeof fdApplyPreSendGateDockGeometry === 'function') {
+        fdApplyPreSendGateDockGeometry({
+          docked: true,
+          left: ov.paneLeftPx,
+          width: ov.paneWidthPx,
+          top: ov.dockBottomPx
+        })
+      }
+      return
+    }
+
+    if (hasPane) {
+      wrap.style.left = `${Math.round(paneLeft)}px`
+      wrap.style.width = `${Math.round(paneWidth)}px`
+      wrap.style.top = `${Math.round(paneTop + paneHeight / 2)}px`
+      ov.paneLeftPx = Math.round(paneLeft)
+      ov.paneWidthPx = Math.round(paneWidth)
+    } else {
+      wrap.style.left = '0px'
+      wrap.style.width = '100vw'
+      wrap.style.top = '50%'
+      ov.paneLeftPx = 0
+      ov.paneWidthPx = Math.round(winW)
+    }
+    ov.dockBottomPx = Math.round((hasPane ? paneTop + paneHeight / 2 : winH / 2) + stageH * 0.40 + 8)
   }
+  ov.syncGeometry = syncPaneGeometry
+
+  ov.setGatePinned = (pinned, releaseOpts) => {
+    const nextPinned = Boolean(pinned)
+    ov.pinnedByGate = nextPinned
+    if (ov.stage) ov.stage.pinSettled = nextPinned
+    if (nextPinned) {
+      ov.clearExitTimers()
+      syncPaneGeometry()
+      try {
+        if (ov.stage) {
+          ov.stage.resize()
+          ov.stage.renderSingleFrame()
+        }
+      } catch {}
+      return
+    }
+    syncPaneGeometry()
+    try {
+      if (ov.stage) {
+        ov.stage.resize()
+        ov.stage.renderSingleFrame()
+      }
+    } catch {}
+    if (ov.settled) {
+      const delay = releaseOpts && typeof releaseOpts.exitDelayMs === 'number' ? releaseOpts.exitDelayMs : 260
+      ov.scheduleExit(delay)
+    }
+  }
+
+  ov.rethrow = next => {
+    ov.entry = next.entry || null
+    if (next.article) ov.article = next.article
+    ov.baseKey = next.baseKey || ''
+    ov.settled = false
+    ov.exitDeferred = false
+    ov.clearExitTimers()
+    while (ov.timers.length) {
+      const t = ov.timers.pop()
+      if (t) clearTimeout(t)
+    }
+    ov.pinnedByGate = Boolean(
+      next.forceGatePin || (typeof fdIsPreSendGateHoldingOverlay === 'function' && fdIsPreSendGateHoldingOverlay())
+    )
+    if (ov.stage) ov.stage.pinSettled = ov.pinnedByGate
+    fdToggleNodeClass(wrap, 'is-open', true)
+    fdToggleNodeClass(wrap, 'is-settled', false)
+    fdToggleNodeClass(wrap, 'is-fading', false)
+    fdToggleNodeClass(wrap, 'has-presend-gate', ov.pinnedByGate)
+    wrap.setAttribute('data-tier', next.tier)
+    kicker.textContent = fdBuildFloorRollKickerText(next.roll, next.hidden, next.mode)
+    fdPopulateFloorRollReadout(doc, readout, next.roll, next.hidden)
+    try {
+      ov.stage.setTheme(next.theme)
+      syncPaneGeometry()
+      ov.stage.resize()
+      const launchPower = Math.max(0, Number(next.power) || 0)
+      if ((launchPower > 0.1 || ov.stage.charging) && typeof ov.stage.releaseButtonCharge === 'function') {
+        ov.stage.releaseButtonCharge(next.spec, Math.max(launchPower, 0.48))
+      } else {
+        ov.stage.throwDice(next.spec)
+      }
+    } catch {}
+    ov.armSafetyTimer(next.power)
+  }
+
   syncPaneGeometry()
   mountHost.appendChild(wrap)
 
-  const ov = { wrap, stage: null, readout, timers: [], ro: null, onWinResize: null, closing: false }
-
-  const scheduleExit = afterMs => {
-    if (ov.closing) return
-    ov.closing = true
-    ov.timers.push(setTimeout(() => {
-      if (!fdFloorRollOverlays.has(ov)) return
-      wrap.classList.add('is-fading')
-    }, afterMs))
-    ov.timers.push(setTimeout(() => {
-      if (!fdFloorRollOverlays.has(ov)) return
-      if (entry && entry.rollOverlay === ov) entry.rollOverlay = null
-      fdTeardownFloorRollOverlay(ov)
-    }, afterMs + 880))
-  }
-
   let stage = null
   try {
-    stage = new FD3D.SharedBlitDiceStage(canvas, {
+    const StageCtor = (options && options._testStageCtor) || FD3D.SharedBlitDiceStage
+    stage = new StageCtor(canvas, {
       audio: FD3D.getAudio(),
       banner: false,
       compact: false,
       theater: true,
       onRollSettled: () => {
         if (!fdFloorRollOverlays.has(ov)) return
-        wrap.classList.add('is-settled')
-        scheduleExit(2450)
+        ov.settled = true
+        fdToggleNodeClass(wrap, 'is-open', true)
+        fdToggleNodeClass(wrap, 'is-settled', true)
+        ov.scheduleExit(2450)
       }
     })
+    stage.pinSettled = ov.pinnedByGate
     stage.setTheme(theme)
     ov.stage = stage
   } catch {
@@ -1569,24 +1881,6 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
     return false
   }
 
-  let spec = null
-  try { spec = FD3D.rollToStageSpec({ ...roll, hidden }, false) } catch {}
-  if (spec) {
-    /* 宽银幕剧场慢镜：0.58x 舒展抛物线 + 落地凝滞慢镜，骰子飞行与碰撞弹跳约 2.7s */
-    spec = { ...spec, pace: 0.58 }
-  }
-  if (!spec) {
-    spec = {
-      diceSpecs: [{ meshKey: 'd20', sides: 20, targetValue: Math.max(1, Math.min(20, fdNumber(roll.total, 1))) }],
-      tier,
-      mode: hidden ? 'hidden' : 'normal',
-      total: fdNumber(roll.total, 0),
-      checkName: roll.check || '检定',
-      pace: 0.58
-    }
-  }
-
-  const power = Math.max(0, Math.min(1, fdNumber(options && options.power, 0)))
   if (entry) {
     entry.rollOverlay = ov
     entry.rollAnimKey = baseKey
@@ -1636,13 +1930,35 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
     } catch {}
   }, 180))
 
-  /* 后台标签页 rAF 节流兜底：最长 7.2s 必优雅收束离场，绝不残留遮挡 */
-  ov.timers.push(setTimeout(() => {
-    if (!fdFloorRollOverlays.has(ov)) return
-    wrap.classList.add('is-settled')
-    scheduleExit(0)
-  }, 7200 + Math.round(power * 500)))
+  /* 后台标签页 rAF 节流兜底：最长 7.2s 落定，若逆命弹窗仍在等待则继续保持敞开 */
+  ov.armSafetyTimer(power)
   return true
+}
+
+function fdEnsureFloorRollForGate(payload) {
+  let ov = fdGetPrimaryFloorRollOverlay()
+  if (!ov && payload && payload.tier && typeof fdRollFromGatePayload === 'function') {
+    const gateRoll = fdRollFromGatePayload(payload)
+    if (gateRoll) {
+      fdPlayFloorRollAnim(null, null, gateRoll, payload.animation || '', { forceGatePin: true })
+      ov = fdGetPrimaryFloorRollOverlay()
+    }
+  }
+  if (ov && typeof ov.setGatePinned === 'function') {
+    ov.setGatePinned(true)
+  }
+  return ov
+}
+
+function fdReleaseFloorRollOverlayFromGate(options) {
+  const ov = fdGetPrimaryFloorRollOverlay()
+  if (!ov) return
+  if (ov.stage && ov.stage.charging && !(options && options.keepStageCharge)) {
+    try { ov.stage.cancelButtonCharge() } catch {}
+  }
+  if (typeof ov.setGatePinned === 'function') {
+    ov.setGatePinned(false, options)
+  }
 }
 
 /* 纯原生 DOM 楼层顶栏挂载：不依赖宿主未暴露的 react-dom/client，任何浏览器页面加载即刻生效 */

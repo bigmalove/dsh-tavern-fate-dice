@@ -4418,7 +4418,7 @@ class CinematicDiceStage {
         }
       }
 
-      const sealWindow = this.theaterMode ? 3.5 : 2.5
+      const sealWindow = this.pinSettled ? Infinity : (this.theaterMode ? 3.5 : 2.5)
       if (this.settled && !hiddenMask && this.settleTime < sealWindow && !this.compactMode) {
         drawThemeSealOverlay(ctx, {
           themeIndex: this.theme.themeIndex,
@@ -4427,12 +4427,12 @@ class CinematicDiceStage {
           sx: this.theaterMode ? Math.min(W - 96, Math.round(W * 0.5 + Math.min(295, W * 0.27))) : W - 46,
           sy: this.theaterMode ? Math.round(H * 0.42) : Math.max(44, H * 0.36),
           scaleMul: this.theaterMode ? 1.04 : 0.78,
-          fadeStart: this.theaterMode ? 2.85 : 1.9
+          fadeStart: this.pinSettled ? Infinity : (this.theaterMode ? 2.85 : 1.9)
         })
       }
 
-      if (this.theme.themeIndex === 3 && this.settled && !hiddenMask && this.settleTime < 2.4 && this.dice.length <= 4 && !this.compactMode) {
-        const fade = this.settleTime > 1.8 ? Math.max(0, 1 - (this.settleTime - 1.8) / 0.6) : Math.min(1, this.settleTime * 5)
+      if (this.theme.themeIndex === 3 && this.settled && !hiddenMask && (this.pinSettled || this.settleTime < 2.4) && this.dice.length <= 4 && !this.compactMode) {
+        const fade = (!this.pinSettled && this.settleTime > 1.8) ? Math.max(0, 1 - (this.settleTime - 1.8) / 0.6) : Math.min(1, this.settleTime * 5)
         ctx.save()
         ctx.globalAlpha = fade
         ctx.strokeStyle = this.tier === "fumble" ? "#ff2a85" : "#00f5d4"
@@ -4499,18 +4499,40 @@ function fdAttachHoldChargeToDomBtn(btn, options) {
 
   const nowMs = () => (typeof performance !== "undefined" ? performance.now() : Date.now())
 
+  const setChargingCls = on => {
+    if (btn.classList) {
+      if (on && typeof btn.classList.add === "function") { btn.classList.add("is-charging"); return }
+      if (!on && typeof btn.classList.remove === "function") { btn.classList.remove("is-charging"); return }
+      if (typeof btn.classList.toggle === "function") { btn.classList.toggle("is-charging", Boolean(on)); return }
+    }
+    const parts = String(btn.className || "").split(/\s+/).filter(Boolean).filter(c => c !== "is-charging")
+    if (on) parts.push("is-charging")
+    btn.className = parts.join(" ")
+  }
+  const setChargeVar = val => {
+    if (!btn.style) return
+    if (val === null) {
+      if (typeof btn.style.removeProperty === "function") btn.style.removeProperty("--fd-charge")
+      else delete btn.style["--fd-charge"]
+    } else if (typeof btn.style.setProperty === "function") {
+      btn.style.setProperty("--fd-charge", val)
+    } else {
+      btn.style["--fd-charge"] = val
+    }
+  }
+
   const cleanup = () => {
     if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0 }
     if (rafId && typeof cancelAnimationFrame === "function") { cancelAnimationFrame(rafId); rafId = 0 }
-    btn.classList.remove("is-charging")
-    btn.style.removeProperty("--fd-charge")
+    setChargingCls(false)
+    setChargeVar(null)
     if (titleEl) titleEl.textContent = origTitle
   }
 
   const tick = () => {
     if (!charging) return
     const pct = Math.min(1, Math.max(0, (nowMs() - downAt - FD_HOLD_THRESHOLD_MS) / FD_HOLD_FULL_MS))
-    btn.style.setProperty("--fd-charge", Math.round(pct * 100) + "%")
+    setChargeVar(Math.round(pct * 100) + "%")
     if (titleEl) {
       titleEl.textContent = (mode === "push" ? "🔥 熔炉蓄力 " : "✦ 逆命蓄力 ") + Math.round(pct * 100) + "% · 松手爆发"
     }
@@ -4524,7 +4546,7 @@ function fdAttachHoldChargeToDomBtn(btn, options) {
     downAt = nowMs()
     holdTimer = setTimeout(() => {
       charging = true
-      btn.classList.add("is-charging")
+      setChargingCls(true)
       const stg = typeof getStage === "function" ? getStage() : null
       if (stg && typeof stg.startButtonCharge === "function") stg.startButtonCharge(mode)
       tick()

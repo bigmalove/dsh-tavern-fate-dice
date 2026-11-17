@@ -1393,8 +1393,12 @@ article.dsh-tavern-story-floor {
   clip-path: inset(49.4% 0 49.4% 0);
   opacity: 0;
   animation: fd-theater-open 0.68s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transition: top 0.34s cubic-bezier(0.16, 1, 0.3, 1), height 0.34s cubic-bezier(0.16, 1, 0.3, 1);
   contain: layout paint;
   will-change: clip-path, opacity, filter;
+}
+.fd-floor-roll-overlay.has-presend-gate {
+  height: clamp(232px, 34vh, 326px);
 }
 .fd-floor-roll-overlay[data-tier="critical"] {
   --fd-theater-accent: #ffcf5c;
@@ -1548,6 +1552,12 @@ article.dsh-tavern-story-floor {
 .fd-floor-roll-overlay.is-settled .fd-floor-roll-readout {
   animation: fd-theater-readout-in 0.46s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+.fd-floor-roll-overlay.is-open {
+  opacity: 1;
+  clip-path: inset(0% 0 0% 0);
+  filter: brightness(1) saturate(1);
+  animation: none;
+}
 
 /* 离场：天际线向中心回缩 + 宽银幕沿水平中线合拢消散 */
 .fd-floor-roll-overlay.is-fading {
@@ -1623,6 +1633,9 @@ article.dsh-tavern-story-floor {
   .fd-floor-roll-overlay {
     height: clamp(220px, 36vh, 300px);
   }
+  .fd-floor-roll-overlay.has-presend-gate {
+    height: clamp(196px, 30vh, 258px);
+  }
   .fd-floor-roll-kicker {
     font-size: 10.5px;
     letter-spacing: 0.12em;
@@ -1639,42 +1652,107 @@ article.dsh-tavern-story-floor {
   }
 }
 
-/* ---------- 发前暂停闸门：失败 / 大失败时的逆命弹窗 ----------
- * 宿主在发送正文前把请求按住，这里盖一层固定覆层接管选择；
- * 深浅主题都靠 --dsw 背景层 + currentColor 混合，不写死底色。 */
+/* ---------- 发前暂停闸门：锚定投骰剧场正下方的同源逆命裁定台 ----------
+ * 1) 有 3D 投骰剧场时（.is-docked）：覆层背景完全透明、不模糊也不遮挡上方舞台，
+ *    卡片紧贴剧场底部天际流光轨正下方展开，且剧场全程常驻不提前关闭；
+ * 2) 无 3D 舞台降级态（动画关或无 WebGL2）：对齐对话区视口居中浮出，同享暗金剧场美学。 */
 .fd-presend-overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  bottom: 0;
+  left: var(--fd-presend-left, 0px);
+  width: var(--fd-presend-width, 100vw);
   z-index: 2147482000;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(14, 14, 22, 0.52);
-  backdrop-filter: blur(3px);
-  animation: fd-presend-fade 0.14s ease-out;
+  box-sizing: border-box;
+  background: radial-gradient(72% 68% at 50% 50%, rgba(8, 10, 20, 0.58) 0%, rgba(6, 8, 16, 0.28) 100%);
+  animation: fd-presend-fade 0.2s ease-out;
+}
+.fd-presend-overlay.is-docked {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  pointer-events: none;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--fd-presend-top, 56vh) 16px 12px;
+  transition: padding-top 0.34s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .fd-presend-overlay[hidden] { display: none !important; }
 .fd-presend-card {
-  width: min(440px, 100%);
-  max-height: min(78vh, 560px);
+  --fd-theater-accent: #f06a54;
+  --fd-theater-glow: rgba(240, 106, 84, 0.44);
+  position: relative;
+  box-sizing: border-box;
+  pointer-events: auto;
+  width: min(548px, 100%);
+  max-height: min(76vh, 520px);
   overflow-y: auto;
   overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
-  gap: 9px;
-  padding: 16px 16px 14px;
+  gap: 8px;
+  padding: 14px 16px 11px;
   border-radius: 14px;
-  border: 1px solid color-mix(in oklab, currentColor 16%, transparent);
-  background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base, #fff));
-  color: var(--dsh-ink, inherit);
-  font-size: 13px;
-  line-height: 1.55;
-  box-shadow: 0 20px 48px rgba(16, 16, 26, 0.3), 0 2px 10px rgba(16, 16, 26, 0.12);
-  animation: fd-rise 0.18s ease-out;
+  border: 1px solid color-mix(in srgb, var(--fd-theater-accent) 46%, rgba(255, 240, 206, 0.22));
+  background:
+    radial-gradient(95% 88% at 50% 0%, color-mix(in srgb, var(--fd-theater-accent) 15%, rgba(28, 22, 54, 0.94)) 0%, rgba(15, 14, 32, 0.95) 54%, rgba(10, 11, 24, 0.97) 100%);
+  backdrop-filter: blur(14px) saturate(1.18);
+  -webkit-backdrop-filter: blur(14px) saturate(1.18);
+  color: #fff8eb;
+  font: 500 13px/1.5 system-ui, -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+  box-shadow:
+    0 14px 34px rgba(10, 9, 22, 0.34),
+    0 3px 10px rgba(10, 9, 22, 0.18),
+    0 0 22px color-mix(in srgb, var(--fd-theater-accent) 18%, transparent),
+    inset 0 1px 0 rgba(255, 248, 232, 0.14);
+  animation: fd-presend-dock-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-.fd-presend-card.is-failure { border-left: 3px solid var(--fd-warn, #b9772f); }
-.fd-presend-card.is-fumble { border-left: 3px solid var(--fd-bad, #bb5044); }
+.fd-presend-overlay.is-docked .fd-presend-card {
+  max-height: calc(100vh - var(--fd-presend-top, 56vh) - 12px);
+}
+.fd-presend-overlay.is-docked .fd-presend-rail {
+  display: none;
+}
+.fd-presend-card.is-failure {
+  --fd-theater-accent: #f06a54;
+  --fd-theater-glow: rgba(240, 106, 84, 0.44);
+}
+.fd-presend-card.is-fumble {
+  --fd-theater-accent: #ff4757;
+  --fd-theater-glow: rgba(255, 71, 87, 0.56);
+}
+.fd-presend-rail {
+  position: relative;
+  height: 1.5px;
+  margin: -2px -4px 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 244, 214, 0.14) 10%,
+    var(--fd-theater-accent) 34%,
+    #fff8e7 50%,
+    var(--fd-theater-accent) 66%,
+    rgba(255, 244, 214, 0.14) 90%,
+    transparent 100%
+  );
+  box-shadow: 0 0 12px var(--fd-theater-glow);
+}
+.fd-presend-rail::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  background: #fff8e7;
+  border: 1px solid var(--fd-theater-accent);
+  box-shadow: 0 0 8px var(--fd-theater-accent);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
 .fd-presend-top {
   display: flex;
   align-items: center;
@@ -1685,59 +1763,85 @@ article.dsh-tavern-story-floor {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 2px 9px;
   border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  border: 1px solid color-mix(in oklab, currentColor 18%, transparent);
-}
-.fd-presend-seal.is-failure {
-  color: var(--fd-warn, #b9772f);
-  background: color-mix(in oklab, var(--fd-warn, #b9772f) 14%, transparent);
-}
-.fd-presend-seal.is-fumble {
-  color: var(--fd-bad, #bb5044);
-  background: color-mix(in oklab, var(--fd-bad, #bb5044) 16%, transparent);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--fd-theater-accent);
+  background: color-mix(in srgb, var(--fd-theater-accent) 22%, rgba(255, 255, 255, 0.05));
+  border: 1px solid color-mix(in srgb, var(--fd-theater-accent) 56%, rgba(255, 244, 214, 0.18));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--fd-theater-accent) 26%, transparent);
 }
 .fd-presend-title {
   flex: 1 1 auto;
   min-width: 0;
   font-weight: 700;
-  font-size: 13.5px;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 248, 235, 0.95);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.72);
 }
 .fd-presend-count {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
   font-size: 11.5px;
-  opacity: 0.72;
-  padding: 2px 7px;
+  font-weight: 650;
+  color: rgba(255, 236, 198, 0.92);
+  padding: 2px 9px;
   border-radius: 999px;
-  background: color-mix(in oklab, currentColor 8%, transparent);
+  background: rgba(255, 244, 214, 0.08);
+  border: 1px solid rgba(255, 244, 214, 0.16);
 }
-.fd-presend-check { font-weight: 600; }
+.fd-presend-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 11px;
+  border-radius: 9px;
+  background: rgba(4, 6, 14, 0.58);
+  border: 1px solid rgba(255, 244, 214, 0.12);
+}
+.fd-presend-check {
+  font-weight: 700;
+  font-size: 12.5px;
+  color: #fff8eb;
+  letter-spacing: 0.03em;
+}
 .fd-presend-dice {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  background: color-mix(in oklab, currentColor 6%, transparent);
-  border: 1px solid color-mix(in oklab, currentColor 10%, transparent);
+  font-weight: 600;
+  color: #ffe3ae;
   word-break: break-word;
 }
-.fd-presend-fate { font-size: 12px; opacity: 0.82; }
+.fd-presend-fate {
+  font-size: 11.5px;
+  color: rgba(255, 244, 214, 0.78);
+  letter-spacing: 0.02em;
+}
 .fd-presend-notice {
   font-size: 12px;
-  color: var(--fd-bad, #bb5044);
-  background: color-mix(in oklab, var(--fd-bad, #bb5044) 10%, transparent);
+  color: #ff9aa4;
+  background: rgba(255, 71, 87, 0.14);
+  border: 1px solid rgba(255, 71, 87, 0.38);
   border-radius: 8px;
-  padding: 5px 8px;
+  padding: 5px 9px;
 }
 .fd-presend-notice[hidden] { display: none !important; }
 .fd-presend-actions {
   display: grid;
+  grid-template-columns: 1fr;
   gap: 7px;
-  margin-top: 2px;
+  margin-top: 1px;
+}
+.fd-presend-actions.has-pair {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.fd-presend-actions.has-pair .fd-presend-btn.is-accept {
+  grid-column: 1 / -1;
 }
 .fd-presend-btn {
   display: flex;
@@ -1746,43 +1850,88 @@ article.dsh-tavern-story-floor {
   gap: 6px;
   width: 100%;
   min-height: 38px;
-  padding: 8px 12px;
+  padding: 7px 12px;
   border-radius: 10px;
-  border: 1px solid color-mix(in oklab, currentColor 16%, transparent);
-  background: color-mix(in oklab, currentColor 7%, transparent);
-  color: inherit;
+  border: 1px solid rgba(255, 244, 214, 0.18);
+  background: rgba(255, 248, 232, 0.06);
+  color: #fff8eb;
   font: inherit;
-  font-weight: 650;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   cursor: pointer;
-  transition: transform 0.12s ease, background 0.12s ease, opacity 0.12s ease;
+  box-sizing: border-box;
+  transition: transform 0.14s ease, filter 0.14s ease, background 0.14s ease, box-shadow 0.14s ease, opacity 0.14s ease;
 }
-.fd-presend-btn:hover:not(:disabled) { transform: translateY(-1px); }
-.fd-presend-btn:disabled { opacity: 0.55; cursor: progress; }
+.fd-presend-btn .fd-reroll-btn-title {
+  font-size: 12.5px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  color: inherit;
+}
+.fd-presend-btn:focus,
+.fd-presend-btn:focus-visible {
+  outline: none;
+}
+.fd-presend-btn:focus-visible {
+  box-shadow: 0 0 0 2px rgba(255, 228, 164, 0.55), 0 6px 18px rgba(0, 0, 0, 0.28);
+}
+.fd-presend-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+.fd-presend-btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+.fd-presend-btn:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
 .fd-presend-btn.is-fate {
-  color: #fff;
-  border-color: transparent;
-  background: linear-gradient(135deg, #7b5cc4, #4a3a86);
-  box-shadow: 0 6px 16px rgba(96, 70, 168, 0.28);
+  color: #fffaf0;
+  border-color: rgba(255, 224, 148, 0.48);
+  background: linear-gradient(135deg, #c98821 0%, #8f560d 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 248, 220, 0.30), 0 6px 18px rgba(201, 136, 33, 0.30);
 }
 .fd-presend-btn.is-push {
-  color: #fff;
-  border-color: transparent;
-  background: linear-gradient(135deg, #d0872f, #a1452a);
-  box-shadow: 0 6px 16px rgba(178, 92, 40, 0.26);
+  color: #fff5f2;
+  border-color: rgba(255, 170, 152, 0.44);
+  background: linear-gradient(135deg, #c84938 0%, #8b271c 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 232, 224, 0.24), 0 6px 18px rgba(200, 73, 56, 0.28);
 }
 .fd-presend-btn.is-accept {
-  background: transparent;
-  opacity: 0.86;
+  min-height: 33px;
+  padding: 5px 12px;
+  font-size: 12px;
   font-weight: 600;
+  color: rgba(255, 244, 214, 0.84);
+  background: rgba(255, 248, 232, 0.05);
+  border-color: rgba(255, 244, 214, 0.16);
 }
-.fd-presend-hint { font-size: 11.5px; opacity: 0.66; text-align: center; }
-@media (max-width: 480px) {
-  .fd-presend-card { width: 100%; padding: 14px 13px 12px; }
-  .fd-presend-title { font-size: 13px; }
+.fd-presend-btn.is-accept:hover:not(:disabled) {
+  background: rgba(255, 248, 232, 0.11);
+  color: #fff8eb;
+}
+.fd-presend-hint {
+  font-size: 11px;
+  color: rgba(255, 244, 214, 0.56);
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+@media (max-width: 520px) {
+  .fd-presend-card { width: 100%; padding: 12px 13px 10px; gap: 7px; }
+  .fd-presend-actions.has-pair { grid-template-columns: 1fr; }
+  .fd-presend-title { font-size: 12.5px; }
 }
 @keyframes fd-presend-fade {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+@keyframes fd-presend-dock-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -7036,7 +7185,7 @@ class CinematicDiceStage {
         }
       }
 
-      const sealWindow = this.theaterMode ? 3.5 : 2.5
+      const sealWindow = this.pinSettled ? Infinity : (this.theaterMode ? 3.5 : 2.5)
       if (this.settled && !hiddenMask && this.settleTime < sealWindow && !this.compactMode) {
         drawThemeSealOverlay(ctx, {
           themeIndex: this.theme.themeIndex,
@@ -7045,12 +7194,12 @@ class CinematicDiceStage {
           sx: this.theaterMode ? Math.min(W - 96, Math.round(W * 0.5 + Math.min(295, W * 0.27))) : W - 46,
           sy: this.theaterMode ? Math.round(H * 0.42) : Math.max(44, H * 0.36),
           scaleMul: this.theaterMode ? 1.04 : 0.78,
-          fadeStart: this.theaterMode ? 2.85 : 1.9
+          fadeStart: this.pinSettled ? Infinity : (this.theaterMode ? 2.85 : 1.9)
         })
       }
 
-      if (this.theme.themeIndex === 3 && this.settled && !hiddenMask && this.settleTime < 2.4 && this.dice.length <= 4 && !this.compactMode) {
-        const fade = this.settleTime > 1.8 ? Math.max(0, 1 - (this.settleTime - 1.8) / 0.6) : Math.min(1, this.settleTime * 5)
+      if (this.theme.themeIndex === 3 && this.settled && !hiddenMask && (this.pinSettled || this.settleTime < 2.4) && this.dice.length <= 4 && !this.compactMode) {
+        const fade = (!this.pinSettled && this.settleTime > 1.8) ? Math.max(0, 1 - (this.settleTime - 1.8) / 0.6) : Math.min(1, this.settleTime * 5)
         ctx.save()
         ctx.globalAlpha = fade
         ctx.strokeStyle = this.tier === "fumble" ? "#ff2a85" : "#00f5d4"
@@ -7117,18 +7266,40 @@ function fdAttachHoldChargeToDomBtn(btn, options) {
 
   const nowMs = () => (typeof performance !== "undefined" ? performance.now() : Date.now())
 
+  const setChargingCls = on => {
+    if (btn.classList) {
+      if (on && typeof btn.classList.add === "function") { btn.classList.add("is-charging"); return }
+      if (!on && typeof btn.classList.remove === "function") { btn.classList.remove("is-charging"); return }
+      if (typeof btn.classList.toggle === "function") { btn.classList.toggle("is-charging", Boolean(on)); return }
+    }
+    const parts = String(btn.className || "").split(/\s+/).filter(Boolean).filter(c => c !== "is-charging")
+    if (on) parts.push("is-charging")
+    btn.className = parts.join(" ")
+  }
+  const setChargeVar = val => {
+    if (!btn.style) return
+    if (val === null) {
+      if (typeof btn.style.removeProperty === "function") btn.style.removeProperty("--fd-charge")
+      else delete btn.style["--fd-charge"]
+    } else if (typeof btn.style.setProperty === "function") {
+      btn.style.setProperty("--fd-charge", val)
+    } else {
+      btn.style["--fd-charge"] = val
+    }
+  }
+
   const cleanup = () => {
     if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0 }
     if (rafId && typeof cancelAnimationFrame === "function") { cancelAnimationFrame(rafId); rafId = 0 }
-    btn.classList.remove("is-charging")
-    btn.style.removeProperty("--fd-charge")
+    setChargingCls(false)
+    setChargeVar(null)
     if (titleEl) titleEl.textContent = origTitle
   }
 
   const tick = () => {
     if (!charging) return
     const pct = Math.min(1, Math.max(0, (nowMs() - downAt - FD_HOLD_THRESHOLD_MS) / FD_HOLD_FULL_MS))
-    btn.style.setProperty("--fd-charge", Math.round(pct * 100) + "%")
+    setChargeVar(Math.round(pct * 100) + "%")
     if (titleEl) {
       titleEl.textContent = (mode === "push" ? "🔥 熔炉蓄力 " : "✦ 逆命蓄力 ") + Math.round(pct * 100) + "% · 松手爆发"
     }
@@ -7142,7 +7313,7 @@ function fdAttachHoldChargeToDomBtn(btn, options) {
     downAt = nowMs()
     holdTimer = setTimeout(() => {
       charging = true
-      btn.classList.add("is-charging")
+      setChargingCls(true)
       const stg = typeof getStage === "function" ? getStage() : null
       if (stg && typeof stg.startButtonCharge === "function") stg.startButtonCharge(mode)
       tick()
@@ -8778,11 +8949,104 @@ function fdResolveConversationPane(doc, hintNode) {
   return null
 }
 
+function fdToggleNodeClass(node, cls, on) {
+  if (!node || !cls) return
+  const next = Boolean(on)
+  if (node.classList) {
+    if (next && typeof node.classList.add === 'function') { node.classList.add(cls); return }
+    if (!next && typeof node.classList.remove === 'function') { node.classList.remove(cls); return }
+    if (typeof node.classList.toggle === 'function') { node.classList.toggle(cls, next); return }
+  }
+  const list = String(node.className || '').split(/\s+/).filter(Boolean).filter(c => c !== cls)
+  if (next) list.push(cls)
+  node.className = list.join(' ')
+}
+
+function fdSetNodeCssVar(node, name, value) {
+  if (!node || !node.style || !name) return
+  if (value === null || value === undefined || value === '') {
+    if (typeof node.style.removeProperty === 'function') node.style.removeProperty(name)
+    else delete node.style[name]
+    return
+  }
+  const str = String(value)
+  if (typeof node.style.setProperty === 'function') node.style.setProperty(name, str)
+  else node.style[name] = str
+}
+
+function fdGetPrimaryFloorRollOverlay() {
+  for (const ov of fdFloorRollOverlays) {
+    if (ov && ov.wrap) return ov
+  }
+  return null
+}
+
+function fdGetActiveFloorRollStage() {
+  const ov = fdGetPrimaryFloorRollOverlay()
+  return ov && ov.stage ? ov.stage : null
+}
+
+function fdBuildFloorRollKickerText(roll, hidden, mode) {
+  const checkTitle = String((roll && roll.check) || '行动')
+  if (hidden) return `✦ 命运暗骰 · ${checkTitle}检定 ✦`
+  const diffTitle = roll && roll.difficultyLabel ? ` · ${roll.difficultyLabel}` : ''
+  const rerollBadge = mode === 'push' ? ' · 🔥孤注一掷' : (mode === 'fate' ? ' · ✦逆命重投' : '')
+  return `✦ 命运真骰裁定 · ${checkTitle}检定${diffTitle}${rerollBadge} ✦`
+}
+
+function fdPopulateFloorRollReadout(doc, readout, roll, hidden) {
+  if (!doc || !readout || !roll) return
+  readout.textContent = ''
+  if (Array.isArray(readout.children)) readout.children.length = 0
+  const checkTitle = String(roll.check || '行动')
+  if (hidden) {
+    readout.appendChild(fdEl(doc, 'span', 'fd-floor-roll-readout-formula', `${checkTitle}检定`))
+    readout.appendChild(fdEl(doc, 'span', 'fd-floor-roll-readout-tier', '暗骰封存'))
+    return
+  }
+  const rawDiceText = Array.isArray(roll.dice) && roll.dice.length ? `[${roll.dice.join('+')}]` : String(roll.total ?? '')
+  const netMod = fdNumber(roll.totalModifier ?? ((fdNumber(roll.skillBonus, 0)) + (fdNumber(roll.modifier, 0))), 0)
+  const modText = netMod ? (netMod > 0 ? ` +${netMod}` : ` ${netMod}`) : ''
+  const targetText = roll.target !== undefined && roll.target !== null
+    ? `（目标${roll.rule === 'd100' ? '≤' : '≥'}${roll.target}）`
+    : ''
+  readout.appendChild(fdEl(
+    doc,
+    'span',
+    'fd-floor-roll-readout-formula',
+    `${checkTitle} · ${roll.rule || '2d6'} ${rawDiceText}${modText} = ${roll.total}${targetText}`
+  ))
+  readout.appendChild(fdEl(doc, 'span', 'fd-floor-roll-readout-tier', roll.tierLabel || '判定'))
+}
+
+function fdBuildFloorRollStageSpec(roll, hidden, tier) {
+  let spec = null
+  try { spec = FD3D.rollToStageSpec({ ...roll, hidden }, false) } catch {}
+  if (spec) {
+    /* 宽银幕剧场慢镜：0.58x 舒展抛物线 + 落地凝滞慢镜，骰子飞行与碰撞弹跳约 2.7s */
+    return { ...spec, pace: 0.58 }
+  }
+  return {
+    diceSpecs: [{ meshKey: 'd20', sides: 20, targetValue: Math.max(1, Math.min(20, fdNumber(roll && roll.total, 1))) }],
+    tier,
+    mode: hidden ? 'hidden' : 'normal',
+    total: fdNumber(roll && roll.total, 0),
+    checkName: (roll && roll.check) || '检定',
+    pace: 0.58
+  }
+}
+
 function fdTeardownFloorRollOverlay(ov) {
   if (!ov) return
   try {
     for (let i = 0; i < ov.timers.length; i++) clearTimeout(ov.timers[i])
   } catch {}
+  try {
+    if (ov.exitTimers) {
+      for (let i = 0; i < ov.exitTimers.length; i++) clearTimeout(ov.exitTimers[i])
+    }
+  } catch {}
+  try { if (ov.safetyTimer) clearTimeout(ov.safetyTimer) } catch {}
   try { if (ov.ro) ov.ro.disconnect() } catch {}
   try {
     if (ov.onWinResize && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
@@ -8792,6 +9056,9 @@ function fdTeardownFloorRollOverlay(ov) {
   try { ov.stage.stop() } catch {}
   try { if (ov.wrap.parentNode) ov.wrap.parentNode.removeChild(ov.wrap) } catch {}
   fdFloorRollOverlays.delete(ov)
+  if (typeof fdSyncPreSendGateLayout === 'function') {
+    try { fdSyncPreSendGateLayout() } catch {}
+  }
 }
 
 function fdDisposeFloorRollOverlay(entry) {
@@ -8807,9 +9074,21 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
   const baseKey = fdFloorRollAnimKey(roll)
   const eventKey = options && options.eventKey ? String(options.eventKey) : ''
   const dedupKey = eventKey || baseKey
-  if (entry && baseKey && entry.rollAnimKey === baseKey) return false
-  if (dedupKey && fdPlayedRollAnimKeys.has(dedupKey)) return false
-  if (baseKey && !eventKey && fdPlayedRollAnimKeys.has(baseKey)) return false
+  const forceGatePin = Boolean(options && options.forceGatePin)
+
+  const existingOv = fdGetPrimaryFloorRollOverlay()
+  if (existingOv && baseKey && existingOv.baseKey === baseKey) {
+    if (forceGatePin && typeof existingOv.setGatePinned === 'function') existingOv.setGatePinned(true)
+    fdRememberPlayedRollKey(dedupKey)
+    if (baseKey !== dedupKey) fdRememberPlayedRollKey(baseKey)
+    return true
+  }
+
+  if (!forceGatePin) {
+    if (entry && baseKey && entry.rollAnimKey === baseKey) return false
+    if (dedupKey && fdPlayedRollAnimKeys.has(dedupKey)) return false
+    if (baseKey && !eventKey && fdPlayedRollAnimKeys.has(baseKey)) return false
+  }
 
   const pref = String(animationPref || fdGetCachedAnimationPref() || 'bounce')
   const hidden = Boolean(roll.hidden)
@@ -8818,7 +9097,7 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
   let supported = false
   try {
     theme = FD3D.resolveTheme(pref, mode, hidden)
-    supported = Boolean(theme) && FD3D.canUseWebGL2()
+    supported = Boolean(theme) && (Boolean(options && options._testForceSupported) || FD3D.canUseWebGL2())
   } catch {
     supported = false
   }
@@ -8831,6 +9110,31 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
     : (article && typeof article.appendChild === 'function' ? article : null)
   if (!doc || !mountHost) return false
 
+  const tier = hidden ? 'hidden' : fdTierOf(roll.tier)
+  const spec = fdBuildFloorRollStageSpec(roll, hidden, tier)
+  const rawPower = fdNumber(options && options.power, 0)
+  const gatePower = rawPower > 0 ? 0 : (typeof fdConsumePreSendGatePower === 'function' ? fdConsumePreSendGatePower() : 0)
+  const power = Math.max(0, Math.min(1, rawPower || gatePower || 0))
+
+  /* 若当前剧场仍敞开（例如发前逆命弹窗刚刚触发了重投），直接在已展开的剧场内无缝抛入新骰，绝不闪断合幕 */
+  if (existingOv && existingOv.stage && (existingOv.wrap.isConnected || existingOv.wrap.parentNode)) {
+    if (typeof fdNotifyPreSendGateRerollLaunched === 'function') {
+      try { fdNotifyPreSendGateRerollLaunched(roll) } catch {}
+    }
+    if (existingOv.entry && existingOv.entry !== entry && existingOv.entry.rollOverlay === existingOv) {
+      existingOv.entry.rollOverlay = null
+    }
+    if (entry) {
+      if (entry.rollOverlay && entry.rollOverlay !== existingOv) fdDisposeFloorRollOverlay(entry)
+      entry.rollOverlay = existingOv
+      entry.rollAnimKey = baseKey
+    }
+    existingOv.rethrow({ entry, article, roll, hidden, mode, tier, theme, spec, power, baseKey, forceGatePin })
+    fdRememberPlayedRollKey(dedupKey)
+    if (baseKey && baseKey !== dedupKey) fdRememberPlayedRollKey(baseKey)
+    return true
+  }
+
   if (entry) fdDisposeFloorRollOverlay(entry)
   while (fdFloorRollOverlays.size >= FD_FLOOR_ROLL_MAX) {
     const oldest = fdFloorRollOverlays.values().next().value
@@ -8838,7 +9142,6 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
     fdTeardownFloorRollOverlay(oldest)
   }
 
-  const tier = hidden ? 'hidden' : fdTierOf(roll.tier)
   const wrap = fdEl(doc, 'div', 'fd-floor-roll-overlay')
   wrap.setAttribute('aria-hidden', 'true')
   wrap.setAttribute('data-tier', tier)
@@ -8850,36 +9153,9 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
 
   const topRail = fdEl(doc, 'div', 'fd-floor-roll-rail is-top')
   const bottomRail = fdEl(doc, 'div', 'fd-floor-roll-rail is-bottom')
-
-  const checkTitle = String(roll.check || '行动')
-  const diffTitle = roll.difficultyLabel ? ` · ${roll.difficultyLabel}` : ''
-  const rerollBadge = mode === 'push' ? ' · 🔥孤注一掷' : (mode === 'fate' ? ' · ✦逆命重投' : '')
-  const kicker = fdEl(
-    doc,
-    'div',
-    'fd-floor-roll-kicker',
-    hidden ? `✦ 命运暗骰 · ${checkTitle}检定 ✦` : `✦ 命运真骰裁定 · ${checkTitle}检定${diffTitle}${rerollBadge} ✦`
-  )
-
+  const kicker = fdEl(doc, 'div', 'fd-floor-roll-kicker', fdBuildFloorRollKickerText(roll, hidden, mode))
   const readout = fdEl(doc, 'div', 'fd-floor-roll-readout')
-  if (hidden) {
-    readout.appendChild(fdEl(doc, 'span', 'fd-floor-roll-readout-formula', `${checkTitle}检定`))
-    readout.appendChild(fdEl(doc, 'span', 'fd-floor-roll-readout-tier', '暗骰封存'))
-  } else {
-    const rawDiceText = Array.isArray(roll.dice) && roll.dice.length ? `[${roll.dice.join('+')}]` : String(roll.total ?? '')
-    const netMod = fdNumber(roll.totalModifier ?? ((fdNumber(roll.skillBonus, 0)) + (fdNumber(roll.modifier, 0))), 0)
-    const modText = netMod ? (netMod > 0 ? ` +${netMod}` : ` ${netMod}`) : ''
-    const targetText = roll.target !== undefined && roll.target !== null
-      ? `（目标${roll.rule === 'd100' ? '≤' : '≥'}${roll.target}）`
-      : ''
-    readout.appendChild(fdEl(
-      doc,
-      'span',
-      'fd-floor-roll-readout-formula',
-      `${checkTitle} · ${roll.rule || '2d6'} ${rawDiceText}${modText} = ${roll.total}${targetText}`
-    ))
-    readout.appendChild(fdEl(doc, 'span', 'fd-floor-roll-readout-tier', roll.tierLabel || '判定'))
-  }
+  fdPopulateFloorRollReadout(doc, readout, roll, hidden)
 
   wrap.appendChild(backdrop)
   wrap.appendChild(stageMask)
@@ -8888,54 +9164,261 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
   wrap.appendChild(kicker)
   wrap.appendChild(readout)
 
+  const initialPinned = Boolean(
+    forceGatePin || (typeof fdIsPreSendGateHoldingOverlay === 'function' && fdIsPreSendGateHoldingOverlay())
+  )
+  if (initialPinned) fdToggleNodeClass(wrap, 'has-presend-gate', true)
+
   let paneEl = null
+  const ov = {
+    doc,
+    article: article || null,
+    entry: entry || null,
+    baseKey,
+    wrap,
+    kicker,
+    readout,
+    stage: null,
+    timers: [],
+    exitTimers: [],
+    safetyTimer: 0,
+    ro: null,
+    onWinResize: null,
+    settled: false,
+    closing: false,
+    exitDeferred: false,
+    pinnedByGate: initialPinned,
+    dockBottomPx: 0,
+    paneLeftPx: 0,
+    paneWidthPx: 0,
+    isHeldByGate: null,
+    clearExitTimers: null,
+    scheduleExit: null,
+    armSafetyTimer: null,
+    syncGeometry: null,
+    setGatePinned: null,
+    rethrow: null
+  }
+
+  ov.isHeldByGate = () => Boolean(
+    ov.pinnedByGate || (typeof fdIsPreSendGateHoldingOverlay === 'function' && fdIsPreSendGateHoldingOverlay())
+  )
+
+  ov.clearExitTimers = () => {
+    while (ov.exitTimers.length) {
+      const t = ov.exitTimers.pop()
+      if (t) clearTimeout(t)
+    }
+    ov.closing = false
+    fdToggleNodeClass(wrap, 'is-fading', false)
+  }
+
+  ov.scheduleExit = afterMs => {
+    /* 发前逆命弹窗展示期间：剧场动画必须常驻保持敞开，绝不自行倒计时关闭 */
+    if (ov.isHeldByGate()) {
+      ov.exitDeferred = true
+      ov.clearExitTimers()
+      return
+    }
+    if (ov.closing) return
+    ov.closing = true
+    ov.exitDeferred = false
+    const delay = Math.max(0, Number(afterMs) || 0)
+    ov.exitTimers.push(setTimeout(() => {
+      if (!fdFloorRollOverlays.has(ov)) return
+      if (ov.isHeldByGate()) {
+        ov.exitDeferred = true
+        ov.clearExitTimers()
+        return
+      }
+      fdToggleNodeClass(wrap, 'is-fading', true)
+    }, delay))
+    ov.exitTimers.push(setTimeout(() => {
+      if (!fdFloorRollOverlays.has(ov)) return
+      if (ov.isHeldByGate()) {
+        ov.exitDeferred = true
+        ov.clearExitTimers()
+        return
+      }
+      if (ov.entry && ov.entry.rollOverlay === ov) ov.entry.rollOverlay = null
+      fdTeardownFloorRollOverlay(ov)
+    }, delay + 880))
+  }
+
+  ov.armSafetyTimer = powerVal => {
+    if (ov.safetyTimer) {
+      clearTimeout(ov.safetyTimer)
+      ov.safetyTimer = 0
+    }
+    ov.safetyTimer = setTimeout(() => {
+      ov.safetyTimer = 0
+      if (!fdFloorRollOverlays.has(ov)) return
+      ov.settled = true
+      fdToggleNodeClass(wrap, 'is-settled', true)
+      ov.scheduleExit(0)
+    }, 7200 + Math.round(Math.max(0, Number(powerVal) || 0) * 500))
+  }
+
   const syncPaneGeometry = () => {
-    paneEl = fdResolveConversationPane(doc, article)
+    paneEl = fdResolveConversationPane(doc, ov.article)
+    const winW = (typeof window !== 'undefined' && Number(window.innerWidth)) || 1280
+    const winH = (typeof window !== 'undefined' && Number(window.innerHeight)) || 820
+    let paneLeft = 0
+    let paneTop = 0
+    let paneWidth = winW
+    let paneHeight = winH
+    let hasPane = false
     if (paneEl && typeof paneEl.getBoundingClientRect === 'function') {
       const r = paneEl.getBoundingClientRect()
       if (r.width > 120 && r.height > 96) {
-        wrap.style.left = `${Math.round(r.left)}px`
-        wrap.style.width = `${Math.round(r.width)}px`
-        wrap.style.top = `${Math.round(r.top + r.height / 2)}px`
-        return
+        paneLeft = r.left
+        paneTop = r.top
+        paneWidth = r.width
+        paneHeight = r.height
+        hasPane = true
       }
     }
-    wrap.style.left = '0px'
-    wrap.style.width = '100vw'
-    wrap.style.top = '50%'
+
+    const held = ov.isHeldByGate()
+    fdToggleNodeClass(wrap, 'has-presend-gate', held)
+
+    const measuredStageH = Number(wrap.offsetHeight)
+      || (typeof wrap.getBoundingClientRect === 'function' ? Number(wrap.getBoundingClientRect().height) : 0)
+    const fallbackStageH = held
+      ? Math.min(326, Math.max(232, Math.round(winH * 0.34)))
+      : Math.min(385, Math.max(290, Math.round(winH * 0.42)))
+    const stageH = Math.max(180, Math.round(measuredStageH || fallbackStageH))
+
+    if (held) {
+      const gateCardH = typeof fdMeasurePreSendGateCardHeight === 'function'
+        ? fdMeasurePreSendGateCardHeight()
+        : 204
+      /* 逆命弹窗紧贴剧场下缘正下方展开，剧场与弹窗整体在对话视口中垂直居中 */
+      const stageVisualSpan = stageH
+      const gapPx = 4
+      const totalStackH = stageVisualSpan + gapPx + gateCardH
+      const idealTop = paneTop + (paneHeight - totalStackH) * 0.5
+      const maxTop = Math.max(8, winH - 12 - gateCardH - gapPx - stageVisualSpan)
+      const stageTop = Math.round(Math.max(8, Math.min(maxTop, idealTop)))
+      const stageCenterY = Math.round(stageTop + stageH * 0.5)
+      wrap.style.left = `${Math.round(paneLeft)}px`
+      wrap.style.width = `${Math.round(paneWidth)}px`
+      wrap.style.top = `${stageCenterY}px`
+      ov.dockBottomPx = stageTop + stageVisualSpan + gapPx
+      ov.paneLeftPx = Math.round(paneLeft)
+      ov.paneWidthPx = Math.round(paneWidth)
+      if (typeof fdApplyPreSendGateDockGeometry === 'function') {
+        fdApplyPreSendGateDockGeometry({
+          docked: true,
+          left: ov.paneLeftPx,
+          width: ov.paneWidthPx,
+          top: ov.dockBottomPx
+        })
+      }
+      return
+    }
+
+    if (hasPane) {
+      wrap.style.left = `${Math.round(paneLeft)}px`
+      wrap.style.width = `${Math.round(paneWidth)}px`
+      wrap.style.top = `${Math.round(paneTop + paneHeight / 2)}px`
+      ov.paneLeftPx = Math.round(paneLeft)
+      ov.paneWidthPx = Math.round(paneWidth)
+    } else {
+      wrap.style.left = '0px'
+      wrap.style.width = '100vw'
+      wrap.style.top = '50%'
+      ov.paneLeftPx = 0
+      ov.paneWidthPx = Math.round(winW)
+    }
+    ov.dockBottomPx = Math.round((hasPane ? paneTop + paneHeight / 2 : winH / 2) + stageH * 0.40 + 8)
   }
+  ov.syncGeometry = syncPaneGeometry
+
+  ov.setGatePinned = (pinned, releaseOpts) => {
+    const nextPinned = Boolean(pinned)
+    ov.pinnedByGate = nextPinned
+    if (ov.stage) ov.stage.pinSettled = nextPinned
+    if (nextPinned) {
+      ov.clearExitTimers()
+      syncPaneGeometry()
+      try {
+        if (ov.stage) {
+          ov.stage.resize()
+          ov.stage.renderSingleFrame()
+        }
+      } catch {}
+      return
+    }
+    syncPaneGeometry()
+    try {
+      if (ov.stage) {
+        ov.stage.resize()
+        ov.stage.renderSingleFrame()
+      }
+    } catch {}
+    if (ov.settled) {
+      const delay = releaseOpts && typeof releaseOpts.exitDelayMs === 'number' ? releaseOpts.exitDelayMs : 260
+      ov.scheduleExit(delay)
+    }
+  }
+
+  ov.rethrow = next => {
+    ov.entry = next.entry || null
+    if (next.article) ov.article = next.article
+    ov.baseKey = next.baseKey || ''
+    ov.settled = false
+    ov.exitDeferred = false
+    ov.clearExitTimers()
+    while (ov.timers.length) {
+      const t = ov.timers.pop()
+      if (t) clearTimeout(t)
+    }
+    ov.pinnedByGate = Boolean(
+      next.forceGatePin || (typeof fdIsPreSendGateHoldingOverlay === 'function' && fdIsPreSendGateHoldingOverlay())
+    )
+    if (ov.stage) ov.stage.pinSettled = ov.pinnedByGate
+    fdToggleNodeClass(wrap, 'is-open', true)
+    fdToggleNodeClass(wrap, 'is-settled', false)
+    fdToggleNodeClass(wrap, 'is-fading', false)
+    fdToggleNodeClass(wrap, 'has-presend-gate', ov.pinnedByGate)
+    wrap.setAttribute('data-tier', next.tier)
+    kicker.textContent = fdBuildFloorRollKickerText(next.roll, next.hidden, next.mode)
+    fdPopulateFloorRollReadout(doc, readout, next.roll, next.hidden)
+    try {
+      ov.stage.setTheme(next.theme)
+      syncPaneGeometry()
+      ov.stage.resize()
+      const launchPower = Math.max(0, Number(next.power) || 0)
+      if ((launchPower > 0.1 || ov.stage.charging) && typeof ov.stage.releaseButtonCharge === 'function') {
+        ov.stage.releaseButtonCharge(next.spec, Math.max(launchPower, 0.48))
+      } else {
+        ov.stage.throwDice(next.spec)
+      }
+    } catch {}
+    ov.armSafetyTimer(next.power)
+  }
+
   syncPaneGeometry()
   mountHost.appendChild(wrap)
 
-  const ov = { wrap, stage: null, readout, timers: [], ro: null, onWinResize: null, closing: false }
-
-  const scheduleExit = afterMs => {
-    if (ov.closing) return
-    ov.closing = true
-    ov.timers.push(setTimeout(() => {
-      if (!fdFloorRollOverlays.has(ov)) return
-      wrap.classList.add('is-fading')
-    }, afterMs))
-    ov.timers.push(setTimeout(() => {
-      if (!fdFloorRollOverlays.has(ov)) return
-      if (entry && entry.rollOverlay === ov) entry.rollOverlay = null
-      fdTeardownFloorRollOverlay(ov)
-    }, afterMs + 880))
-  }
-
   let stage = null
   try {
-    stage = new FD3D.SharedBlitDiceStage(canvas, {
+    const StageCtor = (options && options._testStageCtor) || FD3D.SharedBlitDiceStage
+    stage = new StageCtor(canvas, {
       audio: FD3D.getAudio(),
       banner: false,
       compact: false,
       theater: true,
       onRollSettled: () => {
         if (!fdFloorRollOverlays.has(ov)) return
-        wrap.classList.add('is-settled')
-        scheduleExit(2450)
+        ov.settled = true
+        fdToggleNodeClass(wrap, 'is-open', true)
+        fdToggleNodeClass(wrap, 'is-settled', true)
+        ov.scheduleExit(2450)
       }
     })
+    stage.pinSettled = ov.pinnedByGate
     stage.setTheme(theme)
     ov.stage = stage
   } catch {
@@ -8943,24 +9426,6 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
     return false
   }
 
-  let spec = null
-  try { spec = FD3D.rollToStageSpec({ ...roll, hidden }, false) } catch {}
-  if (spec) {
-    /* 宽银幕剧场慢镜：0.58x 舒展抛物线 + 落地凝滞慢镜，骰子飞行与碰撞弹跳约 2.7s */
-    spec = { ...spec, pace: 0.58 }
-  }
-  if (!spec) {
-    spec = {
-      diceSpecs: [{ meshKey: 'd20', sides: 20, targetValue: Math.max(1, Math.min(20, fdNumber(roll.total, 1))) }],
-      tier,
-      mode: hidden ? 'hidden' : 'normal',
-      total: fdNumber(roll.total, 0),
-      checkName: roll.check || '检定',
-      pace: 0.58
-    }
-  }
-
-  const power = Math.max(0, Math.min(1, fdNumber(options && options.power, 0)))
   if (entry) {
     entry.rollOverlay = ov
     entry.rollAnimKey = baseKey
@@ -9010,13 +9475,35 @@ function fdPlayFloorRollAnim(article, entry, roll, animationPref, options) {
     } catch {}
   }, 180))
 
-  /* 后台标签页 rAF 节流兜底：最长 7.2s 必优雅收束离场，绝不残留遮挡 */
-  ov.timers.push(setTimeout(() => {
-    if (!fdFloorRollOverlays.has(ov)) return
-    wrap.classList.add('is-settled')
-    scheduleExit(0)
-  }, 7200 + Math.round(power * 500)))
+  /* 后台标签页 rAF 节流兜底：最长 7.2s 落定，若逆命弹窗仍在等待则继续保持敞开 */
+  ov.armSafetyTimer(power)
   return true
+}
+
+function fdEnsureFloorRollForGate(payload) {
+  let ov = fdGetPrimaryFloorRollOverlay()
+  if (!ov && payload && payload.tier && typeof fdRollFromGatePayload === 'function') {
+    const gateRoll = fdRollFromGatePayload(payload)
+    if (gateRoll) {
+      fdPlayFloorRollAnim(null, null, gateRoll, payload.animation || '', { forceGatePin: true })
+      ov = fdGetPrimaryFloorRollOverlay()
+    }
+  }
+  if (ov && typeof ov.setGatePinned === 'function') {
+    ov.setGatePinned(true)
+  }
+  return ov
+}
+
+function fdReleaseFloorRollOverlayFromGate(options) {
+  const ov = fdGetPrimaryFloorRollOverlay()
+  if (!ov) return
+  if (ov.stage && ov.stage.charging && !(options && options.keepStageCharge)) {
+    try { ov.stage.cancelButtonCharge() } catch {}
+  }
+  if (typeof ov.setGatePinned === 'function') {
+    ov.setGatePinned(false, options)
+  }
 }
 
 /* 纯原生 DOM 楼层顶栏挂载：不依赖宿主未暴露的 react-dom/client，任何浏览器页面加载即刻生效 */
@@ -9763,12 +10250,114 @@ const fdPreSendGate = {
   payload: null,
   gameId: '',
   busy: false,
+  resolvingMode: '',
+  pendingPower: 0,
   closeTimer: 0,
   probeTimers: [],
+  cardRo: null,
+  onWinResize: null,
   offWatch: fdNoop,
   offGame: fdNoop,
   offEvents: fdNoop,
   disposed: false
+}
+
+function fdGateClearChildren(node) {
+  if (!node) return
+  node.textContent = ''
+  if (Array.isArray(node.children) && !('firstChild' in node)) {
+    node.children.length = 0
+  }
+}
+
+function fdIsPreSendGateHoldingOverlay() {
+  return Boolean(!fdPreSendGate.disposed && fdPreSendGate.payload && fdPreSendGate.payload.gateId)
+}
+
+function fdConsumePreSendGatePower() {
+  const p = Math.max(0, Number(fdPreSendGate.pendingPower) || 0)
+  fdPreSendGate.pendingPower = 0
+  return p
+}
+
+function fdNotifyPreSendGateRerollLaunched() {
+  if (!fdPreSendGate.payload || !fdPreSendGate.resolvingMode) return
+  fdClearPreSendGate({ keepStageCharge: true })
+}
+
+function fdRollFromGatePayload(payload) {
+  if (!payload || !payload.tier) return null
+  return {
+    rule: payload.rule || '2d6',
+    check: payload.check || payload.skillName || '行动',
+    skillName: payload.skillName || '',
+    tier: payload.tier || 'failure',
+    tierLabel: payload.tierLabel || (payload.tier === 'fumble' ? '大失败' : '失败'),
+    total: payload.total,
+    target: payload.target,
+    dice: Array.isArray(payload.dice) ? payload.dice.slice() : [],
+    totalModifier: fdNumber(payload.modifier, 0),
+    modifier: fdNumber(payload.modifier, 0),
+    difficultyLabel: payload.difficultyLabel || '',
+    hidden: false,
+    rolledAt: fdNumber(payload.rolledAt, 0)
+  }
+}
+
+function fdMeasurePreSendGateCardHeight() {
+  const root = fdPreSendGate.root
+  if (!root || root.hidden) return 0
+  const card = typeof root.querySelector === 'function' ? root.querySelector('.fd-presend-card') : null
+  if (!card) return 204
+  const h = Number(card.offsetHeight)
+    || (typeof card.getBoundingClientRect === 'function' ? Number(card.getBoundingClientRect().height) : 0)
+  return h > 40 ? Math.round(h) : 204
+}
+
+function fdApplyPreSendGateDockGeometry(geo) {
+  const root = fdPreSendGate.root
+  if (!root || !geo) return
+  const docked = Boolean(geo.docked)
+  if (typeof fdToggleNodeClass === 'function') fdToggleNodeClass(root, 'is-docked', docked)
+  if (typeof fdSetNodeCssVar === 'function') {
+    fdSetNodeCssVar(root, '--fd-presend-left', typeof geo.left === 'number' ? `${Math.round(geo.left)}px` : '0px')
+    fdSetNodeCssVar(root, '--fd-presend-width', typeof geo.width === 'number' ? `${Math.round(geo.width)}px` : '100vw')
+    fdSetNodeCssVar(root, '--fd-presend-top', docked && typeof geo.top === 'number' ? `${Math.round(geo.top)}px` : '')
+  }
+}
+
+function fdSyncPreSendGateLayout() {
+  const root = fdPreSendGate.root
+  if (!root || root.hidden || !fdPreSendGate.payload) return
+  const ov = typeof fdGetPrimaryFloorRollOverlay === 'function' ? fdGetPrimaryFloorRollOverlay() : null
+  if (ov && ov.wrap && (ov.wrap.isConnected || ov.wrap.parentNode) && typeof ov.syncGeometry === 'function') {
+    ov.syncGeometry()
+    return
+  }
+  let left = 0
+  let width = null
+  if (typeof document !== 'undefined' && typeof fdResolveConversationPane === 'function') {
+    const pane = fdResolveConversationPane(document, null)
+    if (pane && typeof pane.getBoundingClientRect === 'function') {
+      const r = pane.getBoundingClientRect()
+      if (r.width > 120 && r.height > 96) {
+        left = r.left
+        width = r.width
+      }
+    }
+  }
+  fdApplyPreSendGateDockGeometry({ docked: false, left, width })
+}
+
+function fdDetachGateLayoutWatchers() {
+  if (fdPreSendGate.cardRo) {
+    try { fdPreSendGate.cardRo.disconnect() } catch {}
+    fdPreSendGate.cardRo = null
+  }
+  if (fdPreSendGate.onWinResize && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+    try { window.removeEventListener('resize', fdPreSendGate.onWinResize) } catch {}
+    fdPreSendGate.onWinResize = null
+  }
 }
 
 function fdGateEl(tag, className, text) {
@@ -9875,15 +10464,27 @@ function fdSetGateNotice(text) {
   if (!notice) return
   notice.textContent = String(text || '')
   notice.hidden = !text
+  fdSyncPreSendGateLayout()
 }
 
-async function fdResolvePreSendGate(action) {
+async function fdResolvePreSendGate(action, power) {
   const payload = fdPreSendGate.payload
   const ui = fdPreSendGate.ui
   if (!payload || !payload.gateId || fdPreSendGate.busy) return
+  const isReroll = action === 'fate' || action === 'push'
   fdPreSendGate.busy = true
+  fdPreSendGate.resolvingMode = isReroll ? action : ''
+  fdPreSendGate.pendingPower = isReroll ? Math.max(0, Number(power) || 0) : 0
   fdSetGateBusy(true, action)
   fdSetGateNotice('')
+
+  const activeStage = isReroll && typeof fdGetActiveFloorRollStage === 'function'
+    ? fdGetActiveFloorRollStage()
+    : null
+  if (activeStage && !activeStage.charging && typeof activeStage.startButtonCharge === 'function') {
+    try { activeStage.startButtonCharge(action) } catch {}
+  }
+
   const res = await fdCall(ui, FD_RPC.gateResolve, {
     gameId: payload.gameId || fdPreSendGate.gameId,
     gateId: payload.gateId,
@@ -9892,11 +10493,16 @@ async function fdResolvePreSendGate(action) {
   const data = res && res.ok ? res.data : null
   if (!data || data.ok !== true) {
     fdPreSendGate.busy = false
+    fdPreSendGate.resolvingMode = ''
+    fdPreSendGate.pendingPower = 0
+    if (activeStage && activeStage.charging && typeof activeStage.cancelButtonCharge === 'function') {
+      try { activeStage.cancelButtonCharge() } catch {}
+    }
     fdSetGateBusy(false, '')
     fdSetGateNotice((data && data.error) || (res && res.error) || '宿主未响应这次选择，请再点一次')
     return
   }
-  /* 接受命运后宿主立即放行：不等 SSE 回推即可收起覆层；重投则在短暂延时后主动核对一次闸门收口 */
+  /* 接受命运后宿主立即放行：不等 SSE 回推即可收起覆层并让剧场谢幕；重投则在 live-roll 到达时无缝抛新骰 */
   if (data.action === 'accept' || action === 'accept') {
     setTimeout(() => {
       if (fdPreSendGate.payload && fdPreSendGate.payload.gateId === payload.gateId) fdClearPreSendGate()
@@ -9907,18 +10513,30 @@ async function fdResolvePreSendGate(action) {
   }
 }
 
-function fdClearPreSendGate() {
+function fdClearPreSendGate(options) {
   fdStopGateTicker()
+  fdDetachGateLayoutWatchers()
   if (fdPreSendGate.closeTimer) {
     clearTimeout(fdPreSendGate.closeTimer)
     fdPreSendGate.closeTimer = 0
   }
+  const wasRerolling = Boolean(fdPreSendGate.resolvingMode)
   fdPreSendGate.payload = null
   fdPreSendGate.busy = false
+  fdPreSendGate.resolvingMode = ''
   const root = fdPreSendGate.root
-  if (!root) return
-  root.hidden = true
-  root.textContent = ''
+  if (root) {
+    root.hidden = true
+    if (typeof fdToggleNodeClass === 'function') fdToggleNodeClass(root, 'is-docked', false)
+    fdGateClearChildren(root)
+  }
+  if (typeof fdReleaseFloorRollOverlayFromGate === 'function') {
+    const keepCharge = Boolean(options && options.keepStageCharge)
+    fdReleaseFloorRollOverlayFromGate({
+      keepStageCharge: keepCharge,
+      exitDelayMs: wasRerolling && !keepCharge ? 1800 : 260
+    })
+  }
 }
 
 function fdRenderPreSendGate(payload) {
@@ -9928,14 +10546,19 @@ function fdRenderPreSendGate(payload) {
     fdClearPreSendGate()
     return
   }
+  fdDetachGateLayoutWatchers()
   fdPreSendGate.payload = payload
   fdPreSendGate.busy = false
+  fdPreSendGate.resolvingMode = ''
   root.hidden = false
-  root.textContent = ''
+  fdGateClearChildren(root)
 
   const isFumble = payload.tier === 'fumble'
   const tone = isFumble ? 'is-fumble' : 'is-failure'
   const card = fdGateEl('div', 'fd-presend-card ' + tone)
+  card.setAttribute('data-tier', isFumble ? 'fumble' : 'failure')
+
+  card.appendChild(fdGateEl('div', 'fd-presend-rail'))
 
   const top = fdGateEl('div', 'fd-presend-top')
   top.appendChild(fdGateEl('span', 'fd-presend-seal ' + tone, isFumble ? '💀 大失败' : '⚠️ 失败'))
@@ -9944,9 +10567,11 @@ function fdRenderPreSendGate(payload) {
   top.appendChild(count)
   card.appendChild(top)
 
-  card.appendChild(fdGateEl('div', 'fd-presend-check', fdGateBodyText(payload)))
+  const summary = fdGateEl('div', 'fd-presend-summary')
+  summary.appendChild(fdGateEl('span', 'fd-presend-check', fdGateBodyText(payload)))
   const diceText = fdGateDiceText(payload)
-  if (diceText) card.appendChild(fdGateEl('div', 'fd-presend-dice', diceText))
+  if (diceText) summary.appendChild(fdGateEl('span', 'fd-presend-dice', diceText))
+  card.appendChild(summary)
 
   const fate = payload.fate && typeof payload.fate === 'object' ? payload.fate : {}
   const points = Math.max(0, fdNumber(fate.points, 0))
@@ -9961,13 +10586,29 @@ function fdRenderPreSendGate(payload) {
   if (!payload.error) notice.hidden = true
   card.appendChild(notice)
 
-  const actions = fdGateEl('div', 'fd-presend-actions')
   const modes = Array.isArray(payload.modes) && payload.modes.length ? payload.modes : ['push']
+  const showFateSlot = modes.includes('fate') || points <= 0
+  const showPushSlot = modes.includes('push')
+  const actions = fdGateEl(
+    'div',
+    'fd-presend-actions' + (showFateSlot && showPushSlot ? ' has-pair' : '')
+  )
   if (modes.includes('fate')) {
-    const fateBtn = fdGateEl('button', 'fd-presend-btn is-fate', '✦ 逆命重投 · -1 命运点')
+    const fateLabel = '✦ 逆命重投 · -1 命运点'
+    const fateBtn = fdGateEl('button', 'fd-presend-btn is-fate fd-hold-btn')
     fateBtn.type = 'button'
-    fateBtn.title = `消耗 1 点命运点稳妥重掷（当前 ${points}/${maxPoints}）`
-    fateBtn.addEventListener('click', () => fdResolvePreSendGate('fate'))
+    fateBtn.title = `消耗 1 点命运点稳妥重掷（当前 ${points}/${maxPoints}）；长按可聚能蓄力`
+    fateBtn.appendChild(fdGateEl('span', 'fd-reroll-btn-title', fateLabel))
+    if (typeof fdAttachHoldChargeToDomBtn === 'function') {
+      fdAttachHoldChargeToDomBtn(fateBtn, {
+        mode: 'fate',
+        baseLabel: fateLabel,
+        getStage: () => (typeof fdGetActiveFloorRollStage === 'function' ? fdGetActiveFloorRollStage() : null),
+        onTrigger: (_m, pwr) => fdResolvePreSendGate('fate', pwr)
+      })
+    } else {
+      fateBtn.addEventListener('click', () => fdResolvePreSendGate('fate', 0))
+    }
     actions.appendChild(fateBtn)
   } else if (points <= 0) {
     const fateBtn = fdGateEl('button', 'fd-presend-btn is-fate', '✦ 命运点已耗尽')
@@ -9975,22 +10616,52 @@ function fdRenderPreSendGate(payload) {
     fateBtn.disabled = true
     actions.appendChild(fateBtn)
   }
-  if (modes.includes('push')) {
-    const pushBtn = fdGateEl('button', 'fd-presend-btn is-push', '🔥 孤注一掷 · 0 点')
+  if (showPushSlot) {
+    const pushLabel = '🔥 孤注一掷 · 0 点'
+    const pushBtn = fdGateEl('button', 'fd-presend-btn is-push fd-hold-btn')
     pushBtn.type = 'button'
-    pushBtn.title = '不耗命运点强行一搏：失败会恶化为大失败，成功也要背负挂彩/透支代价'
-    pushBtn.addEventListener('click', () => fdResolvePreSendGate('push'))
+    pushBtn.title = '不耗命运点强行一搏：失败会恶化为大失败，成功也要背负挂彩/透支代价；长按可熔炉蓄力'
+    pushBtn.appendChild(fdGateEl('span', 'fd-reroll-btn-title', pushLabel))
+    if (typeof fdAttachHoldChargeToDomBtn === 'function') {
+      fdAttachHoldChargeToDomBtn(pushBtn, {
+        mode: 'push',
+        baseLabel: pushLabel,
+        getStage: () => (typeof fdGetActiveFloorRollStage === 'function' ? fdGetActiveFloorRollStage() : null),
+        onTrigger: (_m, pwr) => fdResolvePreSendGate('push', pwr)
+      })
+    } else {
+      pushBtn.addEventListener('click', () => fdResolvePreSendGate('push', 0))
+    }
     actions.appendChild(pushBtn)
   }
   const acceptBtn = fdGateEl('button', 'fd-presend-btn is-accept', '接受命运 · 直接生成')
   acceptBtn.type = 'button'
   acceptBtn.title = '按本次失败结果照常推进正文，之后仍可在楼层胶囊里重投'
-  acceptBtn.addEventListener('click', () => fdResolvePreSendGate('accept'))
+  acceptBtn.addEventListener('click', () => fdResolvePreSendGate('accept', 0))
   actions.appendChild(acceptBtn)
   card.appendChild(actions)
 
-  card.appendChild(fdGateEl('div', 'fd-presend-hint', '正文请求被按住，你选完才发送'))
+  card.appendChild(fdGateEl('div', 'fd-presend-hint', '正文请求被按住，你选完才发送 · 长按重投可聚能蓄力'))
   root.appendChild(card)
+
+  if (typeof fdEnsureFloorRollForGate === 'function') {
+    fdEnsureFloorRollForGate(payload)
+  }
+  fdSyncPreSendGateLayout()
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => fdSyncPreSendGateLayout())
+  }
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    const onResize = () => fdSyncPreSendGateLayout()
+    fdPreSendGate.onWinResize = onResize
+    window.addEventListener('resize', onResize)
+  }
+  if (typeof ResizeObserver === 'function') {
+    try {
+      fdPreSendGate.cardRo = new ResizeObserver(() => fdSyncPreSendGateLayout())
+      fdPreSendGate.cardRo.observe(card)
+    } catch {}
+  }
 
   fdStartGateTicker()
   fdTickGateCountdown()
@@ -10009,10 +10680,16 @@ function fdApplyPreSendGatePayload(data, gameId) {
     return
   }
   if (fdPreSendGate.payload && fdPreSendGate.payload.gateId === data.gateId) {
-    /* 同一道闸门的重复广播（宿主重投过程中的补充信息）：只刷新计数与提示 */
+    /* 同一道闸门的重复广播（宿主重投过程中的补充信息）：只刷新计数与剧场锚点 */
     fdPreSendGate.payload = { ...fdPreSendGate.payload, ...data }
+    if (typeof fdEnsureFloorRollForGate === 'function') fdEnsureFloorRollForGate(fdPreSendGate.payload)
+    fdSyncPreSendGateLayout()
     if (!fdPreSendGate.busy) fdTickGateCountdown()
     return
+  }
+  const activeStage = typeof fdGetActiveFloorRollStage === 'function' ? fdGetActiveFloorRollStage() : null
+  if (activeStage && activeStage.charging && typeof activeStage.cancelButtonCharge === 'function') {
+    try { activeStage.cancelButtonCharge() } catch {}
   }
   fdRenderPreSendGate(data)
 }
@@ -11117,7 +11794,7 @@ exports.name = FD_PLUGIN_ID
 exports.inject = ['tavernUi']
 exports.apply = apply
 exports.WorkbenchPanel = WorkbenchPanel
-exports.__test = { fdMountPreSendGate, fdProbePreSendGate, fdRenderPreSendGate, fdClearPreSendGate, fdGateSecondsLeft, fdGateDiceText, DieGlyph, formatRollSummary, LiveRollBanner, ComposerLiveDock, ComposerDicePopover, fdResolveFloorToneAndLabel, fdComputePopoverStyle, TurnRollCapsule, FdRerollActionBox, StoryFloorDiceItem, fdExtractFloorTurn, fdMountImperativeFloorHeaders, fdNoteActiveGameId, fdGetActiveGameId, WorkbenchPanel, ChecksTab, DecisionModelGuideBanner, FdHelp, SettingsTab, FD3D, Fd3DDiceStage, useFdHoldCharge, fdAttachHoldChargeToDomBtn, fdPlayFloorRollAnim, fdDisposeFloorRollOverlay, fdFloorRollAnimKey }
+exports.__test = { fdMountPreSendGate, fdProbePreSendGate, fdRenderPreSendGate, fdClearPreSendGate, fdGateSecondsLeft, fdGateDiceText, fdSyncPreSendGateLayout, fdIsPreSendGateHoldingOverlay, DieGlyph, formatRollSummary, LiveRollBanner, ComposerLiveDock, ComposerDicePopover, fdResolveFloorToneAndLabel, fdComputePopoverStyle, TurnRollCapsule, FdRerollActionBox, StoryFloorDiceItem, fdExtractFloorTurn, fdMountImperativeFloorHeaders, fdNoteActiveGameId, fdGetActiveGameId, WorkbenchPanel, ChecksTab, DecisionModelGuideBanner, FdHelp, SettingsTab, FD3D, Fd3DDiceStage, useFdHoldCharge, fdAttachHoldChargeToDomBtn, fdPlayFloorRollAnim, fdDisposeFloorRollOverlay, fdFloorRollAnimKey, fdGetPrimaryFloorRollOverlay }
     return module.exports
   }
 })

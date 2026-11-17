@@ -21,12 +21,114 @@ const fdPreSendGate = {
   payload: null,
   gameId: '',
   busy: false,
+  resolvingMode: '',
+  pendingPower: 0,
   closeTimer: 0,
   probeTimers: [],
+  cardRo: null,
+  onWinResize: null,
   offWatch: fdNoop,
   offGame: fdNoop,
   offEvents: fdNoop,
   disposed: false
+}
+
+function fdGateClearChildren(node) {
+  if (!node) return
+  node.textContent = ''
+  if (Array.isArray(node.children) && !('firstChild' in node)) {
+    node.children.length = 0
+  }
+}
+
+function fdIsPreSendGateHoldingOverlay() {
+  return Boolean(!fdPreSendGate.disposed && fdPreSendGate.payload && fdPreSendGate.payload.gateId)
+}
+
+function fdConsumePreSendGatePower() {
+  const p = Math.max(0, Number(fdPreSendGate.pendingPower) || 0)
+  fdPreSendGate.pendingPower = 0
+  return p
+}
+
+function fdNotifyPreSendGateRerollLaunched() {
+  if (!fdPreSendGate.payload || !fdPreSendGate.resolvingMode) return
+  fdClearPreSendGate({ keepStageCharge: true })
+}
+
+function fdRollFromGatePayload(payload) {
+  if (!payload || !payload.tier) return null
+  return {
+    rule: payload.rule || '2d6',
+    check: payload.check || payload.skillName || '行动',
+    skillName: payload.skillName || '',
+    tier: payload.tier || 'failure',
+    tierLabel: payload.tierLabel || (payload.tier === 'fumble' ? '大失败' : '失败'),
+    total: payload.total,
+    target: payload.target,
+    dice: Array.isArray(payload.dice) ? payload.dice.slice() : [],
+    totalModifier: fdNumber(payload.modifier, 0),
+    modifier: fdNumber(payload.modifier, 0),
+    difficultyLabel: payload.difficultyLabel || '',
+    hidden: false,
+    rolledAt: fdNumber(payload.rolledAt, 0)
+  }
+}
+
+function fdMeasurePreSendGateCardHeight() {
+  const root = fdPreSendGate.root
+  if (!root || root.hidden) return 0
+  const card = typeof root.querySelector === 'function' ? root.querySelector('.fd-presend-card') : null
+  if (!card) return 204
+  const h = Number(card.offsetHeight)
+    || (typeof card.getBoundingClientRect === 'function' ? Number(card.getBoundingClientRect().height) : 0)
+  return h > 40 ? Math.round(h) : 204
+}
+
+function fdApplyPreSendGateDockGeometry(geo) {
+  const root = fdPreSendGate.root
+  if (!root || !geo) return
+  const docked = Boolean(geo.docked)
+  if (typeof fdToggleNodeClass === 'function') fdToggleNodeClass(root, 'is-docked', docked)
+  if (typeof fdSetNodeCssVar === 'function') {
+    fdSetNodeCssVar(root, '--fd-presend-left', typeof geo.left === 'number' ? `${Math.round(geo.left)}px` : '0px')
+    fdSetNodeCssVar(root, '--fd-presend-width', typeof geo.width === 'number' ? `${Math.round(geo.width)}px` : '100vw')
+    fdSetNodeCssVar(root, '--fd-presend-top', docked && typeof geo.top === 'number' ? `${Math.round(geo.top)}px` : '')
+  }
+}
+
+function fdSyncPreSendGateLayout() {
+  const root = fdPreSendGate.root
+  if (!root || root.hidden || !fdPreSendGate.payload) return
+  const ov = typeof fdGetPrimaryFloorRollOverlay === 'function' ? fdGetPrimaryFloorRollOverlay() : null
+  if (ov && ov.wrap && (ov.wrap.isConnected || ov.wrap.parentNode) && typeof ov.syncGeometry === 'function') {
+    ov.syncGeometry()
+    return
+  }
+  let left = 0
+  let width = null
+  if (typeof document !== 'undefined' && typeof fdResolveConversationPane === 'function') {
+    const pane = fdResolveConversationPane(document, null)
+    if (pane && typeof pane.getBoundingClientRect === 'function') {
+      const r = pane.getBoundingClientRect()
+      if (r.width > 120 && r.height > 96) {
+        left = r.left
+        width = r.width
+      }
+    }
+  }
+  fdApplyPreSendGateDockGeometry({ docked: false, left, width })
+}
+
+function fdDetachGateLayoutWatchers() {
+  if (fdPreSendGate.cardRo) {
+    try { fdPreSendGate.cardRo.disconnect() } catch {}
+    fdPreSendGate.cardRo = null
+  }
+  if (fdPreSendGate.onWinResize && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+    try { window.removeEventListener('resize', fdPreSendGate.onWinResize) } catch {}
+    fdPreSendGate.onWinResize = null
+  }
 }
 
 function fdGateEl(tag, className, text) {
@@ -133,15 +235,27 @@ function fdSetGateNotice(text) {
   if (!notice) return
   notice.textContent = String(text || '')
   notice.hidden = !text
+  fdSyncPreSendGateLayout()
 }
 
-async function fdResolvePreSendGate(action) {
+async function fdResolvePreSendGate(action, power) {
   const payload = fdPreSendGate.payload
   const ui = fdPreSendGate.ui
   if (!payload || !payload.gateId || fdPreSendGate.busy) return
+  const isReroll = action === 'fate' || action === 'push'
   fdPreSendGate.busy = true
+  fdPreSendGate.resolvingMode = isReroll ? action : ''
+  fdPreSendGate.pendingPower = isReroll ? Math.max(0, Number(power) || 0) : 0
   fdSetGateBusy(true, action)
   fdSetGateNotice('')
+
+  const activeStage = isReroll && typeof fdGetActiveFloorRollStage === 'function'
+    ? fdGetActiveFloorRollStage()
+    : null
+  if (activeStage && !activeStage.charging && typeof activeStage.startButtonCharge === 'function') {
+    try { activeStage.startButtonCharge(action) } catch {}
+  }
+
   const res = await fdCall(ui, FD_RPC.gateResolve, {
     gameId: payload.gameId || fdPreSendGate.gameId,
     gateId: payload.gateId,
@@ -150,11 +264,16 @@ async function fdResolvePreSendGate(action) {
   const data = res && res.ok ? res.data : null
   if (!data || data.ok !== true) {
     fdPreSendGate.busy = false
+    fdPreSendGate.resolvingMode = ''
+    fdPreSendGate.pendingPower = 0
+    if (activeStage && activeStage.charging && typeof activeStage.cancelButtonCharge === 'function') {
+      try { activeStage.cancelButtonCharge() } catch {}
+    }
     fdSetGateBusy(false, '')
     fdSetGateNotice((data && data.error) || (res && res.error) || '宿主未响应这次选择，请再点一次')
     return
   }
-  /* 接受命运后宿主立即放行：不等 SSE 回推即可收起覆层；重投则在短暂延时后主动核对一次闸门收口 */
+  /* 接受命运后宿主立即放行：不等 SSE 回推即可收起覆层并让剧场谢幕；重投则在 live-roll 到达时无缝抛新骰 */
   if (data.action === 'accept' || action === 'accept') {
     setTimeout(() => {
       if (fdPreSendGate.payload && fdPreSendGate.payload.gateId === payload.gateId) fdClearPreSendGate()
@@ -165,18 +284,30 @@ async function fdResolvePreSendGate(action) {
   }
 }
 
-function fdClearPreSendGate() {
+function fdClearPreSendGate(options) {
   fdStopGateTicker()
+  fdDetachGateLayoutWatchers()
   if (fdPreSendGate.closeTimer) {
     clearTimeout(fdPreSendGate.closeTimer)
     fdPreSendGate.closeTimer = 0
   }
+  const wasRerolling = Boolean(fdPreSendGate.resolvingMode)
   fdPreSendGate.payload = null
   fdPreSendGate.busy = false
+  fdPreSendGate.resolvingMode = ''
   const root = fdPreSendGate.root
-  if (!root) return
-  root.hidden = true
-  root.textContent = ''
+  if (root) {
+    root.hidden = true
+    if (typeof fdToggleNodeClass === 'function') fdToggleNodeClass(root, 'is-docked', false)
+    fdGateClearChildren(root)
+  }
+  if (typeof fdReleaseFloorRollOverlayFromGate === 'function') {
+    const keepCharge = Boolean(options && options.keepStageCharge)
+    fdReleaseFloorRollOverlayFromGate({
+      keepStageCharge: keepCharge,
+      exitDelayMs: wasRerolling && !keepCharge ? 1800 : 260
+    })
+  }
 }
 
 function fdRenderPreSendGate(payload) {
@@ -186,14 +317,19 @@ function fdRenderPreSendGate(payload) {
     fdClearPreSendGate()
     return
   }
+  fdDetachGateLayoutWatchers()
   fdPreSendGate.payload = payload
   fdPreSendGate.busy = false
+  fdPreSendGate.resolvingMode = ''
   root.hidden = false
-  root.textContent = ''
+  fdGateClearChildren(root)
 
   const isFumble = payload.tier === 'fumble'
   const tone = isFumble ? 'is-fumble' : 'is-failure'
   const card = fdGateEl('div', 'fd-presend-card ' + tone)
+  card.setAttribute('data-tier', isFumble ? 'fumble' : 'failure')
+
+  card.appendChild(fdGateEl('div', 'fd-presend-rail'))
 
   const top = fdGateEl('div', 'fd-presend-top')
   top.appendChild(fdGateEl('span', 'fd-presend-seal ' + tone, isFumble ? '💀 大失败' : '⚠️ 失败'))
@@ -202,9 +338,11 @@ function fdRenderPreSendGate(payload) {
   top.appendChild(count)
   card.appendChild(top)
 
-  card.appendChild(fdGateEl('div', 'fd-presend-check', fdGateBodyText(payload)))
+  const summary = fdGateEl('div', 'fd-presend-summary')
+  summary.appendChild(fdGateEl('span', 'fd-presend-check', fdGateBodyText(payload)))
   const diceText = fdGateDiceText(payload)
-  if (diceText) card.appendChild(fdGateEl('div', 'fd-presend-dice', diceText))
+  if (diceText) summary.appendChild(fdGateEl('span', 'fd-presend-dice', diceText))
+  card.appendChild(summary)
 
   const fate = payload.fate && typeof payload.fate === 'object' ? payload.fate : {}
   const points = Math.max(0, fdNumber(fate.points, 0))
@@ -219,13 +357,29 @@ function fdRenderPreSendGate(payload) {
   if (!payload.error) notice.hidden = true
   card.appendChild(notice)
 
-  const actions = fdGateEl('div', 'fd-presend-actions')
   const modes = Array.isArray(payload.modes) && payload.modes.length ? payload.modes : ['push']
+  const showFateSlot = modes.includes('fate') || points <= 0
+  const showPushSlot = modes.includes('push')
+  const actions = fdGateEl(
+    'div',
+    'fd-presend-actions' + (showFateSlot && showPushSlot ? ' has-pair' : '')
+  )
   if (modes.includes('fate')) {
-    const fateBtn = fdGateEl('button', 'fd-presend-btn is-fate', '✦ 逆命重投 · -1 命运点')
+    const fateLabel = '✦ 逆命重投 · -1 命运点'
+    const fateBtn = fdGateEl('button', 'fd-presend-btn is-fate fd-hold-btn')
     fateBtn.type = 'button'
-    fateBtn.title = `消耗 1 点命运点稳妥重掷（当前 ${points}/${maxPoints}）`
-    fateBtn.addEventListener('click', () => fdResolvePreSendGate('fate'))
+    fateBtn.title = `消耗 1 点命运点稳妥重掷（当前 ${points}/${maxPoints}）；长按可聚能蓄力`
+    fateBtn.appendChild(fdGateEl('span', 'fd-reroll-btn-title', fateLabel))
+    if (typeof fdAttachHoldChargeToDomBtn === 'function') {
+      fdAttachHoldChargeToDomBtn(fateBtn, {
+        mode: 'fate',
+        baseLabel: fateLabel,
+        getStage: () => (typeof fdGetActiveFloorRollStage === 'function' ? fdGetActiveFloorRollStage() : null),
+        onTrigger: (_m, pwr) => fdResolvePreSendGate('fate', pwr)
+      })
+    } else {
+      fateBtn.addEventListener('click', () => fdResolvePreSendGate('fate', 0))
+    }
     actions.appendChild(fateBtn)
   } else if (points <= 0) {
     const fateBtn = fdGateEl('button', 'fd-presend-btn is-fate', '✦ 命运点已耗尽')
@@ -233,22 +387,52 @@ function fdRenderPreSendGate(payload) {
     fateBtn.disabled = true
     actions.appendChild(fateBtn)
   }
-  if (modes.includes('push')) {
-    const pushBtn = fdGateEl('button', 'fd-presend-btn is-push', '🔥 孤注一掷 · 0 点')
+  if (showPushSlot) {
+    const pushLabel = '🔥 孤注一掷 · 0 点'
+    const pushBtn = fdGateEl('button', 'fd-presend-btn is-push fd-hold-btn')
     pushBtn.type = 'button'
-    pushBtn.title = '不耗命运点强行一搏：失败会恶化为大失败，成功也要背负挂彩/透支代价'
-    pushBtn.addEventListener('click', () => fdResolvePreSendGate('push'))
+    pushBtn.title = '不耗命运点强行一搏：失败会恶化为大失败，成功也要背负挂彩/透支代价；长按可熔炉蓄力'
+    pushBtn.appendChild(fdGateEl('span', 'fd-reroll-btn-title', pushLabel))
+    if (typeof fdAttachHoldChargeToDomBtn === 'function') {
+      fdAttachHoldChargeToDomBtn(pushBtn, {
+        mode: 'push',
+        baseLabel: pushLabel,
+        getStage: () => (typeof fdGetActiveFloorRollStage === 'function' ? fdGetActiveFloorRollStage() : null),
+        onTrigger: (_m, pwr) => fdResolvePreSendGate('push', pwr)
+      })
+    } else {
+      pushBtn.addEventListener('click', () => fdResolvePreSendGate('push', 0))
+    }
     actions.appendChild(pushBtn)
   }
   const acceptBtn = fdGateEl('button', 'fd-presend-btn is-accept', '接受命运 · 直接生成')
   acceptBtn.type = 'button'
   acceptBtn.title = '按本次失败结果照常推进正文，之后仍可在楼层胶囊里重投'
-  acceptBtn.addEventListener('click', () => fdResolvePreSendGate('accept'))
+  acceptBtn.addEventListener('click', () => fdResolvePreSendGate('accept', 0))
   actions.appendChild(acceptBtn)
   card.appendChild(actions)
 
-  card.appendChild(fdGateEl('div', 'fd-presend-hint', '正文请求被按住，你选完才发送'))
+  card.appendChild(fdGateEl('div', 'fd-presend-hint', '正文请求被按住，你选完才发送 · 长按重投可聚能蓄力'))
   root.appendChild(card)
+
+  if (typeof fdEnsureFloorRollForGate === 'function') {
+    fdEnsureFloorRollForGate(payload)
+  }
+  fdSyncPreSendGateLayout()
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => fdSyncPreSendGateLayout())
+  }
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    const onResize = () => fdSyncPreSendGateLayout()
+    fdPreSendGate.onWinResize = onResize
+    window.addEventListener('resize', onResize)
+  }
+  if (typeof ResizeObserver === 'function') {
+    try {
+      fdPreSendGate.cardRo = new ResizeObserver(() => fdSyncPreSendGateLayout())
+      fdPreSendGate.cardRo.observe(card)
+    } catch {}
+  }
 
   fdStartGateTicker()
   fdTickGateCountdown()
@@ -267,10 +451,16 @@ function fdApplyPreSendGatePayload(data, gameId) {
     return
   }
   if (fdPreSendGate.payload && fdPreSendGate.payload.gateId === data.gateId) {
-    /* 同一道闸门的重复广播（宿主重投过程中的补充信息）：只刷新计数与提示 */
+    /* 同一道闸门的重复广播（宿主重投过程中的补充信息）：只刷新计数与剧场锚点 */
     fdPreSendGate.payload = { ...fdPreSendGate.payload, ...data }
+    if (typeof fdEnsureFloorRollForGate === 'function') fdEnsureFloorRollForGate(fdPreSendGate.payload)
+    fdSyncPreSendGateLayout()
     if (!fdPreSendGate.busy) fdTickGateCountdown()
     return
+  }
+  const activeStage = typeof fdGetActiveFloorRollStage === 'function' ? fdGetActiveFloorRollStage() : null
+  if (activeStage && activeStage.charging && typeof activeStage.cancelButtonCharge === 'function') {
+    try { activeStage.cancelButtonCharge() } catch {}
   }
   fdRenderPreSendGate(data)
 }
