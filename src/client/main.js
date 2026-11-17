@@ -55,12 +55,8 @@ function apply(ctx) {
     render: ({ gameId } = {}) => h(FateDicePanel, { ui, gameId })
   }))
 
-  // 2) 输入栏上方非阻塞揭晓条：检定骰多面体揭晓，平时零占位
-  fdRegisterSafely(ctx, 'fate-dice: composer slot', () => ui.registerComposerSlot({
-    id: 'fate-dice-live',
-    modes: ['play'],
-    render: ({ sessionId, gameId } = {}) => h(ComposerLiveDock, { ui, sessionId: sessionId || gameId, gameId })
-  }))
+  // 2) 胶囊不再停在输入栏上方：fdMountImperativeFloorHeaders 把它挂到每轮对话的尾部
+  //    （story 视图的 .dsh-tavern-story-row-actions，没有操作栏时回退楼层顶栏）。
 
   // 3) 楼层自动挂载胶囊（默认「内置」正文样式无需手切即可在每层正文下方看到检定与重投按钮）
   if (typeof ui.registerMediaRenderer === 'function') {

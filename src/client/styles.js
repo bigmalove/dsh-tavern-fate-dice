@@ -733,10 +733,21 @@ const CSS_TEXT = `
   word-break: break-all;
 }
 
-/* ---------- 楼层顶栏并列检定胶囊（对齐叙事阻尼器 StoryFloorDamperPill / Panel） ---------- */
+/* ---------- 每轮对话尾部的检定胶囊（对齐叙事阻尼器 StoryFloorDamperPill / Panel） ---------- */
 .fd-floor-head-slot {
   display: inline-flex;
   align-items: center;
+}
+/* 胶囊挂在楼层尾部的操作栏里（story 视图的 .dsh-tavern-story-row-actions）：
+ * 那一行的按钮默认悬停才显形，胶囊常显，并独占一行排在按钮与时间之后。 */
+.dsh-tavern-story-row-actions > .fd-floor-head-slot {
+  flex: 0 0 100%;
+  opacity: 1 !important;
+  margin-top: 2px;
+}
+.dsh-tavern-story-row-actions > .fd-floor-panel-slot {
+  flex: 0 0 100%;
+  opacity: 1 !important;
 }
 .fd-floor-pill {
   --fd-pill-color: #3f9d68;
@@ -1329,6 +1340,8 @@ const CSS_TEXT = `
   .fd-floor-pill .fd-floor-dot,
   .fd-floor-pill .fd-floor-pill-text { display: none; }
   .fd-floor-pill .fd-floor-pill-icon { display: block; }
+  /* 窄屏只剩一枚图标，不再独占一整行，接在楼层尾部那一行里即可 */
+  .dsh-tavern-story-row-actions > .fd-floor-head-slot { flex: 0 0 auto; }
 }
 @media (max-width: 420px) {
   .fd-tabbar { grid-template-columns: 1fr; }

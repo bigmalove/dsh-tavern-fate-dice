@@ -1818,13 +1818,17 @@ function fdMountImperativeFloorHeaders(ui) {
       if (article.hasAttribute('data-greeting') || article.hasAttribute('data-story-held')) continue
       const head = article.querySelector('.dsh-tavern-story-floor-head')
       if (!head || head.parentNode !== article) continue
+      // 胶囊跟着每一轮走：story 视图的操作栏就是每轮对话的尾部，挂在那里；
+      // 原生对话或旧宿主没有操作栏时退回楼层顶栏。
+      const tailActions = article.querySelector('.dsh-tavern-story-row-actions')
+      const host = tailActions && tailActions.parentNode === article ? tailActions : head
       const turn = fdExtractFloorTurn(article)
       const streaming = article.classList.contains('dsh-tavern-story-streaming')
       if (turn <= 0 && !streaming) continue
 
       seenArticles.add(article)
       let entry = entries.get(article)
-      if (!entry || entry.head !== head) {
+      if (!entry || entry.head !== head || entry.host !== host) {
         const inheritedRecord = entry && entry.gotLiveStreamRecord && entry.record ? entry.record : null
         const inheritedLive = Boolean(entry && entry.gotLiveStreamRecord)
         if (entry) {
@@ -1836,8 +1840,8 @@ function fdMountImperativeFloorHeaders(ui) {
         }
         const headSlot = fdEl(doc, 'span', 'fd-floor-head-slot')
         const panelSlot = fdEl(doc, 'div', 'fd-floor-panel-slot')
-        head.appendChild(headSlot)
-        head.appendChild(panelSlot)
+        host.appendChild(headSlot)
+        host.appendChild(panelSlot)
         let seedRecord = inheritedRecord
         let seedGotLive = inheritedLive
         if (!seedRecord && streaming && latestLiveEvent && latestLiveEvent.gameId === watchedGameId) {
@@ -1849,6 +1853,7 @@ function fdMountImperativeFloorHeaders(ui) {
         }
         entry = {
           head,
+          host,
           headSlot,
           panelSlot,
           turn,
@@ -1880,11 +1885,12 @@ function fdMountImperativeFloorHeaders(ui) {
         }
         entry.turn = turn
         entry.streaming = streaming
-        if (entry.headSlot.parentNode !== head) head.appendChild(entry.headSlot)
-        if (entry.panelSlot.parentNode !== head) head.appendChild(entry.panelSlot)
-        else if (head.lastElementChild !== entry.panelSlot) {
-          head.appendChild(entry.headSlot)
-          head.appendChild(entry.panelSlot)
+        entry.host = host
+        if (entry.headSlot.parentNode !== host) host.appendChild(entry.headSlot)
+        if (entry.panelSlot.parentNode !== host) host.appendChild(entry.panelSlot)
+        else if (host.lastElementChild !== entry.panelSlot) {
+          host.appendChild(entry.headSlot)
+          host.appendChild(entry.panelSlot)
         }
         if (changed) {
           entry.retryCount = 0

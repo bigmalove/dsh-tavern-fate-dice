@@ -839,10 +839,21 @@ const CSS_TEXT = `
   word-break: break-all;
 }
 
-/* ---------- 楼层顶栏并列检定胶囊（对齐叙事阻尼器 StoryFloorDamperPill / Panel） ---------- */
+/* ---------- 每轮对话尾部的检定胶囊（对齐叙事阻尼器 StoryFloorDamperPill / Panel） ---------- */
 .fd-floor-head-slot {
   display: inline-flex;
   align-items: center;
+}
+/* 胶囊挂在楼层尾部的操作栏里（story 视图的 .dsh-tavern-story-row-actions）：
+ * 那一行的按钮默认悬停才显形，胶囊常显，并独占一行排在按钮与时间之后。 */
+.dsh-tavern-story-row-actions > .fd-floor-head-slot {
+  flex: 0 0 100%;
+  opacity: 1 !important;
+  margin-top: 2px;
+}
+.dsh-tavern-story-row-actions > .fd-floor-panel-slot {
+  flex: 0 0 100%;
+  opacity: 1 !important;
 }
 .fd-floor-pill {
   --fd-pill-color: #3f9d68;
@@ -1435,6 +1446,8 @@ const CSS_TEXT = `
   .fd-floor-pill .fd-floor-dot,
   .fd-floor-pill .fd-floor-pill-text { display: none; }
   .fd-floor-pill .fd-floor-pill-icon { display: block; }
+  /* 窄屏只剩一枚图标，不再独占一整行，接在楼层尾部那一行里即可 */
+  .dsh-tavern-story-row-actions > .fd-floor-head-slot { flex: 0 0 auto; }
 }
 @media (max-width: 420px) {
   .fd-tabbar { grid-template-columns: 1fr; }
@@ -8499,13 +8512,17 @@ function fdMountImperativeFloorHeaders(ui) {
       if (article.hasAttribute('data-greeting') || article.hasAttribute('data-story-held')) continue
       const head = article.querySelector('.dsh-tavern-story-floor-head')
       if (!head || head.parentNode !== article) continue
+      // 胶囊跟着每一轮走：story 视图的操作栏就是每轮对话的尾部，挂在那里；
+      // 原生对话或旧宿主没有操作栏时退回楼层顶栏。
+      const tailActions = article.querySelector('.dsh-tavern-story-row-actions')
+      const host = tailActions && tailActions.parentNode === article ? tailActions : head
       const turn = fdExtractFloorTurn(article)
       const streaming = article.classList.contains('dsh-tavern-story-streaming')
       if (turn <= 0 && !streaming) continue
 
       seenArticles.add(article)
       let entry = entries.get(article)
-      if (!entry || entry.head !== head) {
+      if (!entry || entry.head !== head || entry.host !== host) {
         const inheritedRecord = entry && entry.gotLiveStreamRecord && entry.record ? entry.record : null
         const inheritedLive = Boolean(entry && entry.gotLiveStreamRecord)
         if (entry) {
@@ -8517,8 +8534,8 @@ function fdMountImperativeFloorHeaders(ui) {
         }
         const headSlot = fdEl(doc, 'span', 'fd-floor-head-slot')
         const panelSlot = fdEl(doc, 'div', 'fd-floor-panel-slot')
-        head.appendChild(headSlot)
-        head.appendChild(panelSlot)
+        host.appendChild(headSlot)
+        host.appendChild(panelSlot)
         let seedRecord = inheritedRecord
         let seedGotLive = inheritedLive
         if (!seedRecord && streaming && latestLiveEvent && latestLiveEvent.gameId === watchedGameId) {
@@ -8530,6 +8547,7 @@ function fdMountImperativeFloorHeaders(ui) {
         }
         entry = {
           head,
+          host,
           headSlot,
           panelSlot,
           turn,
@@ -8561,11 +8579,12 @@ function fdMountImperativeFloorHeaders(ui) {
         }
         entry.turn = turn
         entry.streaming = streaming
-        if (entry.headSlot.parentNode !== head) head.appendChild(entry.headSlot)
-        if (entry.panelSlot.parentNode !== head) head.appendChild(entry.panelSlot)
-        else if (head.lastElementChild !== entry.panelSlot) {
-          head.appendChild(entry.headSlot)
-          head.appendChild(entry.panelSlot)
+        entry.host = host
+        if (entry.headSlot.parentNode !== host) host.appendChild(entry.headSlot)
+        if (entry.panelSlot.parentNode !== host) host.appendChild(entry.panelSlot)
+        else if (host.lastElementChild !== entry.panelSlot) {
+          host.appendChild(entry.headSlot)
+          host.appendChild(entry.panelSlot)
         }
         if (changed) {
           entry.retryCount = 0
@@ -9572,12 +9591,8 @@ function apply(ctx) {
     render: ({ gameId } = {}) => h(FateDicePanel, { ui, gameId })
   }))
 
-  // 2) 输入栏上方非阻塞揭晓条：检定骰多面体揭晓，平时零占位
-  fdRegisterSafely(ctx, 'fate-dice: composer slot', () => ui.registerComposerSlot({
-    id: 'fate-dice-live',
-    modes: ['play'],
-    render: ({ sessionId, gameId } = {}) => h(ComposerLiveDock, { ui, sessionId: sessionId || gameId, gameId })
-  }))
+  // 2) 胶囊不再停在输入栏上方：fdMountImperativeFloorHeaders 把它挂到每轮对话的尾部
+  //    （story 视图的 .dsh-tavern-story-row-actions，没有操作栏时回退楼层顶栏）。
 
   // 3) 楼层自动挂载胶囊（默认「内置」正文样式无需手切即可在每层正文下方看到检定与重投按钮）
   if (typeof ui.registerMediaRenderer === 'function') {

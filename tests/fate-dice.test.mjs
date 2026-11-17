@@ -438,7 +438,6 @@ test('浏览器端 client.js：极简双页签滚动工作台（检定与能力 
 
   assert.deepEqual(registered, [
     ['panel', 'fate-dice', '命运之骰'],
-    ['slot', 'fate-dice-live'],
     ['turn', 'fate-dice-turn'],
     ['status', 'fate-dice-status']
   ])
@@ -1172,6 +1171,10 @@ test('楼层顶栏胶囊（与叙事阻尼器胶囊并排）：正在生成期�
         if (sel === '.dsh-tavern-story-floor-head') {
           return el.children.find(c => c.classList.contains('dsh-tavern-story-floor-head')) || null
         }
+        // 每轮对话的尾部容器：胶囊优先挂这里
+        if (sel === '.dsh-tavern-story-row-actions') {
+          return el.children.find(c => c.classList.contains('dsh-tavern-story-row-actions')) || null
+        }
         return null
       },
       addEventListener(ev, fn) { listeners.set(ev, fn) },
@@ -1202,6 +1205,10 @@ test('楼层顶栏胶囊（与叙事阻尼器胶囊并排）：正在生成期�
   const fakeHead = makeEl('div')
   fakeHead.className = 'dsh-tavern-story-floor-head'
   fakeArticle.appendChild(fakeHead)
+  // story 视图每轮对话的尾部操作栏：胶囊必须落在这里，而不是楼层顶栏
+  const fakeTailActions = makeEl('div')
+  fakeTailActions.className = 'dsh-tavern-story-row-actions'
+  fakeArticle.appendChild(fakeTailActions)
 
   const fakeBody = makeEl('body')
   fakeBody.appendChild(fakeArticle)
@@ -1246,10 +1253,11 @@ test('楼层顶栏胶囊（与叙事阻尼器胶囊并排）：正在生成期�
   const unmount = exported.__test.fdMountImperativeFloorHeaders(fakeUi)
   await new Promise(resolve => setTimeout(resolve, 15))
 
-  const headSlot = fakeHead.children.find(c => c.classList.contains('fd-floor-head-slot'))
-  const panelSlot = fakeHead.children.find(c => c.classList.contains('fd-floor-panel-slot'))
-  assert.ok(headSlot && headSlot.children.length === 1, '正在生成期间必须在楼层顶栏插入胶囊按钮')
+  const headSlot = fakeTailActions.children.find(c => c.classList.contains('fd-floor-head-slot'))
+  const panelSlot = fakeTailActions.children.find(c => c.classList.contains('fd-floor-panel-slot'))
+  assert.ok(headSlot && headSlot.children.length === 1, '正在生成期间必须在每轮对话的尾部（story-row-actions）插入胶囊按钮')
   assert.match(headSlot.children[0].textContent, /通用·技艺/)
+  assert.ok(!fakeHead.children.some(c => c.classList.contains('fd-floor-head-slot')), '胶囊不再挂在楼层顶栏')
 
   // 2) 结算后刷新并点击胶囊：展开详情面板，出现「✦ 命运点 2/3」「✦ 逆命重投」「🔥 孤注一掷」
   await settledHooks[0]({ gameId: 'g-head-pill', turn: 5, textVersion: 'v5' })
@@ -1258,10 +1266,10 @@ test('楼层顶栏胶囊（与叙事阻尼器胶囊并排）：正在生成期�
 
   const unmount2 = exported.__test.fdMountImperativeFloorHeaders(fakeUi)
   await new Promise(resolve => setTimeout(resolve, 15))
-  const settledHeadSlot = fakeHead.children.find(c => c.classList.contains('fd-floor-head-slot'))
-  const settledPanelSlot = fakeHead.children.find(c => c.classList.contains('fd-floor-panel-slot'))
+  const settledHeadSlot = fakeTailActions.children.find(c => c.classList.contains('fd-floor-head-slot'))
+  const settledPanelSlot = fakeTailActions.children.find(c => c.classList.contains('fd-floor-panel-slot'))
   settledHeadSlot.children[0].click()
-  assert.ok(settledPanelSlot.children.length === 1, '点击顶栏胶囊后应在下方展开详情面板')
+  assert.ok(settledPanelSlot.children.length === 1, '点击尾部胶囊后应在下方展开详情面板')
   const panelText = settledPanelSlot.textContent
   assert.match(panelText, /✦ 命运点 [23]\/3/)
   assert.match(panelText, /✦ 逆命重投/)
