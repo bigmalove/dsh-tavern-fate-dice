@@ -4723,18 +4723,19 @@ const TIER_CODE_MAP = {
 
 const SEAL_TEXT_BY_TIER = {
   normal: '定局',
-  critical: '天命',
-  success: '破局',
-  costly: '险胜',
-  failure: '失手',
-  fumble: '劫数'
+  critical: '大成功',
+  success: '成功',
+  costly: '代价成功',
+  failure: '失败',
+  fumble: '大失败'
 }
 
 function drawThemeSealOverlay(ctx, { themeIndex, tier, settleTime, sx, sy, scaleMul = 1 }) {
-  const sealWord = SEAL_TEXT_BY_TIER[tier] || '破局'
+  const sealWord = SEAL_TEXT_BY_TIER[tier] || '成功'
   const slamT = Math.min(1, settleTime / 0.14)
   const scale = (slamT < 1 ? (2.1 - 1.1 * slamT) : 1.0) * scaleMul
   const fade = settleTime > 1.9 ? Math.max(0, 1 - (settleTime - 1.9) / 0.6) : 1.0
+  const horizFontSize = sealWord.length >= 4 ? 19 : (sealWord.length === 3 ? 23 : 26)
 
   ctx.save()
   ctx.translate(sx, sy)
@@ -4747,29 +4748,42 @@ function drawThemeSealOverlay(ctx, { themeIndex, tier, settleTime, sx, sy, scale
     ctx.fillStyle = '#b91c1c'
     ctx.strokeStyle = '#fef2f2'
     ctx.beginPath()
-    ctx.roundRect(-34, -42, 68, 84, 4)
+    ctx.roundRect(-34, -44, 68, 88, 4)
     ctx.fill()
     ctx.lineWidth = 2.4
-    ctx.strokeRect(-29, -37, 58, 74)
+    ctx.strokeRect(-29, -39, 58, 78)
 
     ctx.fillStyle = '#fff8f1'
-    ctx.font = '900 28px "STKaiti", "KaiTi", "Songti SC", "Noto Serif SC", serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(sealWord[0], 0, -17)
-    ctx.fillText(sealWord[1], 0, 18)
+    if (sealWord.length <= 2) {
+      ctx.font = '900 28px "STKaiti", "KaiTi", "Songti SC", "Noto Serif SC", serif'
+      ctx.fillText(sealWord[0], 0, -17)
+      ctx.fillText(sealWord[1] || '', 0, 18)
+    } else if (sealWord.length === 3) {
+      ctx.font = '900 21px "STKaiti", "KaiTi", "Songti SC", "Noto Serif SC", serif'
+      ctx.fillText(sealWord[0], 0, -23)
+      ctx.fillText(sealWord[1], 0, 0)
+      ctx.fillText(sealWord[2], 0, 23)
+    } else {
+      ctx.font = '900 16px "STKaiti", "KaiTi", "Songti SC", "Noto Serif SC", serif'
+      ctx.fillText(sealWord[0], 0, -26)
+      ctx.fillText(sealWord[1], 0, -9)
+      ctx.fillText(sealWord[2], 0, 9)
+      ctx.fillText(sealWord[3], 0, 26)
+    }
   } else if (themeIndex === 0) {
-    // 星穹秘法：24K 鎏金星盘天命印
+    // 星穹秘法：24K 鎏金星盘印章
     ctx.rotate(-0.04)
     ctx.fillStyle = 'rgba(14, 9, 34, 0.92)'
     ctx.beginPath()
-    ctx.arc(0, 0, 44, 0, Math.PI * 2)
+    ctx.arc(0, 0, 46, 0, Math.PI * 2)
     ctx.fill()
 
     ctx.strokeStyle = '#f5b942'
     ctx.lineWidth = 2.4
     ctx.beginPath()
-    ctx.arc(0, 0, 44, 0, Math.PI * 2)
+    ctx.arc(0, 0, 46, 0, Math.PI * 2)
     ctx.stroke()
 
     ctx.save()
@@ -4777,15 +4791,15 @@ function drawThemeSealOverlay(ctx, { themeIndex, tier, settleTime, sx, sy, scale
     ctx.strokeStyle = 'rgba(245, 185, 66, 0.72)'
     ctx.lineWidth = 1.2
     ctx.beginPath()
-    ctx.arc(0, 0, 37, 0, Math.PI * 2)
+    ctx.arc(0, 0, 39, 0, Math.PI * 2)
     ctx.stroke()
     ctx.restore()
 
     ctx.fillStyle = '#f5b942'
     for (let i = 0; i < 4; i++) {
       const a = i * Math.PI * 0.5
-      const px = Math.cos(a) * 44
-      const py = Math.sin(a) * 44
+      const px = Math.cos(a) * 46
+      const py = Math.sin(a) * 46
       ctx.beginPath()
       ctx.arc(px, py, 2.5, 0, Math.PI * 2)
       ctx.fill()
@@ -4793,30 +4807,21 @@ function drawThemeSealOverlay(ctx, { themeIndex, tier, settleTime, sx, sy, scale
 
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillStyle = '#f5b942'
-    ctx.font = '700 9.5px "Songti SC", "Noto Serif SC", serif'
-    ctx.fillText('星穹司南', 0, -21)
-
     ctx.shadowColor = 'rgba(245, 185, 66, 0.65)'
     ctx.shadowBlur = 10
     ctx.fillStyle = '#ffe699'
-    ctx.font = '900 26px "Songti SC", "Noto Serif SC", "STKaiti", serif'
-    ctx.fillText(sealWord, 0, 2)
-
-    ctx.shadowBlur = 0
-    ctx.fillStyle = 'rgba(245, 185, 66, 0.82)'
-    ctx.font = '700 8.5px ui-monospace, SFMono-Regular, Menlo, monospace'
-    ctx.fillText((tier || 'normal').toUpperCase(), 0, 23)
+    ctx.font = `900 ${horizFontSize}px "Songti SC", "Noto Serif SC", "STKaiti", serif`
+    ctx.fillText(sealWord, 0, 1)
   } else if (themeIndex === 1) {
     // 时停棱镜：碎星圣晶棱形徽章
     ctx.fillStyle = 'rgba(8, 36, 56, 0.88)'
     ctx.beginPath()
-    ctx.moveTo(0, -47)
-    ctx.lineTo(44, -14)
-    ctx.lineTo(36, 36)
-    ctx.lineTo(0, 47)
-    ctx.lineTo(-36, 36)
-    ctx.lineTo(-44, -14)
+    ctx.moveTo(0, -44)
+    ctx.lineTo(50, -14)
+    ctx.lineTo(42, 34)
+    ctx.lineTo(0, 44)
+    ctx.lineTo(-42, 34)
+    ctx.lineTo(-50, -14)
     ctx.closePath()
     ctx.fill()
 
@@ -4827,42 +4832,33 @@ function drawThemeSealOverlay(ctx, { themeIndex, tier, settleTime, sx, sy, scale
     ctx.strokeStyle = 'rgba(107, 230, 255, 0.65)'
     ctx.lineWidth = 1.1
     ctx.beginPath()
-    ctx.moveTo(0, -40)
-    ctx.lineTo(37, -11)
-    ctx.lineTo(30, 31)
-    ctx.lineTo(0, 40)
-    ctx.lineTo(-30, 31)
-    ctx.lineTo(-37, -11)
+    ctx.moveTo(0, -37)
+    ctx.lineTo(43, -11)
+    ctx.lineTo(36, 29)
+    ctx.lineTo(0, 37)
+    ctx.lineTo(-36, 29)
+    ctx.lineTo(-43, -11)
     ctx.closePath()
     ctx.stroke()
 
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillStyle = '#a8ffef'
-    ctx.font = '700 9.5px system-ui, sans-serif'
-    ctx.fillText('时停圣晶', 0, -20)
-
     ctx.shadowColor = 'rgba(107, 230, 255, 0.75)'
     ctx.shadowBlur = 10
     ctx.fillStyle = '#ffffff'
-    ctx.font = '900 26px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif'
+    ctx.font = `900 ${horizFontSize}px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif`
     ctx.fillText(sealWord, 0, 2)
-
-    ctx.shadowBlur = 0
-    ctx.fillStyle = '#6be6ff'
-    ctx.font = '700 8.5px ui-monospace, SFMono-Regular, Menlo, monospace'
-    ctx.fillText('CHRONO', 0, 24)
   } else if (themeIndex === 2) {
     // 焚天熔炉：锻铁熔岩六角徽记
     ctx.rotate(-0.04)
     ctx.fillStyle = 'rgba(26, 8, 5, 0.93)'
     ctx.beginPath()
-    ctx.moveTo(-36, -38)
-    ctx.lineTo(36, -38)
-    ctx.lineTo(46, 0)
-    ctx.lineTo(36, 38)
-    ctx.lineTo(-36, 38)
-    ctx.lineTo(-46, 0)
+    ctx.moveTo(-40, -34)
+    ctx.lineTo(40, -34)
+    ctx.lineTo(52, 0)
+    ctx.lineTo(40, 34)
+    ctx.lineTo(-40, 34)
+    ctx.lineTo(-52, 0)
     ctx.closePath()
     ctx.fill()
 
@@ -4873,37 +4869,28 @@ function drawThemeSealOverlay(ctx, { themeIndex, tier, settleTime, sx, sy, scale
     ctx.strokeStyle = 'rgba(255, 179, 71, 0.75)'
     ctx.lineWidth = 1.2
     ctx.beginPath()
-    ctx.moveTo(-31, -32)
-    ctx.lineTo(31, -32)
-    ctx.lineTo(39, 0)
-    ctx.lineTo(31, 32)
-    ctx.lineTo(-31, 32)
-    ctx.lineTo(-39, 0)
+    ctx.moveTo(-35, -28)
+    ctx.lineTo(35, -28)
+    ctx.lineTo(45, 0)
+    ctx.lineTo(35, 28)
+    ctx.lineTo(-35, 28)
+    ctx.lineTo(-45, 0)
     ctx.closePath()
     ctx.stroke()
 
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillStyle = '#ffb347'
-    ctx.font = '800 9.5px system-ui, sans-serif'
-    ctx.fillText('焚天熔炉', 0, -19)
-
     ctx.shadowColor = 'rgba(255, 100, 38, 0.85)'
     ctx.shadowBlur = 12
     ctx.fillStyle = '#fff1e0'
-    ctx.font = '900 26px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif'
-    ctx.fillText(sealWord, 0, 2)
-
-    ctx.shadowBlur = 0
-    ctx.fillStyle = '#ff8c42'
-    ctx.font = '700 8.5px ui-monospace, SFMono-Regular, Menlo, monospace'
-    ctx.fillText('HELLFORGE', 0, 22)
+    ctx.font = `900 ${horizFontSize}px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif`
+    ctx.fillText(sealWord, 0, 1)
   } else if (themeIndex === 3) {
     // 赛博超频：霓虹全息战术铭牌
     const neon = tier === 'fumble' ? '#ff2a85' : '#00f5d4'
     const cut = 10
-    const hw = 44
-    const hh = 38
+    const hw = 48
+    const hh = 32
     ctx.fillStyle = 'rgba(6, 16, 32, 0.90)'
     ctx.beginPath()
     ctx.moveTo(-hw + cut, -hh)
@@ -4921,55 +4908,37 @@ function drawThemeSealOverlay(ctx, { themeIndex, tier, settleTime, sx, sy, scale
 
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillStyle = neon
-    ctx.font = '700 9px ui-monospace, SFMono-Regular, Menlo, monospace'
-    ctx.fillText('SYS // 霓虹矩阵', 0, -22)
-
     ctx.shadowColor = neon
     ctx.shadowBlur = 10
     ctx.fillStyle = '#ffffff'
-    ctx.font = '900 26px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif'
+    ctx.font = `900 ${horizFontSize}px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif`
     ctx.fillText(sealWord, 0, 1)
-
-    ctx.shadowBlur = 0
-    ctx.fillStyle = neon
-    ctx.font = '700 8.5px ui-monospace, SFMono-Regular, Menlo, monospace'
-    ctx.fillText((tier || 'normal').toUpperCase(), 0, 23)
   } else {
     // 虚空星噬：诡秘奇点蚀环印
     ctx.fillStyle = 'rgba(8, 6, 18, 0.94)'
     ctx.beginPath()
-    ctx.arc(0, 0, 44, 0, Math.PI * 2)
+    ctx.arc(0, 0, 46, 0, Math.PI * 2)
     ctx.fill()
 
     ctx.strokeStyle = '#a855f7'
     ctx.lineWidth = 1.6
     ctx.beginPath()
-    ctx.arc(0, 0, 44, 0, Math.PI * 2)
+    ctx.arc(0, 0, 46, 0, Math.PI * 2)
     ctx.stroke()
 
     ctx.strokeStyle = '#39e5b6'
     ctx.lineWidth = 2.2
     ctx.beginPath()
-    ctx.arc(0, 0, 38, 0, Math.PI * 2)
+    ctx.arc(0, 0, 40, 0, Math.PI * 2)
     ctx.stroke()
 
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillStyle = '#7afcd6'
-    ctx.font = '700 9.5px "Songti SC", "Noto Serif SC", serif'
-    ctx.fillText('虚空奇点', 0, -21)
-
     ctx.shadowColor = 'rgba(57, 229, 182, 0.72)'
     ctx.shadowBlur = 12
     ctx.fillStyle = '#e8fff9'
-    ctx.font = '900 26px "Songti SC", "Noto Serif SC", "STKaiti", serif'
-    ctx.fillText(sealWord, 0, 2)
-
-    ctx.shadowBlur = 0
-    ctx.fillStyle = '#c084fc'
-    ctx.font = '700 8.5px ui-monospace, SFMono-Regular, Menlo, monospace'
-    ctx.fillText('SINGULARITY', 0, 23)
+    ctx.font = `900 ${horizFontSize}px "Songti SC", "Noto Serif SC", "STKaiti", serif`
+    ctx.fillText(sealWord, 0, 1)
   }
 
   ctx.restore()
